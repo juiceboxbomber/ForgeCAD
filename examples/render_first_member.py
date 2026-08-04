@@ -1,3 +1,10 @@
+import sys
+
+REPOSITORY_ROOT = r"C:\Users\user\ForgeCAD"
+
+if REPOSITORY_ROOT not in sys.path:
+    sys.path.insert(0, REPOSITORY_ROOT)
+
 import FreeCAD
 
 from forgecad.adapters.freecad import FrameRenderer
