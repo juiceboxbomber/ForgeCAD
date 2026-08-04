@@ -61,4 +61,14 @@ def test_project_accepts_default_material():
 def test_project_name_cannot_be_empty(name):
     with pytest.raises(ValueError):
         Project(name)
-        
+
+def test_project_converts_string_values_to_enums():
+    project = Project(
+        name="Qt Project",
+        application="general",
+        display_units="mm",
+    )
+
+    assert project.application is ApplicationType.GENERAL
+    assert project.display_units is DisplayUnits.MILLIMETERS
+            

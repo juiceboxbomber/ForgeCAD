@@ -45,6 +45,9 @@ class Project:
         if not self.name:
             raise ValueError("Project name cannot be empty.")
 
+        self.application = ApplicationType(self.application)
+        self.display_units = DisplayUnits(self.display_units)
+
     @property
     def active_profile_name(self) -> str | None:
         """Return the active tube-profile name, if one exists."""
