@@ -37,7 +37,7 @@ member = Member(
 
 renderer = FrameRenderer()
 
-renderer.render_member(
+renderer.render_tube(
     doc,
     member,
 )
