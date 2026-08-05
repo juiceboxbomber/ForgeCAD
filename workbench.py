@@ -12,21 +12,30 @@ class ForgeCADWorkbench(FreeCADGui.Workbench):
 
     def Initialize(self):
         from forgecad.adapters.freecad.commands.create_demo_frame import (
-            COMMAND_NAME,
-            register_command,
+            COMMAND_NAME as DEMO_COMMAND,
+            register_command as register_demo_command,
         )
-
-        register_command()
-
-        self.appendToolbar(
-            "ForgeCAD",
-            [COMMAND_NAME],
+        from forgecad.adapters.freecad.commands.new_project import (
+            COMMAND_NAME as NEW_PROJECT_COMMAND,
+            register_command as register_new_project_command,
         )
-
-        self.appendMenu(
-            "ForgeCAD",
-            [COMMAND_NAME],
+        from forgecad.adapters.freecad.commands.generate_frame import (
+            COMMAND_NAME as GENERATE_FRAME_COMMAND,
+            register_command as register_generate_frame_command,
         )
+        
+        register_new_project_command()
+        register_demo_command()
+        register_generate_frame_command()
+
+        commands = [
+            NEW_PROJECT_COMMAND,
+            DEMO_COMMAND,
+            GENERATE_FRAME_COMMAND,
+      ]
+
+        self.appendToolbar("ForgeCAD", commands)
+        self.appendMenu("ForgeCAD", commands)
 
     def Activated(self):
         pass
@@ -36,4 +45,5 @@ class ForgeCADWorkbench(FreeCADGui.Workbench):
 
     def GetClassName(self):
         return "Gui::PythonWorkbench"
+
     
