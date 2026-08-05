@@ -31,19 +31,25 @@ class ForgeCADWorkbench(FreeCADGui.Workbench):
             COMMAND_NAME as GENERATE_FROM_SELECTION_COMMAND,
             register_command as register_generate_from_selection_command,
         )
+        from forgecad.adapters.freecad.commands.define_layout_lines import (
+           COMMAND_NAME as DEFINE_LAYOUT_LINES_COMMAND,
+           register_command as register_define_layout_lines_command,
+        )
 
         register_new_project_command()
         register_demo_command()
         register_generate_frame_command()
         register_draw_layout_line_command()
+        register_define_layout_lines_command()
         register_generate_from_selection_command()
-
+        
         commands = [
             NEW_PROJECT_COMMAND,
             DEMO_COMMAND,
             GENERATE_FRAME_COMMAND,
             DRAW_LAYOUT_LINE_COMMAND,
             GENERATE_FROM_SELECTION_COMMAND,
+            DEFINE_LAYOUT_LINES_COMMAND,
         ]
 
         self.appendToolbar("ForgeCAD", commands)
