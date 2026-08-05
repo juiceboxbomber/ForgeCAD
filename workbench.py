@@ -27,18 +27,24 @@ class ForgeCADWorkbench(FreeCADGui.Workbench):
             COMMAND_NAME as DRAW_LAYOUT_LINE_COMMAND,
             register_command as register_draw_layout_line_command,
         )
-        
+        from forgecad.adapters.freecad.commands.generate_from_selection import (
+            COMMAND_NAME as GENERATE_FROM_SELECTION_COMMAND,
+            register_command as register_generate_from_selection_command,
+        )
+
         register_new_project_command()
         register_demo_command()
         register_generate_frame_command()
         register_draw_layout_line_command()
+        register_generate_from_selection_command()
 
         commands = [
             NEW_PROJECT_COMMAND,
             DEMO_COMMAND,
             GENERATE_FRAME_COMMAND,
             DRAW_LAYOUT_LINE_COMMAND,
-      ]
+            GENERATE_FROM_SELECTION_COMMAND,
+        ]
 
         self.appendToolbar("ForgeCAD", commands)
         self.appendMenu("ForgeCAD", commands)
@@ -51,5 +57,3 @@ class ForgeCADWorkbench(FreeCADGui.Workbench):
 
     def GetClassName(self):
         return "Gui::PythonWorkbench"
-
-    

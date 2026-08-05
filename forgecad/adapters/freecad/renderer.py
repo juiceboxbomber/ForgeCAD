@@ -84,6 +84,7 @@ class FrameRenderer:
         document.recompute()
 
         return obj
+    
     def render_frame(self, document, frame: Frame):
         """Render every member in a frame as a hollow tube."""
 
