@@ -19,13 +19,20 @@ class ForgeCADWorkbench(FreeCADGui.Workbench):
             COMMAND_NAME as NEW_PROJECT_COMMAND,
             register_command as register_new_project_command,
         )
+        from forgecad.adapters.freecad.commands.generate_frame import (
+            COMMAND_NAME as GENERATE_FRAME_COMMAND,
+            register_command as register_generate_frame_command,
+        )
+        
         register_new_project_command()
         register_demo_command()
+        register_generate_frame_command()
 
         commands = [
             NEW_PROJECT_COMMAND,
             DEMO_COMMAND,
-        ]
+            GENERATE_FRAME_COMMAND,
+      ]
 
         self.appendToolbar("ForgeCAD", commands)
         self.appendMenu("ForgeCAD", commands)
