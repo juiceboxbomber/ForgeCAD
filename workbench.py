@@ -23,15 +23,21 @@ class ForgeCADWorkbench(FreeCADGui.Workbench):
             COMMAND_NAME as GENERATE_FRAME_COMMAND,
             register_command as register_generate_frame_command,
         )
+        from forgecad.adapters.freecad.commands.draw_layout_line import (
+            COMMAND_NAME as DRAW_LAYOUT_LINE_COMMAND,
+            register_command as register_draw_layout_line_command,
+        )
         
         register_new_project_command()
         register_demo_command()
         register_generate_frame_command()
+        register_draw_layout_line_command()
 
         commands = [
             NEW_PROJECT_COMMAND,
             DEMO_COMMAND,
             GENERATE_FRAME_COMMAND,
+            DRAW_LAYOUT_LINE_COMMAND,
       ]
 
         self.appendToolbar("ForgeCAD", commands)
