@@ -20,6 +20,10 @@ COMMAND_NAME = "ForgeCAD_DrawLayoutLineInteractive"
 
 SNAP_DISTANCE_PIXELS = 15
 
+# Angle inference settings.
+ANGLE_INCREMENT_DEGREES = 15.0
+ANGLE_SNAP_TOLERANCE_DEGREES = 3.0
+
 _active_tool = None
 
 
@@ -30,6 +34,7 @@ class InteractiveLayoutLineTool:
         self.view = None
         self.mouse_callback = None
         self.move_callback = None
+        self.keyboard_callback = None
 
         self.start_point = None
 
@@ -37,10 +42,13 @@ class InteractiveLayoutLineTool:
         self.start_marker = None
         self.snap_marker = None
 
+        self.status_bar = None
+
     def start(self):
-        """Begin listening for viewport mouse events."""
+        """Begin listening for viewport mouse and keyboard events."""
 
         self.view = FreeCADGui.activeDocument().activeView()
+        self.status_bar = FreeCADGui.getMainWindow().statusBar()
 
         self.mouse_callback = self.view.addEventCallback(
             "SoMouseButtonEvent",
@@ -50,6 +58,15 @@ class InteractiveLayoutLineTool:
         self.move_callback = self.view.addEventCallback(
             "SoLocation2Event",
             self.on_mouse_move,
+        )
+
+        self.keyboard_callback = self.view.addEventCallback(
+            "SoKeyboardEvent",
+            self.on_keyboard_event,
+        )
+
+        self.show_status(
+            "ForgeCAD: Click first point. Press Esc to finish."
         )
 
     def stop(self):
@@ -68,12 +85,31 @@ class InteractiveLayoutLineTool:
                     self.move_callback,
                 )
 
+            if self.keyboard_callback is not None:
+                self.view.removeEventCallback(
+                    "SoKeyboardEvent",
+                    self.keyboard_callback,
+                )
+
         self.mouse_callback = None
         self.move_callback = None
+        self.keyboard_callback = None
+
+        self.start_point = None
 
         self.remove_preview()
 
+        if self.status_bar is not None:
+            self.status_bar.clearMessage()
+
+        self.status_bar = None
         self.view = None
+
+    def show_status(self, message):
+        """Show drawing information in the FreeCAD status bar."""
+
+        if self.status_bar is not None:
+            self.status_bar.showMessage(message)
 
     def remove_object(self, obj):
         """Safely remove a temporary FreeCAD object."""
@@ -178,7 +214,7 @@ class InteractiveLayoutLineTool:
         return float(screen[0]), float(screen[1])
 
     def find_snap_point(self, position):
-        """Find the nearest layout endpoint within snap tolerance."""
+        """Find nearest existing layout endpoint within snap tolerance."""
 
         if position is None:
             return None
@@ -206,15 +242,90 @@ class InteractiveLayoutLineTool:
 
         return nearest_point
 
+    def infer_angle(self, point):
+        """
+        Apply angle inference from the current start point.
+
+        This first version works in the XY drawing plane and snaps to
+        multiples of 15 degrees when within the angular tolerance.
+        """
+
+        if self.start_point is None:
+            return point, None
+
+        dx = point.x - self.start_point.x
+        dy = point.y - self.start_point.y
+
+        length_xy = math.hypot(dx, dy)
+
+        if length_xy <= 0.000001:
+            return point, None
+
+        angle = math.degrees(
+            math.atan2(dy, dx)
+        )
+
+        normalized_angle = angle % 360.0
+
+        snapped_angle = round(
+            normalized_angle / ANGLE_INCREMENT_DEGREES
+        ) * ANGLE_INCREMENT_DEGREES
+
+        snapped_angle %= 360.0
+
+        difference = abs(
+            (
+                normalized_angle
+                - snapped_angle
+                + 180.0
+            )
+            % 360.0
+            - 180.0
+        )
+
+        if difference > ANGLE_SNAP_TOLERANCE_DEGREES:
+            return point, None
+
+        radians = math.radians(snapped_angle)
+
+        snapped_point = Point3D(
+            self.start_point.x
+            + length_xy * math.cos(radians),
+            self.start_point.y
+            + length_xy * math.sin(radians),
+            point.z,
+        )
+
+        return snapped_point, snapped_angle
+
     def resolved_point(self, position):
-        """Return snapped endpoint or free-space cursor point."""
+        """
+        Resolve the cursor using snap priority.
+
+        Existing endpoint snapping has priority over angle inference.
+        """
 
         snap_point = self.find_snap_point(position)
 
         if snap_point is not None:
-            return snap_point, True
+            return snap_point, "ENDPOINT", None
 
-        return self.screen_to_point(position), False
+        free_point = self.screen_to_point(position)
+
+        if free_point is None:
+            return None, None, None
+
+        if self.start_point is None:
+            return free_point, None, None
+
+        inferred_point, snapped_angle = self.infer_angle(
+            free_point
+        )
+
+        if snapped_angle is not None:
+            return inferred_point, "ANGLE", snapped_angle
+
+        return free_point, None, None
 
     def create_start_marker(self, point):
         """Show the selected first point."""
@@ -317,24 +428,107 @@ class InteractiveLayoutLineTool:
 
         document.recompute()
 
+    def line_measurements(self, start, end):
+        """Return 3D length and XY-plane angle."""
+
+        dx = end.x - start.x
+        dy = end.y - start.y
+        dz = end.z - start.z
+
+        length = math.sqrt(
+            dx * dx
+            + dy * dy
+            + dz * dz
+        )
+
+        angle = math.degrees(
+            math.atan2(dy, dx)
+        )
+
+        angle %= 360.0
+
+        return length, angle
+
+    def inference_name(self, snap_type, snapped_angle):
+        """Return readable text describing the active inference."""
+
+        if snap_type == "ENDPOINT":
+            return "ENDPOINT"
+
+        if snap_type != "ANGLE":
+            return ""
+
+        if snapped_angle is None:
+            return ""
+
+        angle = snapped_angle % 360.0
+
+        if angle in (0.0, 180.0):
+            return "HORIZONTAL"
+
+        if angle in (90.0, 270.0):
+            return "VERTICAL"
+
+        return f"ANGLE SNAP {angle:.0f} deg"
+
+    def update_measurement_display(
+        self,
+        point,
+        snap_type,
+        snapped_angle,
+    ):
+        """Display live length, angle, and inference information."""
+
+        if self.start_point is None:
+            self.show_status(
+                "ForgeCAD: Click first point. Press Esc to finish."
+            )
+            return
+
+        length, angle = self.line_measurements(
+            self.start_point,
+            point,
+        )
+
+        inference = self.inference_name(
+            snap_type,
+            snapped_angle,
+        )
+
+        message = (
+            f"ForgeCAD | "
+            f"Length: {length:.2f} mm | "
+            f"Angle: {angle:.2f} deg"
+        )
+
+        if inference:
+            message += f" | {inference}"
+
+        message += " | Esc: Finish"
+
+        self.show_status(message)
+
     def on_mouse_move(self, event):
-        """Update snapping and preview while the cursor moves."""
+        """Update snapping, inference, preview, and measurements."""
 
         position = event.get("Position")
 
         if position is None:
             return
 
-        snap_point = self.find_snap_point(position)
-
-        self.update_snap_marker(snap_point)
-
-        if self.start_point is None:
-            return
-
-        point, _ = self.resolved_point(position)
+        point, snap_type, snapped_angle = self.resolved_point(
+            position
+        )
 
         if point is None:
+            return
+
+        if snap_type == "ENDPOINT":
+            self.update_snap_marker(point)
+        else:
+            self.update_snap_marker(None)
+
+        if self.start_point is None:
             return
 
         self.update_preview_line(
@@ -342,18 +536,40 @@ class InteractiveLayoutLineTool:
             point,
         )
 
-    def on_mouse_event(self, event):
-        """Handle viewport mouse-button events."""
+        self.update_measurement_display(
+            point,
+            snap_type,
+            snapped_angle,
+        )
 
-        if event.get("Button") != "BUTTON1":
-            return
+    def on_keyboard_event(self, event):
+        """Finish interactive drawing when Escape is pressed."""
 
         if event.get("State") != "DOWN":
             return
 
+        key = event.get("Key")
+
+        if key not in ("ESCAPE", "ESC"):
+            return
+
+        self.stop()
+
+    def on_mouse_event(self, event):
+        """Handle viewport mouse-button events."""
+
+        button = event.get("Button")
+        state = event.get("State")
+
+        if state != "DOWN":
+            return
+
+        if button != "BUTTON1":
+            return
+
         position = event.get("Position")
 
-        point, _ = self.resolved_point(position)
+        point, _, _ = self.resolved_point(position)
 
         if point is None:
             return
@@ -362,6 +578,11 @@ class InteractiveLayoutLineTool:
             self.start_point = point
 
             self.create_start_marker(point)
+
+            self.show_status(
+                "ForgeCAD: Move cursor for length/angle. "
+                "Click next point. Esc: Finish."
+            )
 
             return
 
@@ -390,22 +611,38 @@ class InteractiveLayoutLineTool:
 
         document.recompute()
 
-        self.start_point = None
+        # Continuous drawing:
+        # the endpoint becomes the start of the next line.
+        self.start_point = point
 
-        self.stop()
+        self.remove_object(self.start_marker)
+        self.start_marker = None
 
-        FreeCADGui.activeDocument().activeView().fitAll()
+        self.create_start_marker(
+            self.start_point
+        )
+
+        self.remove_object(self.preview_line)
+        self.preview_line = None
+
+        self.update_snap_marker(None)
+
+        self.show_status(
+            "ForgeCAD: Continue drawing. Esc: Finish."
+        )
+
+        document.recompute()
 
 
 class DrawLayoutLineInteractiveCommand:
-    """Start interactive two-click layout-line creation."""
+    """Start interactive continuous layout-line creation."""
 
     def GetResources(self):
         return {
             "MenuText": "Draw Layout Line Interactively",
             "ToolTip": (
-                "Create a ForgeCAD layout line by clicking "
-                "two points in the viewport with endpoint snapping"
+                "Draw continuous ForgeCAD layout lines with "
+                "endpoint and angle snapping"
             ),
         }
 
@@ -415,7 +652,9 @@ class DrawLayoutLineInteractiveCommand:
         document = FreeCAD.ActiveDocument
 
         if document is None:
-            document = FreeCAD.newDocument("ForgeCAD_Layout")
+            document = FreeCAD.newDocument(
+                "ForgeCAD_Layout"
+            )
 
         if _active_tool is not None:
             _active_tool.stop()
