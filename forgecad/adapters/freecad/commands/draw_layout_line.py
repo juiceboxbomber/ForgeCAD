@@ -7,6 +7,9 @@ from PySide import QtGui
 
 from forgecad import LayoutLine
 from forgecad.geometry import Point3D
+from forgecad.adapters.freecad.document_tree import (
+    initialize_project_tree,
+)
 
 
 COMMAND_NAME = "ForgeCAD_DrawLayoutLine"
@@ -157,10 +160,14 @@ class DrawLayoutLineCommand:
         if document is None:
             document = FreeCAD.newDocument("ForgeCAD_Layout")
 
-        create_layout_line_object(
+        groups = initialize_project_tree(document)
+
+        layout_object = create_layout_line_object(
             document,
             layout_line,
-        )
+)
+
+        groups["Layout"].addObject(layout_object)
 
         FreeCADGui.activeDocument().activeView().fitAll()
 

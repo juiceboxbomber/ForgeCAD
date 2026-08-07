@@ -5,6 +5,9 @@ import FreeCADGui
 from PySide import QtGui
 
 from forgecad.adapters.freecad import FrameRenderer
+from forgecad.adapters.freecad.document_tree import (
+    initialize_project_tree,
+)
 from forgecad.services import (
     build_frame_from_layout,
     create_project,
@@ -53,13 +56,19 @@ class GenerateFromSelectionCommand:
         if document is None:
             document = FreeCAD.newDocument(
                 "ForgeCAD_Generated_Frame"
-            )
+    )
+
+        groups = initialize_project_tree(document)
 
         renderer = FrameRenderer()
-        renderer.render_frame(
+
+        rendered_objects = renderer.render_frame(
             document,
             frame,
-        )
+)
+
+        for obj in rendered_objects:
+            groups["Frame"].addObject(obj)
 
         document.recompute()
 

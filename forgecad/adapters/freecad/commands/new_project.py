@@ -39,7 +39,7 @@ class NewProjectCommand:
         document = FreeCAD.newDocument(document_name)
 
         root = document.addObject(
-            "App::FeaturePython",
+            "App::DocumentObjectGroupPython",
             "ForgeCADProject",
         )
         root.Label = project.name
