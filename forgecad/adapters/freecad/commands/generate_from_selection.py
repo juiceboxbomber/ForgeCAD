@@ -1,4 +1,4 @@
-"""Generate a tube frame from selected ForgeCAD layout lines."""
+"""Generate or regenerate a tube frame from ForgeCAD layout lines."""
 
 import FreeCAD
 import FreeCADGui
@@ -7,6 +7,7 @@ from PySide import QtGui
 from forgecad import ApplicationType, DisplayUnits
 from forgecad.adapters.freecad import FrameRenderer
 from forgecad.adapters.freecad.document_tree import (
+    clear_group,
     initialize_project_tree,
 )
 from forgecad.services import (
@@ -26,27 +27,26 @@ def project_from_document(document):
     Build a ForgeCAD domain project from the active FreeCAD document.
 
     If the document was created by drawing layout geometry directly and
-    has not yet been configured through New ForgeCAD Project, use the
-    standard ForgeCAD defaults and store those defaults on the document.
+    has not been configured through New ForgeCAD Project, ForgeCAD's
+    standard defaults are stored on the document and used.
     """
 
-    project_object = document.getObject("ForgeCADProject")
+    project_object = document.getObject(
+        "ForgeCADProject"
+    )
 
-    # Build a default domain project first. This gives us ForgeCAD's
-    # canonical default application, units, material, and tube profile.
     default_project = create_project(
         name="ForgeCAD Project",
     )
 
     if project_object is None:
-        # The document has no project object at all.
-        groups = initialize_project_tree(document)
-        project_object = groups.get("Project")
+        initialize_project_tree(
+            document
+        )
 
-        if project_object is None:
-            project_object = document.getObject(
-                "ForgeCADProject"
-            )
+        project_object = document.getObject(
+            "ForgeCADProject"
+        )
 
     if project_object is None:
         raise ValueError(
@@ -147,7 +147,7 @@ def project_from_document(document):
         )
 
     # ---------------------------------------------------------
-    # Default material metadata
+    # Default material
     # ---------------------------------------------------------
 
     default_material = (
@@ -172,8 +172,6 @@ def project_from_document(document):
 
     document.recompute()
 
-    # Now create the actual domain project using the settings
-    # stored on the FreeCAD project object.
     return create_project(
         name=project_object.Label,
         application=ApplicationType(
@@ -186,15 +184,55 @@ def project_from_document(document):
     )
 
 
+def selected_or_project_layout_lines(
+    document,
+):
+    """
+    Return the layout objects to use for frame generation.
+
+    Only objects that actually belong to the ForgeCAD Layout group
+    are treated as selected layout geometry.
+
+    If no layout objects are selected, the complete project Layout
+    group is returned.
+    """
+
+    groups = initialize_project_tree(
+        document
+    )
+
+    layout_group = groups["Layout"]
+
+    layout_objects = list(
+        layout_group.Group
+    )
+
+    selected_objects = list(
+        FreeCADGui.Selection.getSelection()
+    )
+
+    selected_layout_objects = [
+        obj
+        for obj in selected_objects
+        if obj in layout_objects
+    ]
+
+    if selected_layout_objects:
+        return selected_layout_objects
+
+    return layout_objects
+
+
 class GenerateFromSelectionCommand:
-    """Generate hollow tube members from selected layout lines."""
+    """Generate or regenerate the project's tube frame."""
 
     def GetResources(self):
         return {
-            "MenuText": "Generate Frame from Selection",
+            "MenuText": "Generate / Regenerate Frame",
             "ToolTip": (
-                "Convert selected ForgeCAD layout lines "
-                "into hollow tube members using the active project"
+                "Generate the ForgeCAD frame from selected "
+                "layout lines, or regenerate from the full "
+                "project layout when no layout lines are selected"
             ),
         }
 
@@ -209,21 +247,23 @@ class GenerateFromSelectionCommand:
             )
             return
 
-        selected_objects = (
-            FreeCADGui.Selection.getSelection()
+        layout_objects = (
+            selected_or_project_layout_lines(
+                document
+            )
         )
 
         layout = layout_from_selected_objects(
-            selected_objects
+            layout_objects
         )
 
         if layout.line_count == 0:
             QtGui.QMessageBox.warning(
                 FreeCADGui.getMainWindow(),
-                "No Layout Lines Selected",
+                "No Layout Lines",
                 (
-                    "Select one or more ForgeCAD "
-                    "layout lines first."
+                    "Draw or define one or more ForgeCAD "
+                    "layout lines before generating the frame."
                 ),
             )
             return
@@ -251,6 +291,16 @@ class GenerateFromSelectionCommand:
         groups = initialize_project_tree(
             document
         )
+
+        # Remove the previously generated frame before rebuilding.
+        clear_group(
+            document,
+            groups["Frame"],
+        )
+
+        # Clear any stale selection that may refer to an object
+        # removed during regeneration.
+        FreeCADGui.Selection.clearSelection()
 
         renderer = FrameRenderer()
 
