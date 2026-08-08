@@ -1,5 +1,7 @@
 """FreeCAD command for creating a ForgeCAD layout line."""
 
+import uuid
+
 import FreeCAD
 import FreeCADGui
 import Part
@@ -44,6 +46,7 @@ class LayoutLineDialog(QtGui.QDialog):
             QtGui.QDialogButtonBox.Ok
             | QtGui.QDialogButtonBox.Cancel
         )
+
         buttons.accepted.connect(self.accept)
         buttons.rejected.connect(self.reject)
 
@@ -78,7 +81,36 @@ class LayoutLineDialog(QtGui.QDialog):
         )
 
 
-def create_layout_line_object(document, layout_line: LayoutLine):
+def ensure_layout_id(obj):
+    """Return the stable ForgeCAD identity for a layout object."""
+
+    if not hasattr(obj, "LayoutID"):
+        obj.addProperty(
+            "App::PropertyString",
+            "LayoutID",
+            "ForgeCAD Layout",
+        )
+
+    if not obj.LayoutID:
+        obj.LayoutID = str(
+            uuid.uuid4()
+        )
+
+    try:
+        obj.setEditorMode(
+            "LayoutID",
+            1,
+        )
+    except Exception:
+        pass
+
+    return obj.LayoutID
+
+
+def create_layout_line_object(
+    document,
+    layout_line: LayoutLine,
+):
     """Create a visible FreeCAD object representing a layout line."""
 
     start = FreeCAD.Vector(
@@ -97,8 +129,13 @@ def create_layout_line_object(document, layout_line: LayoutLine):
         "Part::Feature",
         "ForgeCADLayoutLine",
     )
+
     obj.Label = "Layout Line"
-    obj.Shape = Part.makeLine(start, end)
+
+    obj.Shape = Part.makeLine(
+        start,
+        end,
+    )
 
     obj.addProperty(
         "App::PropertyVector",
@@ -121,7 +158,10 @@ def create_layout_line_object(document, layout_line: LayoutLine):
     )
     obj.LayoutLength = layout_line.length
 
+    ensure_layout_id(obj)
+
     document.recompute()
+
     return obj
 
 
@@ -131,7 +171,10 @@ class DrawLayoutLineCommand:
     def GetResources(self):
         return {
             "MenuText": "Draw Layout Line",
-            "ToolTip": "Create a ForgeCAD centerline between two points",
+            "ToolTip": (
+                "Create a ForgeCAD centerline "
+                "between two exact points"
+            ),
         }
 
     def Activated(self):
@@ -158,16 +201,22 @@ class DrawLayoutLineCommand:
         document = FreeCAD.ActiveDocument
 
         if document is None:
-            document = FreeCAD.newDocument("ForgeCAD_Layout")
+            document = FreeCAD.newDocument(
+                "ForgeCAD_Layout"
+            )
 
-        groups = initialize_project_tree(document)
+        groups = initialize_project_tree(
+            document
+        )
 
         layout_object = create_layout_line_object(
             document,
             layout_line,
-)
+        )
 
-        groups["Layout"].addObject(layout_object)
+        groups["Layout"].addObject(
+            layout_object
+        )
 
         FreeCADGui.activeDocument().activeView().fitAll()
 

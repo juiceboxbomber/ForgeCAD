@@ -6,6 +6,9 @@ from PySide import QtGui
 
 from forgecad import ApplicationType, DisplayUnits
 from forgecad.adapters.freecad import FrameRenderer
+from forgecad.adapters.freecad.commands.draw_layout_line import (
+    ensure_layout_id,
+)
 from forgecad.adapters.freecad.document_tree import (
     clear_group,
     initialize_project_tree,
@@ -23,13 +26,7 @@ COMMAND_NAME = "ForgeCAD_GenerateFromSelection"
 
 
 def project_from_document(document):
-    """
-    Build a ForgeCAD domain project from the active FreeCAD document.
-
-    If the document was created by drawing layout geometry directly and
-    has not been configured through New ForgeCAD Project, ForgeCAD's
-    standard defaults are stored on the document and used.
-    """
+    """Build a ForgeCAD domain project from the FreeCAD document."""
 
     project_object = document.getObject(
         "ForgeCADProject"
@@ -52,10 +49,6 @@ def project_from_document(document):
         raise ValueError(
             "ForgeCAD could not initialize the project."
         )
-
-    # ---------------------------------------------------------
-    # Application
-    # ---------------------------------------------------------
 
     application_value = getattr(
         project_object,
@@ -82,10 +75,6 @@ def project_from_document(document):
             application_value
         )
 
-    # ---------------------------------------------------------
-    # Display units
-    # ---------------------------------------------------------
-
     display_units_value = getattr(
         project_object,
         "DisplayUnits",
@@ -110,10 +99,6 @@ def project_from_document(document):
         project_object.DisplayUnits = (
             display_units_value
         )
-
-    # ---------------------------------------------------------
-    # Active tube profile
-    # ---------------------------------------------------------
 
     active_profile_name = getattr(
         project_object,
@@ -145,10 +130,6 @@ def project_from_document(document):
         project_object.ActiveTubeProfile = (
             active_profile_name
         )
-
-    # ---------------------------------------------------------
-    # Default material
-    # ---------------------------------------------------------
 
     default_material = (
         default_project.default_material
@@ -187,15 +168,7 @@ def project_from_document(document):
 def selected_or_project_layout_lines(
     document,
 ):
-    """
-    Return the layout objects to use for frame generation.
-
-    Only objects that actually belong to the ForgeCAD Layout group
-    are treated as selected layout geometry.
-
-    If no layout objects are selected, the complete project Layout
-    group is returned.
-    """
+    """Return selected layout objects, or the full Layout group."""
 
     groups = initialize_project_tree(
         document
@@ -223,6 +196,21 @@ def selected_or_project_layout_lines(
     return layout_objects
 
 
+def layout_ids_for_objects(
+    objects,
+):
+    """Return stable IDs for layout objects, creating missing IDs."""
+
+    layout_ids = []
+
+    for obj in objects:
+        layout_ids.append(
+            ensure_layout_id(obj)
+        )
+
+    return layout_ids
+
+
 class GenerateFromSelectionCommand:
     """Generate or regenerate the project's tube frame."""
 
@@ -230,9 +218,8 @@ class GenerateFromSelectionCommand:
         return {
             "MenuText": "Generate / Regenerate Frame",
             "ToolTip": (
-                "Generate the ForgeCAD frame from selected "
-                "layout lines, or regenerate from the full "
-                "project layout when no layout lines are selected"
+                "Generate the frame from selected layout "
+                "lines or the complete project layout"
             ),
         }
 
@@ -268,6 +255,12 @@ class GenerateFromSelectionCommand:
             )
             return
 
+        source_layout_ids = (
+            layout_ids_for_objects(
+                layout_objects
+            )
+        )
+
         try:
             project = project_from_document(
                 document
@@ -292,14 +285,11 @@ class GenerateFromSelectionCommand:
             document
         )
 
-        # Remove the previously generated frame before rebuilding.
         clear_group(
             document,
             groups["Frame"],
         )
 
-        # Clear any stale selection that may refer to an object
-        # removed during regeneration.
         FreeCADGui.Selection.clearSelection()
 
         renderer = FrameRenderer()
@@ -308,6 +298,7 @@ class GenerateFromSelectionCommand:
             renderer.render_frame(
                 document,
                 frame,
+                source_layout_ids=source_layout_ids,
             )
         )
 

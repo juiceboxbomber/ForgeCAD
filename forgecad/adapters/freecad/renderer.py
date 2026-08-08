@@ -51,6 +51,7 @@ class FrameRenderer:
         document,
         member: Member,
         member_id: str = "",
+        source_layout_id: str = "",
     ):
         """Render an editable hollow ForgeCAD tube."""
 
@@ -85,11 +86,27 @@ class FrameRenderer:
             member_id,
         )
 
-        # Important for simple FeaturePython shape objects.
+        obj.addProperty(
+            "App::PropertyString",
+            "SourceLayoutID",
+            "ForgeCAD",
+        )
+
+        obj.SourceLayoutID = (
+            source_layout_id
+        )
+
+        try:
+            obj.setEditorMode(
+                "SourceLayoutID",
+                1,
+            )
+        except Exception:
+            pass
+
         obj.ViewObject.Proxy = 0
 
         obj.Shape = shape
-
         obj.ViewObject.Visibility = True
 
         document.recompute()
@@ -100,21 +117,41 @@ class FrameRenderer:
         self,
         document,
         frame: Frame,
+        source_layout_ids=None,
     ):
         """Render every member in a frame."""
 
         rendered_objects = []
 
+        if source_layout_ids is None:
+            source_layout_ids = [
+                ""
+                for _ in frame.members
+            ]
+
+        if len(source_layout_ids) != len(frame.members):
+            raise ValueError(
+                "Layout identity count does not match "
+                "the number of frame members."
+            )
+
         for index, member in enumerate(
             frame.members,
             start=1,
         ):
-            member_id = f"M{index:03d}"
+            member_id = (
+                f"M{index:03d}"
+            )
+
+            source_layout_id = (
+                source_layout_ids[index - 1]
+            )
 
             obj = self.render_tube(
                 document,
                 member,
                 member_id=member_id,
+                source_layout_id=source_layout_id,
             )
 
             obj.Label = (
