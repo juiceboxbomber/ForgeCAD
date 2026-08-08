@@ -4,12 +4,20 @@ import Part
 import FreeCAD
 
 from forgecad.fabrication import Frame, Member
+from forgecad.adapters.freecad.member_object import (
+    TubeMemberProxy,
+    build_tube_shape,
+)
 
 
 class FrameRenderer:
     """Renders ForgeCAD objects into a FreeCAD document."""
 
-    def render_member(self, document, member: Member):
+    def render_member(
+        self,
+        document,
+        member: Member,
+    ):
         """Render a member centerline."""
 
         start = FreeCAD.Vector(
@@ -24,26 +32,27 @@ class FrameRenderer:
             member.end.z,
         )
 
-        edge = Part.makeLine(start, end)
-
         obj = document.addObject(
             "Part::Feature",
             "Member",
         )
 
-        obj.Shape = edge
+        obj.Shape = Part.makeLine(
+            start,
+            end,
+        )
 
         document.recompute()
 
         return obj
 
-    def _add_member_properties(
+    def render_tube(
         self,
-        obj,
+        document,
         member: Member,
-        member_id: str,
+        member_id: str = "",
     ):
-        """Attach ForgeCAD fabrication properties to a rendered member."""
+        """Render an editable hollow ForgeCAD tube."""
 
         start = FreeCAD.Vector(
             member.start.x,
@@ -57,138 +66,31 @@ class FrameRenderer:
             member.end.z,
         )
 
-        obj.addProperty(
-            "App::PropertyString",
-            "MemberID",
-            "ForgeCAD",
-        )
-        obj.MemberID = member_id
-
-        obj.addProperty(
-            "App::PropertyVector",
-            "StartPoint",
-            "ForgeCAD Geometry",
-        )
-        obj.StartPoint = start
-
-        obj.addProperty(
-            "App::PropertyVector",
-            "EndPoint",
-            "ForgeCAD Geometry",
-        )
-        obj.EndPoint = end
-
-        obj.addProperty(
-            "App::PropertyLength",
-            "MemberLength",
-            "ForgeCAD Geometry",
-        )
-        obj.MemberLength = member.length
-
-        obj.addProperty(
-            "App::PropertyString",
-            "TubeProfile",
-            "ForgeCAD Tube",
-        )
-        obj.TubeProfile = (
-            f"{member.profile.outside_diameter:.3f} x "
-            f"{member.profile.wall_thickness:.3f} mm"
-        )
-
-        obj.addProperty(
-            "App::PropertyLength",
-            "OutsideDiameter",
-            "ForgeCAD Tube",
-        )
-        obj.OutsideDiameter = member.profile.outside_diameter
-
-        obj.addProperty(
-            "App::PropertyLength",
-            "WallThickness",
-            "ForgeCAD Tube",
-        )
-        obj.WallThickness = member.profile.wall_thickness
-
-        obj.addProperty(
-            "App::PropertyLength",
-            "InsideDiameter",
-            "ForgeCAD Tube",
-        )
-        obj.InsideDiameter = member.profile.inside_diameter
-
-        obj.addProperty(
-            "App::PropertyString",
-            "Material",
-            "ForgeCAD Material",
-        )
-        obj.Material = member.material.name
-
-    def render_tube(
-        self,
-        document,
-        member: Member,
-        member_id: str = "",
-    ):
-        """Render a member as a hollow round tube."""
-
-        length = member.length
-
-        if length <= 0:
-            raise ValueError(
-                "Cannot render a zero-length member."
-            )
-
-        start = FreeCAD.Vector(
-            member.start.x,
-            member.start.y,
-            member.start.z,
-        )
-
-        direction = FreeCAD.Vector(
-            member.end.x - member.start.x,
-            member.end.y - member.start.y,
-            member.end.z - member.start.z,
-        )
-
-        outer_radius = (
-            member.profile.outside_diameter / 2.0
-        )
-
-        inner_radius = (
-            member.profile.inside_diameter / 2.0
-        )
-
-        outer_cylinder = Part.makeCylinder(
-            outer_radius,
-            length,
+        shape, _ = build_tube_shape(
             start,
-            direction,
-        )
-
-        inner_cylinder = Part.makeCylinder(
-            inner_radius,
-            length,
-            start,
-            direction,
-        )
-
-        tube_shape = outer_cylinder.cut(
-            inner_cylinder
+            end,
+            member.profile,
         )
 
         obj = document.addObject(
-            "Part::Feature",
+            "Part::FeaturePython",
             "TubeMember",
         )
 
         obj.Label = "Tube Member"
-        obj.Shape = tube_shape
 
-        self._add_member_properties(
+        TubeMemberProxy(
             obj,
             member,
             member_id,
         )
+
+        # Important for simple FeaturePython shape objects.
+        obj.ViewObject.Proxy = 0
+
+        obj.Shape = shape
+
+        obj.ViewObject.Visibility = True
 
         document.recompute()
 
@@ -199,7 +101,7 @@ class FrameRenderer:
         document,
         frame: Frame,
     ):
-        """Render every frame member as a hollow tube."""
+        """Render every member in a frame."""
 
         rendered_objects = []
 
@@ -219,7 +121,9 @@ class FrameRenderer:
                 f"Frame Member {index:03d}"
             )
 
-            rendered_objects.append(obj)
+            rendered_objects.append(
+                obj
+            )
 
         document.recompute()
 
