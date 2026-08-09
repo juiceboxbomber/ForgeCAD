@@ -1,5 +1,7 @@
 """Fabrication cut-list services for ForgeCAD."""
 
+import csv
+import io
 from dataclasses import dataclass, field
 
 from forgecad.fabrication import Frame, Member
@@ -19,6 +21,16 @@ class CutListItem:
     outside_diameter_mm: float
     wall_thickness_mm: float
     weight_kg: float
+
+
+@dataclass(frozen=True, slots=True)
+class TubeSummaryItem:
+    """Grouped fabrication totals for one tube profile."""
+
+    tube_profile: str
+    piece_count: int
+    total_length_mm: float
+    total_weight_kg: float
 
 
 @dataclass(slots=True)
@@ -88,6 +100,52 @@ class CutList:
             )
 
         return counts
+
+    def summary_by_profile(
+        self,
+    ) -> list[TubeSummaryItem]:
+        """Return grouped fabrication totals by tube profile."""
+
+        grouped = {}
+
+        for item in self.items:
+            profile_name = item.tube_profile
+
+            if profile_name not in grouped:
+                grouped[profile_name] = {
+                    "piece_count": 0,
+                    "total_length_mm": 0.0,
+                    "total_weight_kg": 0.0,
+                }
+
+            grouped[profile_name][
+                "piece_count"
+            ] += 1
+
+            grouped[profile_name][
+                "total_length_mm"
+            ] += item.length_mm
+
+            grouped[profile_name][
+                "total_weight_kg"
+            ] += item.weight_kg
+
+        return [
+            TubeSummaryItem(
+                tube_profile=profile_name,
+                piece_count=values[
+                    "piece_count"
+                ],
+                total_length_mm=values[
+                    "total_length_mm"
+                ],
+                total_weight_kg=values[
+                    "total_weight_kg"
+                ],
+            )
+            for profile_name, values
+            in grouped.items()
+        ]
 
 
 def profile_name_for_member(
@@ -175,3 +233,76 @@ def build_cut_list(
     return CutList(
         items=items
     )
+
+
+def cut_list_to_csv(
+    cut_list: CutList,
+) -> str:
+    """Return a ForgeCAD cut list as CSV text."""
+
+    output = io.StringIO(
+        newline=""
+    )
+
+    writer = csv.writer(
+        output
+    )
+
+    writer.writerow(
+        [
+            "Member",
+            "Tube Profile",
+            "Material",
+            "Length (mm)",
+            "Outside Diameter (mm)",
+            "Wall Thickness (mm)",
+            "Weight (kg)",
+        ]
+    )
+
+    for item in cut_list.items:
+        writer.writerow(
+            [
+                item.member_id,
+                item.tube_profile,
+                item.material,
+                f"{item.length_mm:.3f}",
+                f"{item.outside_diameter_mm:.3f}",
+                f"{item.wall_thickness_mm:.3f}",
+                f"{item.weight_kg:.6f}",
+            ]
+        )
+
+    writer.writerow([])
+
+    writer.writerow(
+        [
+            "Tube Summary",
+            "Pieces",
+            "Total Length (mm)",
+            "Total Weight (kg)",
+        ]
+    )
+
+    for summary in cut_list.summary_by_profile():
+        writer.writerow(
+            [
+                summary.tube_profile,
+                summary.piece_count,
+                f"{summary.total_length_mm:.3f}",
+                f"{summary.total_weight_kg:.6f}",
+            ]
+        )
+
+    writer.writerow([])
+
+    writer.writerow(
+        [
+            "Totals",
+            cut_list.member_count,
+            f"{cut_list.total_length_mm:.3f}",
+            f"{cut_list.total_weight_kg:.6f}",
+        ]
+    )
+
+    return output.getvalue()

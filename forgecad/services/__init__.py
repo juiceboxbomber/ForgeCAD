@@ -13,8 +13,10 @@ from .layout_conversion import (
 from .cut_list import (
     CutList,
     CutListItem,
+    TubeSummaryItem,
     build_cut_list,
     cut_list_item_from_member,
+    cut_list_to_csv,
     member_weight_kg,
     profile_name_for_member,
 )
@@ -29,8 +31,10 @@ __all__ = [
     "layout_from_selected_objects",
     "CutList",
     "CutListItem",
+    "TubeSummaryItem",
     "build_cut_list",
     "cut_list_item_from_member",
+    "cut_list_to_csv",
     "member_weight_kg",
     "profile_name_for_member",
 ]
