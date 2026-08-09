@@ -71,6 +71,11 @@ class ForgeCADWorkbench(FreeCADGui.Workbench):
             register_command as register_select_members_command,
         )
 
+        from forgecad.adapters.freecad.commands.inspect_joint import (
+            COMMAND_NAME as INSPECT_JOINT_COMMAND,
+            register_command as register_inspect_joint_command,
+        )
+
         from forgecad.adapters.freecad.commands.cut_list import (
             COMMAND_NAME as CUT_LIST_COMMAND,
             register_command as register_cut_list_command,
@@ -100,6 +105,8 @@ class ForgeCADWorkbench(FreeCADGui.Workbench):
 
         register_select_members_command()
 
+        register_inspect_joint_command()
+
         register_cut_list_command()
 
         commands = [
@@ -115,6 +122,7 @@ class ForgeCADWorkbench(FreeCADGui.Workbench):
             GENERATE_FROM_SELECTION_COMMAND,
             MEMBER_PROPERTIES_COMMAND,
             SELECT_MEMBERS_COMMAND,
+            INSPECT_JOINT_COMMAND,
             CUT_LIST_COMMAND,
         ]
 
