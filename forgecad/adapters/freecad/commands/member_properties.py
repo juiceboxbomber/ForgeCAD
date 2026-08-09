@@ -75,6 +75,31 @@ def selected_members():
     return selection
 
 
+def build_bulk_member_names(
+    members,
+    prefix,
+    start_number=1,
+):
+    """Return sequential names for the supplied members."""
+
+    cleaned_prefix = (
+        str(prefix).strip()
+    )
+
+    if not cleaned_prefix:
+        return []
+
+    return [
+        (
+            member,
+            f"{cleaned_prefix} "
+            f"{start_number + index}",
+        )
+        for index, member
+        in enumerate(members)
+    ]
+
+
 class MemberPropertiesDialog(QtGui.QDialog):
     """Edit the user-facing properties of one ForgeCAD member."""
 
@@ -313,7 +338,7 @@ class MultiMemberPropertiesDialog(QtGui.QDialog):
         )
 
         self.setMinimumWidth(
-            500
+            520
         )
 
         count_label = (
@@ -323,7 +348,7 @@ class MultiMemberPropertiesDialog(QtGui.QDialog):
         )
 
         # -----------------------------------------------------
-        # Selected member list
+        # Selected members
         # -----------------------------------------------------
 
         self.member_list = (
@@ -356,7 +381,7 @@ class MultiMemberPropertiesDialog(QtGui.QDialog):
         )
 
         # -----------------------------------------------------
-        # Tube profile selector
+        # Tube profile
         # -----------------------------------------------------
 
         self.tube_profile = (
@@ -397,6 +422,57 @@ class MultiMemberPropertiesDialog(QtGui.QDialog):
                     profile_index
                 )
 
+        # -----------------------------------------------------
+        # Bulk naming
+        # -----------------------------------------------------
+
+        self.rename_members = (
+            QtGui.QCheckBox(
+                "Rename selected members"
+            )
+        )
+
+        self.name_prefix = (
+            QtGui.QLineEdit()
+        )
+
+        self.name_prefix.setPlaceholderText(
+            "Example: Crossmember"
+        )
+
+        self.name_prefix.setEnabled(
+            False
+        )
+
+        self.start_number = (
+            QtGui.QSpinBox()
+        )
+
+        self.start_number.setRange(
+            1,
+            9999,
+        )
+
+        self.start_number.setValue(
+            1
+        )
+
+        self.start_number.setEnabled(
+            False
+        )
+
+        self.rename_members.toggled.connect(
+            self.name_prefix.setEnabled
+        )
+
+        self.rename_members.toggled.connect(
+            self.start_number.setEnabled
+        )
+
+        # -----------------------------------------------------
+        # Form
+        # -----------------------------------------------------
+
         form = (
             QtGui.QFormLayout()
         )
@@ -406,15 +482,35 @@ class MultiMemberPropertiesDialog(QtGui.QDialog):
             self.tube_profile,
         )
 
+        form.addRow(
+            "",
+            self.rename_members,
+        )
+
+        form.addRow(
+            "Name Prefix:",
+            self.name_prefix,
+        )
+
+        form.addRow(
+            "Start Number:",
+            self.start_number,
+        )
+
         note = (
             QtGui.QLabel(
-                "Names are not changed during multi-member editing."
+                "Members are named in the order "
+                "they were selected."
             )
         )
 
         note.setWordWrap(
             True
         )
+
+        # -----------------------------------------------------
+        # Buttons
+        # -----------------------------------------------------
 
         buttons = (
             QtGui.QDialogButtonBox(
@@ -436,6 +532,10 @@ class MultiMemberPropertiesDialog(QtGui.QDialog):
         buttons.rejected.connect(
             self.reject
         )
+
+        # -----------------------------------------------------
+        # Main layout
+        # -----------------------------------------------------
 
         layout = (
             QtGui.QVBoxLayout()
@@ -474,13 +574,17 @@ class MultiMemberPropertiesDialog(QtGui.QDialog):
         )
 
     def apply_changes(self):
-        """Apply one tube profile to every selected member."""
+        """Apply shared properties to selected members."""
 
         tube_profile = (
             self.tube_profile.currentText()
         )
 
         documents = set()
+
+        # -----------------------------------------------------
+        # Tube profiles
+        # -----------------------------------------------------
 
         for member in self.members:
             if (
@@ -504,6 +608,49 @@ class MultiMemberPropertiesDialog(QtGui.QDialog):
                     document
                 )
 
+        # -----------------------------------------------------
+        # Bulk names
+        # -----------------------------------------------------
+
+        if self.rename_members.isChecked():
+            prefix = (
+                self.name_prefix.text().strip()
+            )
+
+            if not prefix:
+                QtGui.QMessageBox.warning(
+                    self,
+                    "Name Prefix Required",
+                    (
+                        "Enter a name prefix before "
+                        "renaming the selected members."
+                    ),
+                )
+                return
+
+            assignments = (
+                build_bulk_member_names(
+                    self.members,
+                    prefix,
+                    self.start_number.value(),
+                )
+            )
+
+            for member, member_name in assignments:
+                if (
+                    str(
+                        member.MemberName
+                    )
+                    != member_name
+                ):
+                    member.MemberName = (
+                        member_name
+                    )
+
+        # -----------------------------------------------------
+        # Recompute documents
+        # -----------------------------------------------------
+
         for document in documents:
             document.recompute()
 
@@ -517,8 +664,8 @@ class MemberPropertiesCommand:
         return {
             "MenuText": "Member Properties",
             "ToolTip": (
-                "Edit one member or assign a tube profile "
-                "to multiple selected ForgeCAD members"
+                "Edit one member or bulk edit "
+                "selected ForgeCAD members"
             ),
         }
 
