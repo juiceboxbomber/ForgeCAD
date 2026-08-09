@@ -49,6 +49,16 @@ from .joint_member_roles import (
     identify_member_roles,
     straightest_member_pair,
 )
+from .notch_analysis import (
+    BRANCH_END_END,
+    BRANCH_END_START,
+    NotchSpecification,
+    branch_through_angle,
+    build_notch_specification,
+    member_end_at_node,
+    notch_specifications_for_joint,
+    through_outside_diameter,
+)
 
 
 __all__ = [
@@ -87,4 +97,12 @@ __all__ = [
     "MemberRoleAnalysis",
     "identify_member_roles",
     "straightest_member_pair",
+    "BRANCH_END_END",
+    "BRANCH_END_START",
+    "NotchSpecification",
+    "branch_through_angle",
+    "build_notch_specification",
+    "member_end_at_node",
+    "notch_specifications_for_joint",
+    "through_outside_diameter",
 ]
