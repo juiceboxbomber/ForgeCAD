@@ -3,8 +3,6 @@
 import sys
 import types
 
-import pytest
-
 
 # ---------------------------------------------------------
 # FreeCAD stubs
@@ -107,7 +105,8 @@ sys.modules[
 
 
 # ---------------------------------------------------------
-# Import module under test against this file's stubs
+# Make sure the module under test is imported against
+# this test file's stubs rather than an earlier test's stubs.
 # ---------------------------------------------------------
 
 sys.modules.pop(
@@ -115,61 +114,14 @@ sys.modules.pop(
     None,
 )
 
-from forgecad.adapters.freecad.commands import (
-    member_properties as member_properties_module,
+
+from forgecad.adapters.freecad.commands.member_properties import (
+    build_bulk_member_names,
+    is_forgecad_member,
+    selected_member,
+    selected_members,
 )
 
-
-build_bulk_member_names = (
-    member_properties_module.build_bulk_member_names
-)
-
-is_forgecad_member = (
-    member_properties_module.is_forgecad_member
-)
-
-selected_member = (
-    member_properties_module.selected_member
-)
-
-selected_members = (
-    member_properties_module.selected_members
-)
-
-
-# ---------------------------------------------------------
-# Test isolation
-# ---------------------------------------------------------
-
-@pytest.fixture(
-    autouse=True
-)
-def reset_freecad_gui_selection():
-    """
-    Force the command module to use this test file's selection stub.
-
-    Other FreeCAD adapter tests also install fake FreeCADGui modules.
-    This prevents test collection order from changing these results.
-    """
-
-    FakeSelection.selected = []
-
-    member_properties_module.FreeCADGui = (
-        fake_freecad_gui
-    )
-
-    member_properties_module.FreeCADGui.Selection = (
-        FakeSelection
-    )
-
-    yield
-
-    FakeSelection.selected = []
-
-
-# ---------------------------------------------------------
-# Fake objects
-# ---------------------------------------------------------
 
 class FakeMember:
     """Object containing the required ForgeCAD member properties."""
@@ -191,9 +143,7 @@ class FakeLayoutLine:
 
     def __init__(self):
         self.MemberName = "Left Main Rail"
-        self.TubeProfileOverride = (
-            "1.750 x .120 DOM"
-        )
+        self.TubeProfileOverride = "1.750 x .120 DOM"
         self.LayoutLength = 1000.0
 
 
@@ -206,6 +156,7 @@ class FakeUnrelatedObject:
 # ---------------------------------------------------------
 # ForgeCAD member detection
 # ---------------------------------------------------------
+
 
 def test_generated_member_is_recognized():
     member = FakeMember()
@@ -270,6 +221,7 @@ def test_member_missing_required_property_is_rejected():
 # Single-member selection
 # ---------------------------------------------------------
 
+
 def test_selected_member_returns_single_member():
     member = FakeMember()
 
@@ -333,6 +285,7 @@ def test_selected_member_returns_none_for_unrelated_object():
 # ---------------------------------------------------------
 # Multi-member selection
 # ---------------------------------------------------------
+
 
 def test_selected_members_returns_all_selected_members():
     member_1 = FakeMember(
@@ -439,6 +392,7 @@ def test_selected_members_rejects_member_and_unrelated_object():
 # ---------------------------------------------------------
 # Bulk member naming
 # ---------------------------------------------------------
+
 
 def test_bulk_names_start_at_one_by_default():
     members = [
