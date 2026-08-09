@@ -1,3 +1,5 @@
+"""ForgeCAD application services."""
+
 from .project_service import (
     DEFAULT_PROFILE_NAME,
     create_default_material,
@@ -20,6 +22,12 @@ from .cut_list import (
     member_weight_kg,
     profile_name_for_member,
 )
+from .joint_service import (
+    connected_members,
+    detect_joints,
+    frame_connection_nodes,
+    member_touches_node,
+)
 
 
 __all__ = [
@@ -37,4 +45,8 @@ __all__ = [
     "cut_list_to_csv",
     "member_weight_kg",
     "profile_name_for_member",
+    "connected_members",
+    "detect_joints",
+    "frame_connection_nodes",
+    "member_touches_node",
 ]
