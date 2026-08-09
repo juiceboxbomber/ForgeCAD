@@ -107,6 +107,7 @@ def test_cut_list_item_contains_member_data():
     )
 
     assert item.member_id == "M007"
+    assert item.member_name == ""
 
     assert (
         item.tube_profile
@@ -133,6 +134,25 @@ def test_cut_list_item_contains_member_data():
     )
 
     assert item.weight_kg > 0
+
+
+def test_cut_list_item_accepts_member_name():
+    member = _member(
+        1200.0
+    )
+
+    item = cut_list_item_from_member(
+        member,
+        "M001",
+        member_name="Left Lower Rail",
+    )
+
+    assert item.member_id == "M001"
+
+    assert (
+        item.member_name
+        == "Left Lower Rail"
+    )
 
 
 def test_build_cut_list_assigns_member_ids():
@@ -164,6 +184,25 @@ def test_build_cut_list_assigns_member_ids():
     assert (
         cut_list.items[1].member_id
         == "M002"
+    )
+
+
+def test_build_cut_list_uses_blank_names():
+    frame = Frame()
+
+    frame.add_member(
+        _member(
+            1000.0
+        )
+    )
+
+    cut_list = build_cut_list(
+        frame
+    )
+
+    assert (
+        cut_list.items[0].member_name
+        == ""
     )
 
 
@@ -453,6 +492,7 @@ def test_csv_contains_member_header():
     )
 
     assert "Member" in csv_text
+    assert "Description" in csv_text
     assert "Tube Profile" in csv_text
     assert "Length (mm)" in csv_text
     assert "Weight (kg)" in csv_text
@@ -484,6 +524,46 @@ def test_csv_contains_member_rows():
     )
 
     assert "1000.000" in csv_text
+
+
+def test_csv_contains_member_name():
+    member = _member(
+        1000.0
+    )
+
+    item = cut_list_item_from_member(
+        member,
+        "M001",
+        member_name="Front Crossmember",
+    )
+
+    from forgecad.services import CutList
+
+    cut_list = CutList(
+        items=[
+            item
+        ]
+    )
+
+    csv_text = cut_list_to_csv(
+        cut_list
+    )
+
+    rows = list(
+        csv.reader(
+            io.StringIO(csv_text)
+        )
+    )
+
+    assert rows[0][0] == "Member"
+    assert rows[0][1] == "Description"
+
+    assert rows[1][0] == "M001"
+
+    assert (
+        rows[1][1]
+        == "Front Crossmember"
+    )
 
 
 def test_csv_contains_tube_summary():

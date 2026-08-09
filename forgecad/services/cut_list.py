@@ -15,6 +15,7 @@ class CutListItem:
     """One fabricated tube in a ForgeCAD cut list."""
 
     member_id: str
+    member_name: str
     tube_profile: str
     material: str
     length_mm: float
@@ -170,11 +171,6 @@ def member_weight_kg(
 ) -> float:
     """Return estimated tube weight in kilograms."""
 
-    # Tube profile area is stored in mm².
-    #
-    # area_mm2 * length_mm = volume_mm3
-    #
-    # 1 m³ = 1,000,000,000 mm³
     volume_m3 = (
         member.profile.cross_sectional_area
         * member.length
@@ -190,11 +186,13 @@ def member_weight_kg(
 def cut_list_item_from_member(
     member: Member,
     member_id: str,
+    member_name: str = "",
 ) -> CutListItem:
     """Create one fabrication cut-list entry."""
 
     return CutListItem(
         member_id=member_id,
+        member_name=member_name,
         tube_profile=profile_name_for_member(
             member
         ),
@@ -251,6 +249,7 @@ def cut_list_to_csv(
     writer.writerow(
         [
             "Member",
+            "Description",
             "Tube Profile",
             "Material",
             "Length (mm)",
@@ -264,6 +263,7 @@ def cut_list_to_csv(
         writer.writerow(
             [
                 item.member_id,
+                item.member_name,
                 item.tube_profile,
                 item.material,
                 f"{item.length_mm:.3f}",

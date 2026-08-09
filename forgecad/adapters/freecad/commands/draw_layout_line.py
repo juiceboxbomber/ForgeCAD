@@ -35,33 +35,76 @@ class LayoutLineDialog(QtGui.QDialog):
         self.end_z = self._create_coordinate_box(0.0)
 
         form = QtGui.QFormLayout()
-        form.addRow("Start X (mm):", self.start_x)
-        form.addRow("Start Y (mm):", self.start_y)
-        form.addRow("Start Z (mm):", self.start_z)
-        form.addRow("End X (mm):", self.end_x)
-        form.addRow("End Y (mm):", self.end_y)
-        form.addRow("End Z (mm):", self.end_z)
+
+        form.addRow(
+            "Start X (mm):",
+            self.start_x,
+        )
+        form.addRow(
+            "Start Y (mm):",
+            self.start_y,
+        )
+        form.addRow(
+            "Start Z (mm):",
+            self.start_z,
+        )
+        form.addRow(
+            "End X (mm):",
+            self.end_x,
+        )
+        form.addRow(
+            "End Y (mm):",
+            self.end_y,
+        )
+        form.addRow(
+            "End Z (mm):",
+            self.end_z,
+        )
 
         buttons = QtGui.QDialogButtonBox(
             QtGui.QDialogButtonBox.Ok
             | QtGui.QDialogButtonBox.Cancel
         )
 
-        buttons.accepted.connect(self.accept)
-        buttons.rejected.connect(self.reject)
+        buttons.accepted.connect(
+            self.accept
+        )
+        buttons.rejected.connect(
+            self.reject
+        )
 
         layout = QtGui.QVBoxLayout()
-        layout.addLayout(form)
-        layout.addWidget(buttons)
 
-        self.setLayout(layout)
+        layout.addLayout(
+            form
+        )
+        layout.addWidget(
+            buttons
+        )
+
+        self.setLayout(
+            layout
+        )
 
     @staticmethod
-    def _create_coordinate_box(value: float):
+    def _create_coordinate_box(
+        value: float,
+    ):
         box = QtGui.QDoubleSpinBox()
-        box.setRange(-1_000_000.0, 1_000_000.0)
-        box.setDecimals(3)
-        box.setValue(value)
+
+        box.setRange(
+            -1_000_000.0,
+            1_000_000.0,
+        )
+
+        box.setDecimals(
+            3
+        )
+
+        box.setValue(
+            value
+        )
+
         return box
 
     @property
@@ -84,7 +127,10 @@ class LayoutLineDialog(QtGui.QDialog):
 def ensure_layout_id(obj):
     """Return the stable ForgeCAD identity for a layout object."""
 
-    if not hasattr(obj, "LayoutID"):
+    if not hasattr(
+        obj,
+        "LayoutID",
+    ):
         obj.addProperty(
             "App::PropertyString",
             "LayoutID",
@@ -105,6 +151,24 @@ def ensure_layout_id(obj):
         pass
 
     return obj.LayoutID
+
+
+def ensure_member_name_property(obj):
+    """Ensure a layout line can store a persistent member name."""
+
+    if not hasattr(
+        obj,
+        "MemberName",
+    ):
+        obj.addProperty(
+            "App::PropertyString",
+            "MemberName",
+            "ForgeCAD Layout",
+        )
+
+        obj.MemberName = ""
+
+    return obj
 
 
 def create_layout_line_object(
@@ -156,9 +220,17 @@ def create_layout_line_object(
         "LayoutLength",
         "ForgeCAD Layout",
     )
-    obj.LayoutLength = layout_line.length
+    obj.LayoutLength = (
+        layout_line.length
+    )
 
-    ensure_layout_id(obj)
+    ensure_layout_id(
+        obj
+    )
+
+    ensure_member_name_property(
+        obj
+    )
 
     document.recompute()
 
@@ -182,7 +254,10 @@ class DrawLayoutLineCommand:
             FreeCADGui.getMainWindow(),
         )
 
-        if dialog.exec_() != QtGui.QDialog.Accepted:
+        if (
+            dialog.exec_()
+            != QtGui.QDialog.Accepted
+        ):
             return
 
         try:
@@ -190,6 +265,7 @@ class DrawLayoutLineCommand:
                 start=dialog.start_point,
                 end=dialog.end_point,
             )
+
         except ValueError as error:
             QtGui.QMessageBox.warning(
                 FreeCADGui.getMainWindow(),
@@ -198,20 +274,28 @@ class DrawLayoutLineCommand:
             )
             return
 
-        document = FreeCAD.ActiveDocument
-
-        if document is None:
-            document = FreeCAD.newDocument(
-                "ForgeCAD_Layout"
-            )
-
-        groups = initialize_project_tree(
-            document
+        document = (
+            FreeCAD.ActiveDocument
         )
 
-        layout_object = create_layout_line_object(
-            document,
-            layout_line,
+        if document is None:
+            document = (
+                FreeCAD.newDocument(
+                    "ForgeCAD_Layout"
+                )
+            )
+
+        groups = (
+            initialize_project_tree(
+                document
+            )
+        )
+
+        layout_object = (
+            create_layout_line_object(
+                document,
+                layout_line,
+            )
         )
 
         groups["Layout"].addObject(
