@@ -114,6 +114,14 @@ def cut_list_rows(document):
             obj.TubeProfile
         )
 
+        member_name = str(
+            getattr(
+                obj,
+                "MemberName",
+                "",
+            )
+        ).strip()
+
         try:
             profile = library.get(
                 profile_name
@@ -140,10 +148,12 @@ def cut_list_rows(document):
             obj.MemberLength
         )
 
-        material_name = getattr(
-            obj,
-            "Material",
-            default_material.name,
+        material_name = str(
+            getattr(
+                obj,
+                "Material",
+                default_material.name,
+            )
         )
 
         weight_kg = member_weight_kg(
@@ -158,6 +168,7 @@ def cut_list_rows(document):
                 "member_id": str(
                     obj.MemberID
                 ),
+                "member_name": member_name,
                 "tube_profile": profile_name,
                 "material": material_name,
                 "length_mm": length_mm,
@@ -178,17 +189,30 @@ def cut_list_from_rows(rows):
     for row in rows:
         items.append(
             CutListItem(
-                member_id=row["member_id"],
-                tube_profile=row["tube_profile"],
-                material=row["material"],
-                length_mm=row["length_mm"],
-                outside_diameter_mm=(
-                    row["outside_diameter_mm"]
-                ),
-                wall_thickness_mm=(
-                    row["wall_thickness_mm"]
-                ),
-                weight_kg=row["weight_kg"],
+                member_id=row[
+                    "member_id"
+                ],
+                member_name=row[
+                    "member_name"
+                ],
+                tube_profile=row[
+                    "tube_profile"
+                ],
+                material=row[
+                    "material"
+                ],
+                length_mm=row[
+                    "length_mm"
+                ],
+                outside_diameter_mm=row[
+                    "outside_diameter_mm"
+                ],
+                wall_thickness_mm=row[
+                    "wall_thickness_mm"
+                ],
+                weight_kg=row[
+                    "weight_kg"
+                ],
             )
         )
 
@@ -218,7 +242,7 @@ class CutListDialog(QtGui.QDialog):
         )
 
         self.setMinimumWidth(
-            820
+            940
         )
 
         self.setMinimumHeight(
@@ -236,12 +260,13 @@ class CutListDialog(QtGui.QDialog):
         self.table = QtGui.QTableWidget()
 
         self.table.setColumnCount(
-            5
+            6
         )
 
         self.table.setHorizontalHeaderLabels(
             [
                 "Member",
+                "Description",
                 "Tube Profile",
                 "Material",
                 "Length (mm)",
@@ -414,6 +439,7 @@ class CutListDialog(QtGui.QDialog):
         ):
             values = [
                 row["member_id"],
+                row["member_name"],
                 row["tube_profile"],
                 row["material"],
                 f'{row["length_mm"]:.2f}',
@@ -561,7 +587,7 @@ class CutListCommand:
         return {
             "MenuText": "Cut List",
             "ToolTip": (
-                "Display member lengths, tube profiles, "
+                "Display member names, lengths, tube profiles, "
                 "material totals, and estimated weights"
             ),
         }

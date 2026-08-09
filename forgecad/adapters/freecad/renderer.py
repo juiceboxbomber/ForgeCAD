@@ -80,7 +80,7 @@ class FrameRenderer:
 
         obj.Label = "Tube Member"
 
-        TubeMemberProxy(
+        proxy = TubeMemberProxy(
             obj,
             member,
             member_id,
@@ -109,6 +109,12 @@ class FrameRenderer:
         obj.Shape = shape
         obj.ViewObject.Visibility = True
 
+        # SourceLayoutID now exists, so the proxy can find the
+        # originating layout line and restore its persistent name.
+        proxy.load_member_name_from_source(
+            obj
+        )
+
         document.recompute()
 
         return obj
@@ -129,7 +135,10 @@ class FrameRenderer:
                 for _ in frame.members
             ]
 
-        if len(source_layout_ids) != len(frame.members):
+        if (
+            len(source_layout_ids)
+            != len(frame.members)
+        ):
             raise ValueError(
                 "Layout identity count does not match "
                 "the number of frame members."
@@ -144,7 +153,9 @@ class FrameRenderer:
             )
 
             source_layout_id = (
-                source_layout_ids[index - 1]
+                source_layout_ids[
+                    index - 1
+                ]
             )
 
             obj = self.render_tube(
@@ -152,10 +163,6 @@ class FrameRenderer:
                 member,
                 member_id=member_id,
                 source_layout_id=source_layout_id,
-            )
-
-            obj.Label = (
-                f"Frame Member {index:03d}"
             )
 
             rendered_objects.append(

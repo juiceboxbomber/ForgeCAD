@@ -3,10 +3,16 @@
 import FreeCAD
 import Part
 
-from forgecad.services import create_default_tube_library
+from forgecad.services import (
+    create_default_tube_library,
+)
 
 
-def build_tube_shape(start, end, profile):
+def build_tube_shape(
+    start,
+    end,
+    profile,
+):
     """Build a hollow round tube between two FreeCAD vectors."""
 
     direction = FreeCAD.Vector(
@@ -22,25 +28,38 @@ def build_tube_shape(start, end, profile):
             "Cannot create a zero-length ForgeCAD member."
         )
 
-    outer_radius = profile.outside_diameter / 2.0
-    inner_radius = profile.inside_diameter / 2.0
-
-    outer_cylinder = Part.makeCylinder(
-        outer_radius,
-        length,
-        start,
-        direction,
+    outer_radius = (
+        profile.outside_diameter
+        / 2.0
     )
 
-    inner_cylinder = Part.makeCylinder(
-        inner_radius,
-        length,
-        start,
-        direction,
+    inner_radius = (
+        profile.inside_diameter
+        / 2.0
     )
 
-    shape = outer_cylinder.cut(
-        inner_cylinder
+    outer_cylinder = (
+        Part.makeCylinder(
+            outer_radius,
+            length,
+            start,
+            direction,
+        )
+    )
+
+    inner_cylinder = (
+        Part.makeCylinder(
+            inner_radius,
+            length,
+            start,
+            direction,
+        )
+    )
+
+    shape = (
+        outer_cylinder.cut(
+            inner_cylinder
+        )
     )
 
     return shape, length
@@ -63,8 +82,10 @@ def find_source_layout_object(obj):
     if document is None:
         return None
 
-    layout_group = document.getObject(
-        "ForgeCADLayout"
+    layout_group = (
+        document.getObject(
+            "ForgeCADLayout"
+        )
     )
 
     if layout_group is None:
@@ -77,13 +98,18 @@ def find_source_layout_object(obj):
             "",
         )
 
-        if layout_id == source_layout_id:
+        if (
+            layout_id
+            == source_layout_id
+        ):
             return layout_object
 
     return None
 
 
-def ensure_profile_override_property(layout_object):
+def ensure_profile_override_property(
+    layout_object,
+):
     """Ensure a layout object can store a member profile override."""
 
     if not hasattr(
@@ -101,8 +127,28 @@ def ensure_profile_override_property(layout_object):
     return layout_object
 
 
+def ensure_member_name_property(
+    layout_object,
+):
+    """Ensure a layout object can store a persistent member name."""
+
+    if not hasattr(
+        layout_object,
+        "MemberName",
+    ):
+        layout_object.addProperty(
+            "App::PropertyString",
+            "MemberName",
+            "ForgeCAD Layout",
+        )
+
+        layout_object.MemberName = ""
+
+    return layout_object
+
+
 class TubeMemberProxy:
-    """Keep a ForgeCAD tube synchronized with its editable profile."""
+    """Keep a ForgeCAD tube synchronized with editable properties."""
 
     def __init__(
         self,
@@ -148,7 +194,16 @@ class TubeMemberProxy:
             "MemberID",
             "ForgeCAD",
         )
-        obj.MemberID = member_id
+        obj.MemberID = (
+            member_id
+        )
+
+        obj.addProperty(
+            "App::PropertyString",
+            "MemberName",
+            "ForgeCAD",
+        )
+        obj.MemberName = ""
 
         obj.addProperty(
             "App::PropertyVector",
@@ -169,7 +224,9 @@ class TubeMemberProxy:
             "MemberLength",
             "ForgeCAD Geometry",
         )
-        obj.MemberLength = member.length
+        obj.MemberLength = (
+            member.length
+        )
 
         obj.addProperty(
             "App::PropertyEnumeration",
@@ -177,7 +234,9 @@ class TubeMemberProxy:
             "ForgeCAD Tube",
         )
 
-        library = create_default_tube_library()
+        library = (
+            create_default_tube_library()
+        )
 
         obj.TubeProfile = list(
             library.names
@@ -213,7 +272,9 @@ class TubeMemberProxy:
             "ForgeCAD Material",
         )
 
-        obj.Material = member.material.name
+        obj.Material = (
+            member.material.name
+        )
 
         self._update_profile_properties(
             obj,
@@ -244,10 +305,15 @@ class TubeMemberProxy:
     ):
         """Return the library name matching the member profile."""
 
-        library = create_default_tube_library()
+        library = (
+            create_default_tube_library()
+        )
 
         for name in library.names:
-            if library.get(name) == member.profile:
+            if (
+                library.get(name)
+                == member.profile
+            ):
                 return name
 
         return library.active_name
@@ -258,7 +324,9 @@ class TubeMemberProxy:
     ):
         """Return the selected profile."""
 
-        library = create_default_tube_library()
+        library = (
+            create_default_tube_library()
+        )
 
         return library.get(
             str(obj.TubeProfile)
@@ -289,8 +357,10 @@ class TubeMemberProxy:
     ):
         """Store the selected profile on the source layout line."""
 
-        source_object = find_source_layout_object(
-            obj
+        source_object = (
+            find_source_layout_object(
+                obj
+            )
         )
 
         if source_object is None:
@@ -300,8 +370,90 @@ class TubeMemberProxy:
             source_object
         )
 
-        source_object.TubeProfileOverride = str(
-            obj.TubeProfile
+        source_object.TubeProfileOverride = (
+            str(
+                obj.TubeProfile
+            )
+        )
+
+    def _store_member_name(
+        self,
+        obj,
+    ):
+        """Store the member name on the source layout line."""
+
+        source_object = (
+            find_source_layout_object(
+                obj
+            )
+        )
+
+        if source_object is None:
+            return
+
+        ensure_member_name_property(
+            source_object
+        )
+
+        source_object.MemberName = (
+            str(
+                obj.MemberName
+            ).strip()
+        )
+
+    def _update_label(
+        self,
+        obj,
+    ):
+        """Update the tree label from the member ID and name."""
+
+        member_id = str(
+            obj.MemberID
+        ).strip()
+
+        member_name = str(
+            obj.MemberName
+        ).strip()
+
+        if member_name:
+            obj.Label = (
+                f"{member_id} - "
+                f"{member_name}"
+            )
+        else:
+            obj.Label = (
+                f"Frame Member "
+                f"{member_id}"
+            )
+
+    def load_member_name_from_source(
+        self,
+        obj,
+    ):
+        """Load a persisted member name from the source layout line."""
+
+        source_object = (
+            find_source_layout_object(
+                obj
+            )
+        )
+
+        if source_object is None:
+            self._update_label(
+                obj
+            )
+            return
+
+        ensure_member_name_property(
+            source_object
+        )
+
+        obj.MemberName = str(
+            source_object.MemberName
+        ).strip()
+
+        self._update_label(
+            obj
         )
 
     def update_shape(
@@ -316,18 +468,24 @@ class TubeMemberProxy:
         self._updating = True
 
         try:
-            profile = self._selected_profile(
-                obj
+            profile = (
+                self._selected_profile(
+                    obj
+                )
             )
 
-            shape, length = build_tube_shape(
-                obj.StartPoint,
-                obj.EndPoint,
-                profile,
+            shape, length = (
+                build_tube_shape(
+                    obj.StartPoint,
+                    obj.EndPoint,
+                    profile,
+                )
             )
 
             obj.Shape = shape
-            obj.MemberLength = length
+            obj.MemberLength = (
+                length
+            )
 
             self._update_profile_properties(
                 obj,
@@ -342,7 +500,7 @@ class TubeMemberProxy:
         obj,
         property_name,
     ):
-        """Regenerate geometry and persist profile changes."""
+        """Regenerate geometry and persist editable changes."""
 
         if not self._ready:
             return
@@ -356,6 +514,15 @@ class TubeMemberProxy:
                 obj
             )
 
+        elif property_name == "MemberName":
+            self._store_member_name(
+                obj
+            )
+
+            self._update_label(
+                obj
+            )
+
     def execute(
         self,
         obj,
@@ -364,6 +531,10 @@ class TubeMemberProxy:
 
         if self._ready:
             self.update_shape(
+                obj
+            )
+
+            self._update_label(
                 obj
             )
             
