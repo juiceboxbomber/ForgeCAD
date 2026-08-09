@@ -1,16 +1,15 @@
 """Interactive FreeCAD command for creating ForgeCAD tube members."""
 
+import math
+
 import FreeCAD
 import FreeCADGui
 from PySide import QtGui
 
-from forgecad import LayoutLine
-from forgecad.adapters.freecad.commands.draw_layout_line import (
-    create_layout_line_object,
-    ensure_layout_id,
-)
+from forgecad.geometry import Point3D
 from forgecad.adapters.freecad.commands.draw_layout_line_interactive import (
     InteractiveLayoutLineTool,
+    SNAP_DISTANCE_PIXELS,
 )
 from forgecad.adapters.freecad.commands.create_member_between_nodes import (
     create_member_between_nodes,
@@ -89,6 +88,7 @@ def next_node_id(
             number = int(
                 node_id[1:]
             )
+
         except ValueError:
             continue
 
@@ -149,33 +149,32 @@ def get_or_create_node(
     return node_object
 
 
-def remove_layout_object(
-    document,
-    layout_object,
+def node_point(
+    node_object,
 ):
-    """
-    Remove a temporary persistent layout object.
+    """Return a Point3D for a ForgeCAD node object."""
 
-    create_member_between_nodes() creates its own persistent
-    layout line, so the interactive tool does not need to
-    keep a second copy.
-    """
+    position = (
+        node_object.Position
+    )
 
-    if layout_object is None:
-        return
-
-    try:
-        document.removeObject(
-            layout_object.Name
-        )
-    except Exception:
-        pass
+    return Point3D(
+        float(position.x),
+        float(position.y),
+        float(position.z),
+    )
 
 
 class InteractiveMemberTool(
     InteractiveLayoutLineTool
 ):
     """Create persistent ForgeCAD tube members interactively."""
+
+    def __init__(self):
+        super().__init__()
+
+        self.snapped_node = None
+        self.current_snap_type = None
 
     def start(self):
         """Start interactive member creation."""
@@ -184,7 +183,347 @@ class InteractiveMemberTool(
 
         self.show_status(
             "ForgeCAD Member: Click first point. "
+            "Existing nodes have snap priority. "
             "Esc: Finish."
+        )
+
+    def stop(self):
+        """Stop member creation and clear node-snap state."""
+
+        self.snapped_node = None
+        self.current_snap_type = None
+
+        super().stop()
+
+    def forgecad_nodes(self):
+        """Return existing generated ForgeCAD node objects."""
+
+        document = (
+            FreeCAD.ActiveDocument
+        )
+
+        if document is None:
+            return []
+
+        groups = initialize_project_tree(
+            document
+        )
+
+        nodes = []
+
+        for obj in groups["Nodes"].Group:
+            if not hasattr(
+                obj,
+                "NodeID",
+            ):
+                continue
+
+            if not hasattr(
+                obj,
+                "Position",
+            ):
+                continue
+
+            nodes.append(
+                obj
+            )
+
+        return nodes
+
+    def find_node_snap(
+        self,
+        position,
+    ):
+        """Return the nearest ForgeCAD node inside snap tolerance."""
+
+        if position is None:
+            return None
+
+        mouse_x = float(
+            position[0]
+        )
+
+        mouse_y = float(
+            position[1]
+        )
+
+        nearest_node = None
+        nearest_distance = (
+            SNAP_DISTANCE_PIXELS
+        )
+
+        for node in self.forgecad_nodes():
+            try:
+                point = node_point(
+                    node
+                )
+
+                screen_x, screen_y = (
+                    self.point_to_screen(
+                        point
+                    )
+                )
+
+            except Exception:
+                continue
+
+            distance = math.hypot(
+                screen_x - mouse_x,
+                screen_y - mouse_y,
+            )
+
+            if distance <= nearest_distance:
+                nearest_distance = (
+                    distance
+                )
+
+                nearest_node = (
+                    node
+                )
+
+        return nearest_node
+
+    def resolved_point(
+        self,
+        position,
+    ):
+        """
+        Resolve node snap, layout endpoint snap,
+        angle inference, or free position.
+        """
+
+        # -------------------------------------------------
+        # Highest priority: actual ForgeCAD nodes
+        # -------------------------------------------------
+
+        node = self.find_node_snap(
+            position
+        )
+
+        if node is not None:
+            self.snapped_node = (
+                node
+            )
+
+            self.current_snap_type = (
+                "NODE"
+            )
+
+            return (
+                node_point(
+                    node
+                ),
+                "NODE",
+                None,
+            )
+
+        self.snapped_node = None
+
+        # -------------------------------------------------
+        # Second priority: existing layout endpoint
+        # -------------------------------------------------
+
+        endpoint = (
+            super().find_snap_point(
+                position
+            )
+        )
+
+        if endpoint is not None:
+            self.current_snap_type = (
+                "ENDPOINT"
+            )
+
+            return (
+                endpoint,
+                "ENDPOINT",
+                None,
+            )
+
+        # -------------------------------------------------
+        # Free viewport position
+        # -------------------------------------------------
+
+        free_point = (
+            self.screen_to_point(
+                position
+            )
+        )
+
+        if free_point is None:
+            self.current_snap_type = None
+
+            return (
+                None,
+                None,
+                None,
+            )
+
+        if self.start_point is None:
+            self.current_snap_type = None
+
+            return (
+                free_point,
+                None,
+                None,
+            )
+
+        # -------------------------------------------------
+        # Angle inference
+        # -------------------------------------------------
+
+        inferred_point, snapped_angle = (
+            self.infer_angle(
+                free_point
+            )
+        )
+
+        if snapped_angle is not None:
+            self.current_snap_type = (
+                "ANGLE"
+            )
+
+            return (
+                inferred_point,
+                "ANGLE",
+                snapped_angle,
+            )
+
+        self.current_snap_type = None
+
+        return (
+            free_point,
+            None,
+            None,
+        )
+
+    def inference_name(
+        self,
+        snap_type,
+        snapped_angle,
+    ):
+        """Return readable member snap information."""
+
+        if (
+            snap_type == "NODE"
+            and self.snapped_node is not None
+        ):
+            return (
+                "NODE "
+                f"{self.snapped_node.NodeID}"
+            )
+
+        return super().inference_name(
+            snap_type,
+            snapped_angle,
+        )
+
+    def update_snap_marker(
+        self,
+        point,
+    ):
+        """Show snap marker with node-aware labeling."""
+
+        super().update_snap_marker(
+            point
+        )
+
+        if self.snap_marker is None:
+            return
+
+        if (
+            self.current_snap_type == "NODE"
+            and self.snapped_node is not None
+        ):
+            self.snap_marker.Label = (
+                "Node Snap "
+                f"{self.snapped_node.NodeID}"
+            )
+
+        elif (
+            self.current_snap_type
+            == "ENDPOINT"
+        ):
+            self.snap_marker.Label = (
+                "Endpoint Snap"
+            )
+
+    def on_mouse_move(
+        self,
+        event,
+    ):
+        """Update node snapping, preview, and measurements."""
+
+        position = event.get(
+            "Position"
+        )
+
+        if position is None:
+            return
+
+        point, snap_type, snapped_angle = (
+            self.resolved_point(
+                position
+            )
+        )
+
+        if point is None:
+            return
+
+        self.last_resolved_point = (
+            point
+        )
+
+        if snap_type in (
+            "NODE",
+            "ENDPOINT",
+        ):
+            self.update_snap_marker(
+                point
+            )
+
+        else:
+            self.update_snap_marker(
+                None
+            )
+
+        if self.start_point is None:
+            if (
+                snap_type == "NODE"
+                and self.snapped_node is not None
+            ):
+                self.show_status(
+                    "ForgeCAD Member | "
+                    f"NODE {self.snapped_node.NodeID} | "
+                    "Click to start | Esc: Finish"
+                )
+
+            elif snap_type == "ENDPOINT":
+                self.show_status(
+                    "ForgeCAD Member | "
+                    "ENDPOINT | "
+                    "Click to start | Esc: Finish"
+                )
+
+            else:
+                self.show_status(
+                    "ForgeCAD Member: "
+                    "Click first point. "
+                    "Existing nodes have snap priority. "
+                    "Esc: Finish."
+                )
+
+            return
+
+        self.update_preview_line(
+            self.start_point,
+            point,
+        )
+
+        self.update_measurement_display(
+            point,
+            snap_type,
+            snapped_angle,
         )
 
     def commit_line(
@@ -211,14 +550,18 @@ class InteractiveMemberTool(
             return
 
         try:
-            start_node = get_or_create_node(
-                document,
-                self.start_point,
+            start_node = (
+                get_or_create_node(
+                    document,
+                    self.start_point,
+                )
             )
 
-            end_node = get_or_create_node(
-                document,
-                point,
+            end_node = (
+                get_or_create_node(
+                    document,
+                    point,
+                )
             )
 
             create_member_between_nodes(
@@ -238,10 +581,12 @@ class InteractiveMemberTool(
             )
             return
 
-        # Continue drawing from the endpoint just like the
-        # existing interactive layout-line command.
+        # Continue from the newly committed endpoint.
         self.start_point = point
         self.last_resolved_point = None
+
+        self.snapped_node = None
+        self.current_snap_type = None
 
         self.remove_object(
             self.start_marker
@@ -267,6 +612,7 @@ class InteractiveMemberTool(
 
         self.show_status(
             "ForgeCAD Member: Continue drawing. "
+            "Existing nodes have snap priority. "
             "Move cursor to choose direction. "
             "Enter exact length if needed. "
             "Esc: Finish."
@@ -284,8 +630,8 @@ class DrawMemberInteractiveCommand:
                 "Draw Member Interactively",
             "ToolTip": (
                 "Create persistent ForgeCAD tube members "
-                "point-to-point with snapping, angle "
-                "inference, and exact length input"
+                "point-to-point with node snapping, "
+                "angle inference, and exact length input"
             ),
         }
 
@@ -297,8 +643,10 @@ class DrawMemberInteractiveCommand:
         )
 
         if document is None:
-            document = FreeCAD.newDocument(
-                "ForgeCAD_Frame"
+            document = (
+                FreeCAD.newDocument(
+                    "ForgeCAD_Frame"
+                )
             )
 
         if _active_tool is not None:
