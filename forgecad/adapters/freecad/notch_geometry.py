@@ -3,10 +3,6 @@
 import FreeCAD
 import Part
 
-from forgecad.adapters.freecad.member_object import (
-    build_tube_shape,
-)
-
 
 def vector_between(
     start,
@@ -141,16 +137,18 @@ def cope_tube_shape(
     through_start,
     through_end,
     through_outside_diameter,
+    plain_shape_builder,
 ):
     """
     Build a branch tube and cope it against a through tube.
 
-    The returned shape is the branch tube with the through
-    tube's outside cylindrical volume removed.
+    The caller supplies the normal ForgeCAD tube builder.
+    This keeps notch geometry independent from
+    member_object.py and avoids a circular import.
     """
 
     branch_shape, branch_length = (
-        build_tube_shape(
+        plain_shape_builder(
             branch_start,
             branch_end,
             branch_profile,
