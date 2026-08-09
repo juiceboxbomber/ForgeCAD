@@ -60,6 +60,10 @@ class ForgeCADWorkbench(FreeCADGui.Workbench):
             COMMAND_NAME as CUT_LIST_COMMAND,
             register_command as register_cut_list_command,
         )
+        from forgecad.adapters.freecad.commands.draw_member_interactive import (
+            COMMAND_NAME as DRAW_MEMBER_INTERACTIVE_COMMAND,
+            register_command as register_draw_member_interactive_command,
+        )
 
         register_new_project_command()
 
@@ -70,6 +74,8 @@ class ForgeCADWorkbench(FreeCADGui.Workbench):
         register_draw_layout_line_interactive_command()
 
         register_generate_nodes_command()
+
+        register_draw_member_interactive_command()
 
         register_create_member_between_nodes_command()
 
@@ -87,6 +93,7 @@ class ForgeCADWorkbench(FreeCADGui.Workbench):
             DEFINE_LAYOUT_LINES_COMMAND,
             DRAW_LAYOUT_LINE_INTERACTIVE_COMMAND,
             GENERATE_NODES_COMMAND,
+            DRAW_MEMBER_INTERACTIVE_COMMAND,
             CREATE_MEMBER_BETWEEN_NODES_COMMAND,
             GENERATE_FROM_SELECTION_COMMAND,
             MEMBER_PROPERTIES_COMMAND,
