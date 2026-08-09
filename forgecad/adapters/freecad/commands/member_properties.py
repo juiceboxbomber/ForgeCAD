@@ -56,6 +56,25 @@ def selected_member():
     return obj
 
 
+def selected_members():
+    """Return all selected objects when every object is a ForgeCAD member."""
+
+    selection = list(
+        FreeCADGui.Selection.getSelection()
+    )
+
+    if not selection:
+        return []
+
+    if not all(
+        is_forgecad_member(obj)
+        for obj in selection
+    ):
+        return []
+
+    return selection
+
+
 class MemberPropertiesDialog(QtGui.QDialog):
     """Edit the user-facing properties of one ForgeCAD member."""
 
@@ -78,10 +97,6 @@ class MemberPropertiesDialog(QtGui.QDialog):
             440
         )
 
-        # -----------------------------------------------------
-        # Member ID
-        # -----------------------------------------------------
-
         self.member_id = (
             QtGui.QLineEdit()
         )
@@ -96,10 +111,6 @@ class MemberPropertiesDialog(QtGui.QDialog):
             True
         )
 
-        # -----------------------------------------------------
-        # Member name
-        # -----------------------------------------------------
-
         self.member_name = (
             QtGui.QLineEdit()
         )
@@ -113,10 +124,6 @@ class MemberPropertiesDialog(QtGui.QDialog):
         self.member_name.setPlaceholderText(
             "Example: Front Crossmember"
         )
-
-        # -----------------------------------------------------
-        # Tube profile
-        # -----------------------------------------------------
 
         self.tube_profile = (
             QtGui.QComboBox()
@@ -146,10 +153,6 @@ class MemberPropertiesDialog(QtGui.QDialog):
                 profile_index
             )
 
-        # -----------------------------------------------------
-        # Material
-        # -----------------------------------------------------
-
         self.material = (
             QtGui.QLineEdit()
         )
@@ -163,10 +166,6 @@ class MemberPropertiesDialog(QtGui.QDialog):
         self.material.setReadOnly(
             True
         )
-
-        # -----------------------------------------------------
-        # Length
-        # -----------------------------------------------------
 
         self.member_length = (
             QtGui.QLineEdit()
@@ -183,10 +182,6 @@ class MemberPropertiesDialog(QtGui.QDialog):
         self.member_length.setReadOnly(
             True
         )
-
-        # -----------------------------------------------------
-        # Form
-        # -----------------------------------------------------
 
         form = (
             QtGui.QFormLayout()
@@ -217,10 +212,6 @@ class MemberPropertiesDialog(QtGui.QDialog):
             self.member_length,
         )
 
-        # -----------------------------------------------------
-        # Buttons
-        # -----------------------------------------------------
-
         buttons = (
             QtGui.QDialogButtonBox(
                 QtGui.QDialogButtonBox.Ok
@@ -241,10 +232,6 @@ class MemberPropertiesDialog(QtGui.QDialog):
         buttons.rejected.connect(
             self.reject
         )
-
-        # -----------------------------------------------------
-        # Main layout
-        # -----------------------------------------------------
 
         layout = (
             QtGui.QVBoxLayout()
@@ -279,12 +266,6 @@ class MemberPropertiesDialog(QtGui.QDialog):
             self.tube_profile.currentText()
         )
 
-        # Assign through the FreeCAD properties rather than
-        # changing the source layout object directly.
-        #
-        # TubeMemberProxy.onChanged() handles persistence,
-        # geometry regeneration, and tree-label updates.
-
         if (
             str(self.member.MemberName)
             != member_name
@@ -311,64 +292,282 @@ class MemberPropertiesDialog(QtGui.QDialog):
         self.accept()
 
 
+class MultiMemberPropertiesDialog(QtGui.QDialog):
+    """Edit shared properties for multiple ForgeCAD members."""
+
+    def __init__(
+        self,
+        members,
+        parent=None,
+    ):
+        super().__init__(
+            parent
+        )
+
+        self.members = list(
+            members
+        )
+
+        self.setWindowTitle(
+            "ForgeCAD Multi-Member Properties"
+        )
+
+        self.setMinimumWidth(
+            500
+        )
+
+        count_label = (
+            QtGui.QLabel(
+                f"Editing {len(self.members)} members"
+            )
+        )
+
+        # -----------------------------------------------------
+        # Selected member list
+        # -----------------------------------------------------
+
+        self.member_list = (
+            QtGui.QListWidget()
+        )
+
+        for member in self.members:
+            member_id = str(
+                member.MemberID
+            )
+
+            member_name = str(
+                member.MemberName
+            ).strip()
+
+            if member_name:
+                text = (
+                    f"{member_id} - "
+                    f"{member_name}"
+                )
+            else:
+                text = member_id
+
+            self.member_list.addItem(
+                text
+            )
+
+        self.member_list.setMaximumHeight(
+            150
+        )
+
+        # -----------------------------------------------------
+        # Tube profile selector
+        # -----------------------------------------------------
+
+        self.tube_profile = (
+            QtGui.QComboBox()
+        )
+
+        library = (
+            create_default_tube_library()
+        )
+
+        for profile_name in library.names:
+            self.tube_profile.addItem(
+                profile_name
+            )
+
+        current_profiles = {
+            str(
+                member.TubeProfile
+            )
+            for member in self.members
+        }
+
+        if len(current_profiles) == 1:
+            current_profile = next(
+                iter(
+                    current_profiles
+                )
+            )
+
+            profile_index = (
+                self.tube_profile.findText(
+                    current_profile
+                )
+            )
+
+            if profile_index >= 0:
+                self.tube_profile.setCurrentIndex(
+                    profile_index
+                )
+
+        form = (
+            QtGui.QFormLayout()
+        )
+
+        form.addRow(
+            "Tube Profile:",
+            self.tube_profile,
+        )
+
+        note = (
+            QtGui.QLabel(
+                "Names are not changed during multi-member editing."
+            )
+        )
+
+        note.setWordWrap(
+            True
+        )
+
+        buttons = (
+            QtGui.QDialogButtonBox(
+                QtGui.QDialogButtonBox.Ok
+                | QtGui.QDialogButtonBox.Cancel
+            )
+        )
+
+        buttons.button(
+            QtGui.QDialogButtonBox.Ok
+        ).setText(
+            "Apply"
+        )
+
+        buttons.accepted.connect(
+            self.apply_changes
+        )
+
+        buttons.rejected.connect(
+            self.reject
+        )
+
+        layout = (
+            QtGui.QVBoxLayout()
+        )
+
+        layout.addWidget(
+            count_label
+        )
+
+        layout.addWidget(
+            self.member_list
+        )
+
+        layout.addSpacing(
+            8
+        )
+
+        layout.addLayout(
+            form
+        )
+
+        layout.addWidget(
+            note
+        )
+
+        layout.addSpacing(
+            10
+        )
+
+        layout.addWidget(
+            buttons
+        )
+
+        self.setLayout(
+            layout
+        )
+
+    def apply_changes(self):
+        """Apply one tube profile to every selected member."""
+
+        tube_profile = (
+            self.tube_profile.currentText()
+        )
+
+        documents = set()
+
+        for member in self.members:
+            if (
+                str(
+                    member.TubeProfile
+                )
+                != tube_profile
+            ):
+                member.TubeProfile = (
+                    tube_profile
+                )
+
+            document = getattr(
+                member,
+                "Document",
+                None,
+            )
+
+            if document is not None:
+                documents.add(
+                    document
+                )
+
+        for document in documents:
+            document.recompute()
+
+        self.accept()
+
+
 class MemberPropertiesCommand:
-    """Edit properties for one selected ForgeCAD member."""
+    """Edit properties for one or more selected ForgeCAD members."""
 
     def GetResources(self):
         return {
             "MenuText": "Member Properties",
             "ToolTip": (
-                "Edit the name and tube profile "
-                "of the selected ForgeCAD member"
+                "Edit one member or assign a tube profile "
+                "to multiple selected ForgeCAD members"
             ),
         }
 
     def Activated(self):
-        selection = (
+        selection = list(
             FreeCADGui.Selection.getSelection()
         )
 
-        if len(selection) == 0:
+        if not selection:
             QtGui.QMessageBox.warning(
                 FreeCADGui.getMainWindow(),
                 "No Member Selected",
                 (
-                    "Select one generated ForgeCAD "
-                    "member first."
+                    "Select one or more generated "
+                    "ForgeCAD members first."
                 ),
             )
             return
 
-        if len(selection) > 1:
-            QtGui.QMessageBox.warning(
-                FreeCADGui.getMainWindow(),
-                "Multiple Objects Selected",
-                (
-                    "Select only one ForgeCAD member "
-                    "for Member Properties."
-                ),
+        invalid_objects = [
+            obj
+            for obj in selection
+            if not is_forgecad_member(
+                obj
             )
-            return
+        ]
 
-        member = selection[0]
-
-        if not is_forgecad_member(
-            member
-        ):
+        if invalid_objects:
             QtGui.QMessageBox.warning(
                 FreeCADGui.getMainWindow(),
                 "Invalid Selection",
                 (
-                    "The selected object is not a "
-                    "generated ForgeCAD member."
+                    "All selected objects must be "
+                    "generated ForgeCAD members."
                 ),
             )
             return
 
-        dialog = MemberPropertiesDialog(
-            member,
-            FreeCADGui.getMainWindow(),
-        )
+        if len(selection) == 1:
+            dialog = MemberPropertiesDialog(
+                selection[0],
+                FreeCADGui.getMainWindow(),
+            )
+
+        else:
+            dialog = MultiMemberPropertiesDialog(
+                selection,
+                FreeCADGui.getMainWindow(),
+            )
 
         dialog.exec_()
 

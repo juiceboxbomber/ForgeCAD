@@ -116,14 +116,18 @@ sys.modules.setdefault(
 from forgecad.adapters.freecad.commands.member_properties import (
     is_forgecad_member,
     selected_member,
+    selected_members,
 )
 
 
 class FakeMember:
     """Object containing the required ForgeCAD member properties."""
 
-    def __init__(self):
-        self.MemberID = "M001"
+    def __init__(
+        self,
+        member_id="M001",
+    ):
+        self.MemberID = member_id
         self.MemberName = "Left Main Rail"
         self.TubeProfile = "1.750 x .120 DOM"
         self.MemberLength = 1000.0
@@ -228,8 +232,8 @@ def test_selected_member_returns_none_for_no_selection():
 
 def test_selected_member_returns_none_for_multiple_selection():
     FakeSelection.selected = [
-        FakeMember(),
-        FakeMember(),
+        FakeMember("M001"),
+        FakeMember("M002"),
     ]
 
     assert (
@@ -257,5 +261,107 @@ def test_selected_member_returns_none_for_unrelated_object():
     assert (
         selected_member()
         is None
+    )
+
+
+def test_selected_members_returns_all_selected_members():
+    member_1 = FakeMember(
+        "M001"
+    )
+
+    member_2 = FakeMember(
+        "M002"
+    )
+
+    member_3 = FakeMember(
+        "M003"
+    )
+
+    FakeSelection.selected = [
+        member_1,
+        member_2,
+        member_3,
+    ]
+
+    result = (
+        selected_members()
+    )
+
+    assert result == [
+        member_1,
+        member_2,
+        member_3,
+    ]
+
+
+def test_selected_members_returns_single_member_as_list():
+    member = FakeMember()
+
+    FakeSelection.selected = [
+        member
+    ]
+
+    assert (
+        selected_members()
+        == [member]
+    )
+
+
+def test_selected_members_returns_empty_for_no_selection():
+    FakeSelection.selected = []
+
+    assert (
+        selected_members()
+        == []
+    )
+
+
+def test_selected_members_rejects_layout_line():
+    FakeSelection.selected = [
+        FakeLayoutLine()
+    ]
+
+    assert (
+        selected_members()
+        == []
+    )
+
+
+def test_selected_members_rejects_unrelated_object():
+    FakeSelection.selected = [
+        FakeUnrelatedObject()
+    ]
+
+    assert (
+        selected_members()
+        == []
+    )
+
+
+def test_selected_members_rejects_mixed_selection():
+    FakeSelection.selected = [
+        FakeMember(
+            "M001"
+        ),
+        FakeLayoutLine(),
+    ]
+
+    assert (
+        selected_members()
+        == []
+    )
+
+
+def test_selected_members_rejects_member_and_unrelated_object():
+    FakeSelection.selected = [
+        FakeMember(
+            "M001"
+        ),
+        FakeUnrelatedObject(),
+    ]
+
+    assert (
+        selected_members()
+        == []
     )
     
