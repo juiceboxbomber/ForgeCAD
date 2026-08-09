@@ -3,11 +3,186 @@
 import Part
 import FreeCAD
 
-from forgecad.fabrication import Frame, Member
+from forgecad.fabrication import (
+    Frame,
+    Member,
+)
+from forgecad.services import (
+    detect_joints,
+    member_other_node,
+    notch_specifications_for_joint,
+)
 from forgecad.adapters.freecad.member_object import (
     TubeMemberProxy,
     build_tube_shape,
 )
+from forgecad.adapters.freecad.member_notch import (
+    clear_notch,
+    configure_notch,
+)
+
+
+def node_vector(
+    node,
+):
+    """Convert a ForgeCAD domain node to a FreeCAD vector."""
+
+    return FreeCAD.Vector(
+        node.x,
+        node.y,
+        node.z,
+    )
+
+
+def through_axis_for_specification(
+    specification,
+):
+    """
+    Return a continuous FreeCAD axis for a notch cutter.
+
+    The two through members meet at the joint. Their opposite
+    endpoints define the complete through-tube centerline.
+    """
+
+    first_member = (
+        specification.through_members[
+            0
+        ]
+    )
+
+    second_member = (
+        specification.through_members[
+            1
+        ]
+    )
+
+    first_outer_node = (
+        member_other_node(
+            first_member,
+            specification.joint.node,
+        )
+    )
+
+    second_outer_node = (
+        member_other_node(
+            second_member,
+            specification.joint.node,
+        )
+    )
+
+    return (
+        node_vector(
+            first_outer_node
+        ),
+        node_vector(
+            second_outer_node
+        ),
+    )
+
+
+def automatic_notch_specifications(
+    frame,
+):
+    """Return every automatic notch specification in a frame."""
+
+    specifications = []
+
+    for joint in detect_joints(
+        frame
+    ):
+        specifications.extend(
+            notch_specifications_for_joint(
+                joint
+            )
+        )
+
+    return tuple(
+        specifications
+    )
+
+
+def configure_automatic_notches(
+    frame,
+    rendered_objects,
+):
+    """
+    Apply frame joint notch information to rendered members.
+
+    Domain members and rendered objects correspond by position
+    in frame.members.
+    """
+
+    if (
+        len(rendered_objects)
+        != len(frame.members)
+    ):
+        raise ValueError(
+            "Rendered member count does not match "
+            "the domain frame."
+        )
+
+    object_by_member_identity = {
+        id(member): obj
+        for member, obj in zip(
+            frame.members,
+            rendered_objects,
+        )
+    }
+
+    # Always begin clean so stale metadata cannot survive
+    # a frame regeneration.
+    for obj in rendered_objects:
+        clear_notch(
+            obj
+        )
+
+    configured_member_ids = set()
+
+    for specification in (
+        automatic_notch_specifications(
+            frame
+        )
+    ):
+        branch_key = id(
+            specification.branch_member
+        )
+
+        branch_object = (
+            object_by_member_identity.get(
+                branch_key
+            )
+        )
+
+        if branch_object is None:
+            continue
+
+        # Current metadata supports one cope operation per
+        # rendered member. Do not silently replace an already
+        # configured cope at the opposite end.
+        if branch_key in configured_member_ids:
+            raise ValueError(
+                "Automatic notch generation currently "
+                "supports one notched end per member."
+            )
+
+        through_start, through_end = (
+            through_axis_for_specification(
+                specification
+            )
+        )
+
+        configure_notch(
+            branch_object,
+            through_start,
+            through_end,
+            specification.through_outside_diameter,
+        )
+
+        configured_member_ids.add(
+            branch_key
+        )
+
+    return rendered_objects
 
 
 class FrameRenderer:
@@ -107,7 +282,10 @@ class FrameRenderer:
         obj.ViewObject.Proxy = 0
 
         obj.Shape = shape
-        obj.ViewObject.Visibility = True
+
+        obj.ViewObject.Visibility = (
+            True
+        )
 
         # SourceLayoutID now exists, so the proxy can find the
         # originating layout line and restore its persistent name.
@@ -125,7 +303,7 @@ class FrameRenderer:
         frame: Frame,
         source_layout_ids=None,
     ):
-        """Render every member in a frame."""
+        """Render every member and apply automatic tube notches."""
 
         rendered_objects = []
 
@@ -143,6 +321,10 @@ class FrameRenderer:
                 "Layout identity count does not match "
                 "the number of frame members."
             )
+
+        # -------------------------------------------------
+        # Render all members first
+        # -------------------------------------------------
 
         for index, member in enumerate(
             frame.members,
@@ -169,6 +351,19 @@ class FrameRenderer:
                 obj
             )
 
+        # -------------------------------------------------
+        # Analyze the completed domain frame and configure
+        # branch-member notches.
+        # -------------------------------------------------
+
+        configure_automatic_notches(
+            frame,
+            rendered_objects,
+        )
+
+        # Recompute after notch metadata has been assigned.
+        # TubeMemberProxy.execute() will now regenerate each
+        # configured branch using the coped-geometry path.
         document.recompute()
 
         return rendered_objects
