@@ -10,7 +10,14 @@ from .layout_service import (
 from .layout_conversion import (
     layout_from_selected_objects,
 )
-
+from .cut_list import (
+    CutList,
+    CutListItem,
+    build_cut_list,
+    cut_list_item_from_member,
+    member_weight_kg,
+    profile_name_for_member,
+)
 
 
 __all__ = [
@@ -20,5 +27,10 @@ __all__ = [
     "create_project",
     "build_frame_from_layout",
     "layout_from_selected_objects",
-    
+    "CutList",
+    "CutListItem",
+    "build_cut_list",
+    "cut_list_item_from_member",
+    "member_weight_kg",
+    "profile_name_for_member",
 ]
