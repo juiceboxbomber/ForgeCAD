@@ -120,6 +120,7 @@ sys.modules.setdefault(
 
 from forgecad.adapters.freecad.commands.select_members import (
     frame_members,
+    members_with_name_prefix,
     members_with_profile,
 )
 
@@ -129,9 +130,11 @@ class FakeMember:
         self,
         member_id,
         profile,
+        member_name="",
     ):
         self.MemberID = member_id
         self.TubeProfile = profile
+        self.MemberName = member_name
 
 
 class FakeUnrelatedObject:
@@ -376,6 +379,191 @@ def test_members_with_profile_does_not_modify_input():
     members_with_profile(
         members,
         "1.750 x .120 DOM",
+    )
+
+    assert members == original
+
+
+def test_members_with_name_prefix_returns_matches():
+    member_1 = FakeMember(
+        "M001",
+        "1.750 x .120 DOM",
+        "Crossmember 1",
+    )
+
+    member_2 = FakeMember(
+        "M002",
+        "1.750 x .120 DOM",
+        "Roof Bar 1",
+    )
+
+    member_3 = FakeMember(
+        "M003",
+        "1.750 x .120 DOM",
+        "Crossmember 2",
+    )
+
+    result = members_with_name_prefix(
+        [
+            member_1,
+            member_2,
+            member_3,
+        ],
+        "Crossmember",
+    )
+
+    assert result == [
+        member_1,
+        member_3,
+    ]
+
+
+def test_members_with_name_prefix_is_case_insensitive():
+    member = FakeMember(
+        "M001",
+        "1.750 x .120 DOM",
+        "Crossmember 1",
+    )
+
+    assert (
+        members_with_name_prefix(
+            [member],
+            "crossmember",
+        )
+        == [member]
+    )
+
+
+def test_members_with_name_prefix_trims_input():
+    member = FakeMember(
+        "M001",
+        "1.750 x .120 DOM",
+        "Roof Bar 1",
+    )
+
+    assert (
+        members_with_name_prefix(
+            [member],
+            "   Roof Bar   ",
+        )
+        == [member]
+    )
+
+
+def test_members_with_name_prefix_returns_empty_for_blank_prefix():
+    member = FakeMember(
+        "M001",
+        "1.750 x .120 DOM",
+        "Crossmember 1",
+    )
+
+    assert (
+        members_with_name_prefix(
+            [member],
+            "",
+        )
+        == []
+    )
+
+
+def test_members_with_name_prefix_returns_empty_for_whitespace_prefix():
+    member = FakeMember(
+        "M001",
+        "1.750 x .120 DOM",
+        "Crossmember 1",
+    )
+
+    assert (
+        members_with_name_prefix(
+            [member],
+            "     ",
+        )
+        == []
+    )
+
+
+def test_members_with_name_prefix_ignores_unnamed_members():
+    named_member = FakeMember(
+        "M001",
+        "1.750 x .120 DOM",
+        "Crossmember 1",
+    )
+
+    unnamed_member = FakeMember(
+        "M002",
+        "1.750 x .120 DOM",
+        "",
+    )
+
+    result = members_with_name_prefix(
+        [
+            unnamed_member,
+            named_member,
+        ],
+        "Crossmember",
+    )
+
+    assert result == [
+        named_member
+    ]
+
+
+def test_members_with_name_prefix_preserves_order():
+    member_7 = FakeMember(
+        "M007",
+        "1.750 x .120 DOM",
+        "Brace Rear",
+    )
+
+    member_2 = FakeMember(
+        "M002",
+        "1.750 x .120 DOM",
+        "Brace Front",
+    )
+
+    member_5 = FakeMember(
+        "M005",
+        "1.750 x .120 DOM",
+        "Brace Center",
+    )
+
+    result = members_with_name_prefix(
+        [
+            member_7,
+            member_2,
+            member_5,
+        ],
+        "Brace",
+    )
+
+    assert result == [
+        member_7,
+        member_2,
+        member_5,
+    ]
+
+
+def test_members_with_name_prefix_does_not_modify_input():
+    members = [
+        FakeMember(
+            "M001",
+            "1.750 x .120 DOM",
+            "Crossmember 1",
+        ),
+        FakeMember(
+            "M002",
+            "1.750 x .120 DOM",
+            "Roof Bar 1",
+        ),
+    ]
+
+    original = list(
+        members
+    )
+
+    members_with_name_prefix(
+        members,
+        "Crossmember",
     )
 
     assert members == original

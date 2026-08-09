@@ -62,8 +62,49 @@ def members_with_profile(
     ]
 
 
+def members_with_name_prefix(
+    members,
+    prefix,
+):
+    """Return members whose names start with the requested prefix."""
+
+    cleaned_prefix = (
+        str(prefix).strip()
+    )
+
+    if not cleaned_prefix:
+        return []
+
+    normalized_prefix = (
+        cleaned_prefix.lower()
+    )
+
+    matches = []
+
+    for member in members:
+        member_name = str(
+            getattr(
+                member,
+                "MemberName",
+                "",
+            )
+        ).strip()
+
+        if member_name.lower().startswith(
+            normalized_prefix
+        ):
+            matches.append(
+                member
+            )
+
+    return matches
+
+
 class SelectMembersDialog(QtGui.QDialog):
-    """Select generated ForgeCAD members by tube profile."""
+    """Select generated ForgeCAD members by properties."""
+
+    FILTER_PROFILE = "Tube Profile"
+    FILTER_NAME_PREFIX = "Name Prefix"
 
     def __init__(
         self,
@@ -85,11 +126,27 @@ class SelectMembersDialog(QtGui.QDialog):
         )
 
         self.setMinimumWidth(
-            420
+            440
         )
 
         # -----------------------------------------------------
-        # Profile selector
+        # Filter type
+        # -----------------------------------------------------
+
+        self.filter_type = (
+            QtGui.QComboBox()
+        )
+
+        self.filter_type.addItem(
+            self.FILTER_PROFILE
+        )
+
+        self.filter_type.addItem(
+            self.FILTER_NAME_PREFIX
+        )
+
+        # -----------------------------------------------------
+        # Tube profile selector
         # -----------------------------------------------------
 
         self.profile_combo = (
@@ -106,6 +163,80 @@ class SelectMembersDialog(QtGui.QDialog):
             )
 
         # -----------------------------------------------------
+        # Name prefix input
+        # -----------------------------------------------------
+
+        self.name_prefix = (
+            QtGui.QLineEdit()
+        )
+
+        self.name_prefix.setPlaceholderText(
+            "Example: Crossmember"
+        )
+
+        # -----------------------------------------------------
+        # Input stack
+        # -----------------------------------------------------
+
+        self.filter_stack = (
+            QtGui.QStackedWidget()
+        )
+
+        profile_widget = (
+            QtGui.QWidget()
+        )
+
+        profile_layout = (
+            QtGui.QHBoxLayout()
+        )
+
+        profile_layout.setContentsMargins(
+            0,
+            0,
+            0,
+            0,
+        )
+
+        profile_layout.addWidget(
+            self.profile_combo
+        )
+
+        profile_widget.setLayout(
+            profile_layout
+        )
+
+        name_widget = (
+            QtGui.QWidget()
+        )
+
+        name_layout = (
+            QtGui.QHBoxLayout()
+        )
+
+        name_layout.setContentsMargins(
+            0,
+            0,
+            0,
+            0,
+        )
+
+        name_layout.addWidget(
+            self.name_prefix
+        )
+
+        name_widget.setLayout(
+            name_layout
+        )
+
+        self.filter_stack.addWidget(
+            profile_widget
+        )
+
+        self.filter_stack.addWidget(
+            name_widget
+        )
+
+        # -----------------------------------------------------
         # Match information
         # -----------------------------------------------------
 
@@ -113,11 +244,17 @@ class SelectMembersDialog(QtGui.QDialog):
             QtGui.QLabel()
         )
 
+        self.filter_type.currentIndexChanged.connect(
+            self.filter_changed
+        )
+
         self.profile_combo.currentIndexChanged.connect(
             self.update_match_count
         )
 
-        self.update_match_count()
+        self.name_prefix.textChanged.connect(
+            self.update_match_count
+        )
 
         # -----------------------------------------------------
         # Form
@@ -128,8 +265,13 @@ class SelectMembersDialog(QtGui.QDialog):
         )
 
         form.addRow(
-            "Tube Profile:",
-            self.profile_combo,
+            "Filter By:",
+            self.filter_type,
+        )
+
+        form.addRow(
+            "Value:",
+            self.filter_stack,
         )
 
         form.addRow(
@@ -186,8 +328,47 @@ class SelectMembersDialog(QtGui.QDialog):
             layout
         )
 
+        self.filter_changed()
+
+    def filter_changed(self):
+        """Switch the visible input for the selected filter."""
+
+        filter_name = (
+            self.filter_type.currentText()
+        )
+
+        if (
+            filter_name
+            == self.FILTER_NAME_PREFIX
+        ):
+            self.filter_stack.setCurrentIndex(
+                1
+            )
+
+            self.name_prefix.setFocus()
+
+        else:
+            self.filter_stack.setCurrentIndex(
+                0
+            )
+
+        self.update_match_count()
+
     def matching_members(self):
-        """Return members matching the selected tube profile."""
+        """Return members matching the selected filter."""
+
+        filter_name = (
+            self.filter_type.currentText()
+        )
+
+        if (
+            filter_name
+            == self.FILTER_NAME_PREFIX
+        ):
+            return members_with_name_prefix(
+                self.members,
+                self.name_prefix.text(),
+            )
 
         return members_with_profile(
             self.members,
@@ -230,14 +411,14 @@ class SelectMembersDialog(QtGui.QDialog):
 
 
 class SelectMembersCommand:
-    """Select generated members by tube profile."""
+    """Select generated members by ForgeCAD properties."""
 
     def GetResources(self):
         return {
             "MenuText": "Select Members",
             "ToolTip": (
                 "Select generated ForgeCAD members "
-                "by tube profile"
+                "by tube profile or name prefix"
             ),
         }
 
