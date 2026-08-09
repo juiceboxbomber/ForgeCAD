@@ -28,6 +28,22 @@ from .joint_service import (
     frame_connection_nodes,
     member_touches_node,
 )
+from .joint_geometry import (
+    JOINT_CORNER,
+    JOINT_INVALID,
+    JOINT_MULTI_MEMBER,
+    JOINT_STRAIGHT,
+    JOINT_T,
+    JointAngle,
+    JointGeometryAnalysis,
+    analyze_joint,
+    angle_between_members,
+    classify_joint,
+    is_straight_angle,
+    joint_angles,
+    member_direction_from_node,
+    member_other_node,
+)
 
 
 __all__ = [
@@ -49,4 +65,18 @@ __all__ = [
     "detect_joints",
     "frame_connection_nodes",
     "member_touches_node",
+    "JOINT_CORNER",
+    "JOINT_INVALID",
+    "JOINT_MULTI_MEMBER",
+    "JOINT_STRAIGHT",
+    "JOINT_T",
+    "JointAngle",
+    "JointGeometryAnalysis",
+    "analyze_joint",
+    "angle_between_members",
+    "classify_joint",
+    "is_straight_angle",
+    "joint_angles",
+    "member_direction_from_node",
+    "member_other_node",
 ]
