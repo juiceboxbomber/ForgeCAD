@@ -46,6 +46,61 @@ def build_tube_shape(start, end, profile):
     return shape, length
 
 
+def find_source_layout_object(obj):
+    """Find the layout object that owns a generated member."""
+
+    source_layout_id = getattr(
+        obj,
+        "SourceLayoutID",
+        "",
+    )
+
+    if not source_layout_id:
+        return None
+
+    document = obj.Document
+
+    if document is None:
+        return None
+
+    layout_group = document.getObject(
+        "ForgeCADLayout"
+    )
+
+    if layout_group is None:
+        return None
+
+    for layout_object in layout_group.Group:
+        layout_id = getattr(
+            layout_object,
+            "LayoutID",
+            "",
+        )
+
+        if layout_id == source_layout_id:
+            return layout_object
+
+    return None
+
+
+def ensure_profile_override_property(layout_object):
+    """Ensure a layout object can store a member profile override."""
+
+    if not hasattr(
+        layout_object,
+        "TubeProfileOverride",
+    ):
+        layout_object.addProperty(
+            "App::PropertyString",
+            "TubeProfileOverride",
+            "ForgeCAD Layout",
+        )
+
+        layout_object.TubeProfileOverride = ""
+
+    return layout_object
+
+
 class TubeMemberProxy:
     """Keep a ForgeCAD tube synchronized with its editable profile."""
 
@@ -228,6 +283,27 @@ class TubeMemberProxy:
             profile.inside_diameter
         )
 
+    def _store_profile_override(
+        self,
+        obj,
+    ):
+        """Store the selected profile on the source layout line."""
+
+        source_object = find_source_layout_object(
+            obj
+        )
+
+        if source_object is None:
+            return
+
+        ensure_profile_override_property(
+            source_object
+        )
+
+        source_object.TubeProfileOverride = str(
+            obj.TubeProfile
+        )
+
     def update_shape(
         self,
         obj,
@@ -266,13 +342,19 @@ class TubeMemberProxy:
         obj,
         property_name,
     ):
-        """Regenerate geometry when TubeProfile changes."""
+        """Regenerate geometry and persist profile changes."""
 
         if not self._ready:
             return
 
         if property_name == "TubeProfile":
-            self.update_shape(obj)
+            self.update_shape(
+                obj
+            )
+
+            self._store_profile_override(
+                obj
+            )
 
     def execute(
         self,
@@ -281,5 +363,7 @@ class TubeMemberProxy:
         """Regenerate geometry during document recompute."""
 
         if self._ready:
-            self.update_shape(obj)
+            self.update_shape(
+                obj
+            )
             

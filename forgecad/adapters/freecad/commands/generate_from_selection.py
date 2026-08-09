@@ -16,6 +16,7 @@ from forgecad.adapters.freecad.document_tree import (
 from forgecad.services import (
     build_frame_from_layout,
     create_project,
+    create_default_tube_library,
 )
 from forgecad.services.layout_conversion import (
     layout_from_selected_objects,
@@ -199,16 +200,64 @@ def selected_or_project_layout_lines(
 def layout_ids_for_objects(
     objects,
 ):
-    """Return stable IDs for layout objects, creating missing IDs."""
+    """Return stable IDs for layout objects."""
 
-    layout_ids = []
+    return [
+        ensure_layout_id(obj)
+        for obj in objects
+    ]
+
+
+def profile_overrides_for_objects(
+    objects,
+):
+    """Return stored tube-profile overrides for layout objects."""
+
+    overrides = []
+
+    library = create_default_tube_library()
+
+    valid_names = set(
+        library.names
+    )
 
     for obj in objects:
-        layout_ids.append(
-            ensure_layout_id(obj)
+        override = getattr(
+            obj,
+            "TubeProfileOverride",
+            "",
         )
 
-    return layout_ids
+        if override not in valid_names:
+            override = ""
+
+        overrides.append(
+            override
+        )
+
+    return overrides
+
+
+def apply_profile_overrides(
+    rendered_objects,
+    overrides,
+):
+    """Restore stored tube-profile overrides to generated members."""
+
+    if len(rendered_objects) != len(overrides):
+        raise ValueError(
+            "Profile override count does not match "
+            "the number of generated members."
+        )
+
+    for obj, override in zip(
+        rendered_objects,
+        overrides,
+    ):
+        if not override:
+            continue
+
+        obj.TubeProfile = override
 
 
 class GenerateFromSelectionCommand:
@@ -261,6 +310,12 @@ class GenerateFromSelectionCommand:
             )
         )
 
+        profile_overrides = (
+            profile_overrides_for_objects(
+                layout_objects
+            )
+        )
+
         try:
             project = project_from_document(
                 document
@@ -300,6 +355,11 @@ class GenerateFromSelectionCommand:
                 frame,
                 source_layout_ids=source_layout_ids,
             )
+        )
+
+        apply_profile_overrides(
+            rendered_objects,
+            profile_overrides,
         )
 
         for obj in rendered_objects:
