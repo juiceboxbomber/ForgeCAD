@@ -82,6 +82,7 @@ def straightest_member_pair(
 
             if angle > best_angle:
                 best_angle = angle
+
                 best_pair = (
                     first_member,
                     second_member,
