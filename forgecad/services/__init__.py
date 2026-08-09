@@ -44,6 +44,11 @@ from .joint_geometry import (
     member_direction_from_node,
     member_other_node,
 )
+from .joint_member_roles import (
+    MemberRoleAnalysis,
+    identify_member_roles,
+    straightest_member_pair,
+)
 
 
 __all__ = [
@@ -79,4 +84,7 @@ __all__ = [
     "joint_angles",
     "member_direction_from_node",
     "member_other_node",
+    "MemberRoleAnalysis",
+    "identify_member_roles",
+    "straightest_member_pair",
 ]
