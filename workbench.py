@@ -64,6 +64,10 @@ class ForgeCADWorkbench(FreeCADGui.Workbench):
             COMMAND_NAME as DRAW_MEMBER_INTERACTIVE_COMMAND,
             register_command as register_draw_member_interactive_command,
         )
+        from forgecad.adapters.freecad.commands.create_offset_node import (
+            COMMAND_NAME as CREATE_OFFSET_NODE_COMMAND,
+            register_command as register_create_offset_node_command,
+        )
 
         register_new_project_command()
 
@@ -74,6 +78,8 @@ class ForgeCADWorkbench(FreeCADGui.Workbench):
         register_draw_layout_line_interactive_command()
 
         register_generate_nodes_command()
+
+        register_create_offset_node_command()
 
         register_draw_member_interactive_command()
 
@@ -93,6 +99,7 @@ class ForgeCADWorkbench(FreeCADGui.Workbench):
             DEFINE_LAYOUT_LINES_COMMAND,
             DRAW_LAYOUT_LINE_INTERACTIVE_COMMAND,
             GENERATE_NODES_COMMAND,
+            CREATE_OFFSET_NODE_COMMAND,
             DRAW_MEMBER_INTERACTIVE_COMMAND,
             CREATE_MEMBER_BETWEEN_NODES_COMMAND,
             GENERATE_FROM_SELECTION_COMMAND,

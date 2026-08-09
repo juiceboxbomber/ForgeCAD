@@ -1,4 +1,4 @@
-"""Tests for ForgeCAD Member Properties command helpers."""
+"""Tests for ForgeCAD Generate Nodes command helpers."""
 
 import sys
 import types
@@ -40,29 +40,12 @@ fake_freecad_gui = types.ModuleType(
     "FreeCADGui"
 )
 
-
-class FakeSelection:
-    """Minimal FreeCAD selection stub."""
-
-    selected = []
-
-    @classmethod
-    def getSelection(cls):
-        return list(
-            cls.selected
-        )
-
-
-fake_freecad_gui.Selection = (
-    FakeSelection
+fake_freecad_gui.addCommand = (
+    lambda *args, **kwargs: None
 )
 
 fake_freecad_gui.getMainWindow = (
     lambda: None
-)
-
-fake_freecad_gui.addCommand = (
-    lambda *args, **kwargs: None
 )
 
 sys.modules[
@@ -105,500 +88,591 @@ sys.modules[
 
 
 # ---------------------------------------------------------
-# Make sure the module under test is imported against
-# this test file's stubs rather than an earlier test's stubs.
+# Import module under test
 # ---------------------------------------------------------
 
 sys.modules.pop(
-    "forgecad.adapters.freecad.commands.member_properties",
+    "forgecad.adapters.freecad.commands.generate_nodes",
     None,
 )
 
-
-from forgecad.adapters.freecad.commands.member_properties import (
-    build_bulk_member_names,
-    is_forgecad_member,
-    selected_member,
-    selected_members,
+from forgecad.adapters.freecad.commands.generate_nodes import (
+    SOURCE_LAYOUT,
+    SOURCE_MANUAL,
+    migrate_existing_node_sources,
+    next_node_id,
+    node_by_point,
+    point_key,
+    unique_layout_points,
 )
 
 
-class FakeMember:
-    """Object containing the required ForgeCAD member properties."""
+# ---------------------------------------------------------
+# Fake objects
+# ---------------------------------------------------------
 
+class FakeVector:
     def __init__(
         self,
-        member_id="M001",
-        member_name="Left Main Rail",
+        x,
+        y,
+        z,
     ):
-        self.MemberID = member_id
-        self.MemberName = member_name
-        self.TubeProfile = "1.750 x .120 DOM"
-        self.MemberLength = 1000.0
-        self.Material = "A513 Type 5 DOM"
+        self.x = float(x)
+        self.y = float(y)
+        self.z = float(z)
 
 
-class FakeLayoutLine:
-    """Layout object that must not be treated as a generated member."""
+class FakeLayoutObject:
+    def __init__(
+        self,
+        start,
+        end,
+    ):
+        self.StartPoint = FakeVector(
+            *start
+        )
 
-    def __init__(self):
-        self.MemberName = "Left Main Rail"
-        self.TubeProfileOverride = "1.750 x .120 DOM"
-        self.LayoutLength = 1000.0
+        self.EndPoint = FakeVector(
+            *end
+        )
+
+
+class FakeNodeObject:
+    def __init__(
+        self,
+        node_id,
+        position,
+        source_type=None,
+    ):
+        self.NodeID = node_id
+        self.Position = FakeVector(
+            *position
+        )
+
+        if source_type is not None:
+            self.SourceType = (
+                source_type
+            )
+
+        self._properties = []
+
+    def addProperty(
+        self,
+        property_type,
+        property_name,
+        group_name,
+    ):
+        self._properties.append(
+            (
+                property_type,
+                property_name,
+                group_name,
+            )
+        )
+
+        setattr(
+            self,
+            property_name,
+            "",
+        )
+
+    def setEditorMode(
+        self,
+        property_name,
+        mode,
+    ):
+        pass
 
 
 class FakeUnrelatedObject:
-    """Non-ForgeCAD object."""
-
     pass
 
 
+class FakeNodesGroup:
+    def __init__(
+        self,
+        objects=None,
+    ):
+        self.Group = list(
+            objects or []
+        )
+
+
+def coordinates(
+    points,
+):
+    """Return XYZ tuples for easier assertions."""
+
+    return [
+        (
+            point.x,
+            point.y,
+            point.z,
+        )
+        for point in points
+    ]
+
+
 # ---------------------------------------------------------
-# ForgeCAD member detection
+# Point identity
 # ---------------------------------------------------------
 
+def test_point_key_returns_coordinate_tuple():
+    point = FakeVector(
+        100.0,
+        250.0,
+        50.0,
+    )
 
-def test_generated_member_is_recognized():
-    member = FakeMember()
-
-    assert (
-        is_forgecad_member(
-            member
-        )
-        is True
+    assert point_key(
+        point
+    ) == (
+        100.0,
+        250.0,
+        50.0,
     )
 
 
-def test_none_is_not_member():
-    assert (
-        is_forgecad_member(
-            None
-        )
-        is False
+def test_point_key_rounds_coordinates():
+    point = FakeVector(
+        1.123456789,
+        2.987654321,
+        3.111111111,
     )
 
-
-def test_layout_line_is_not_member():
-    layout_line = (
-        FakeLayoutLine()
-    )
-
-    assert (
-        is_forgecad_member(
-            layout_line
-        )
-        is False
-    )
-
-
-def test_unrelated_object_is_not_member():
-    obj = (
-        FakeUnrelatedObject()
-    )
-
-    assert (
-        is_forgecad_member(
-            obj
-        )
-        is False
-    )
-
-
-def test_member_missing_required_property_is_rejected():
-    member = FakeMember()
-
-    del member.MemberID
-
-    assert (
-        is_forgecad_member(
-            member
-        )
-        is False
+    assert point_key(
+        point
+    ) == (
+        1.123457,
+        2.987654,
+        3.111111,
     )
 
 
 # ---------------------------------------------------------
-# Single-member selection
+# Unique layout endpoints
 # ---------------------------------------------------------
 
-
-def test_selected_member_returns_single_member():
-    member = FakeMember()
-
-    FakeSelection.selected = [
-        member
-    ]
-
-    assert (
-        selected_member()
-        is member
+def test_single_layout_line_creates_two_unique_points():
+    layout = FakeLayoutObject(
+        (0, 0, 0),
+        (1000, 0, 0),
     )
 
-
-def test_selected_member_returns_none_for_no_selection():
-    FakeSelection.selected = []
-
-    assert (
-        selected_member()
-        is None
+    result = unique_layout_points(
+        [layout]
     )
 
-
-def test_selected_member_returns_none_for_multiple_selection():
-    FakeSelection.selected = [
-        FakeMember(
-            "M001"
-        ),
-        FakeMember(
-            "M002"
-        ),
-    ]
-
-    assert (
-        selected_member()
-        is None
-    )
-
-
-def test_selected_member_returns_none_for_layout_line():
-    FakeSelection.selected = [
-        FakeLayoutLine()
-    ]
-
-    assert (
-        selected_member()
-        is None
-    )
-
-
-def test_selected_member_returns_none_for_unrelated_object():
-    FakeSelection.selected = [
-        FakeUnrelatedObject()
-    ]
-
-    assert (
-        selected_member()
-        is None
-    )
-
-
-# ---------------------------------------------------------
-# Multi-member selection
-# ---------------------------------------------------------
-
-
-def test_selected_members_returns_all_selected_members():
-    member_1 = FakeMember(
-        "M001"
-    )
-
-    member_2 = FakeMember(
-        "M002"
-    )
-
-    member_3 = FakeMember(
-        "M003"
-    )
-
-    FakeSelection.selected = [
-        member_1,
-        member_2,
-        member_3,
-    ]
-
-    result = (
-        selected_members()
-    )
-
-    assert result == [
-        member_1,
-        member_2,
-        member_3,
+    assert coordinates(
+        result
+    ) == [
+        (0.0, 0.0, 0.0),
+        (1000.0, 0.0, 0.0),
     ]
 
 
-def test_selected_members_returns_single_member_as_list():
-    member = FakeMember()
-
-    FakeSelection.selected = [
-        member
-    ]
-
-    assert (
-        selected_members()
-        == [member]
+def test_connected_lines_share_one_node():
+    line_1 = FakeLayoutObject(
+        (0, 0, 0),
+        (1000, 0, 0),
     )
 
-
-def test_selected_members_returns_empty_for_no_selection():
-    FakeSelection.selected = []
-
-    assert (
-        selected_members()
-        == []
+    line_2 = FakeLayoutObject(
+        (1000, 0, 0),
+        (1000, 500, 0),
     )
 
-
-def test_selected_members_rejects_layout_line():
-    FakeSelection.selected = [
-        FakeLayoutLine()
-    ]
-
-    assert (
-        selected_members()
-        == []
-    )
-
-
-def test_selected_members_rejects_unrelated_object():
-    FakeSelection.selected = [
-        FakeUnrelatedObject()
-    ]
-
-    assert (
-        selected_members()
-        == []
-    )
-
-
-def test_selected_members_rejects_mixed_selection():
-    FakeSelection.selected = [
-        FakeMember(
-            "M001"
-        ),
-        FakeLayoutLine(),
-    ]
-
-    assert (
-        selected_members()
-        == []
-    )
-
-
-def test_selected_members_rejects_member_and_unrelated_object():
-    FakeSelection.selected = [
-        FakeMember(
-            "M001"
-        ),
-        FakeUnrelatedObject(),
-    ]
-
-    assert (
-        selected_members()
-        == []
-    )
-
-
-# ---------------------------------------------------------
-# Bulk member naming
-# ---------------------------------------------------------
-
-
-def test_bulk_names_start_at_one_by_default():
-    members = [
-        FakeMember(
-            "M001"
-        ),
-        FakeMember(
-            "M002"
-        ),
-        FakeMember(
-            "M003"
-        ),
-    ]
-
-    assignments = (
-        build_bulk_member_names(
-            members,
-            "Crossmember",
-        )
-    )
-
-    assert assignments == [
-        (
-            members[0],
-            "Crossmember 1",
-        ),
-        (
-            members[1],
-            "Crossmember 2",
-        ),
-        (
-            members[2],
-            "Crossmember 3",
-        ),
-    ]
-
-
-def test_bulk_names_support_custom_start_number():
-    members = [
-        FakeMember(
-            "M004"
-        ),
-        FakeMember(
-            "M005"
-        ),
-        FakeMember(
-            "M006"
-        ),
-    ]
-
-    assignments = (
-        build_bulk_member_names(
-            members,
-            "Roof Bar",
-            start_number=5,
-        )
-    )
-
-    assert assignments == [
-        (
-            members[0],
-            "Roof Bar 5",
-        ),
-        (
-            members[1],
-            "Roof Bar 6",
-        ),
-        (
-            members[2],
-            "Roof Bar 7",
-        ),
-    ]
-
-
-def test_bulk_names_trim_prefix_whitespace():
-    members = [
-        FakeMember(
-            "M001"
-        ),
-        FakeMember(
-            "M002"
-        ),
-    ]
-
-    assignments = (
-        build_bulk_member_names(
-            members,
-            "   Door Bar   ",
-        )
-    )
-
-    assert assignments == [
-        (
-            members[0],
-            "Door Bar 1",
-        ),
-        (
-            members[1],
-            "Door Bar 2",
-        ),
-    ]
-
-
-def test_bulk_names_empty_prefix_returns_no_assignments():
-    members = [
-        FakeMember(
-            "M001"
-        ),
-        FakeMember(
-            "M002"
-        ),
-    ]
-
-    assert (
-        build_bulk_member_names(
-            members,
-            "",
-        )
-        == []
-    )
-
-
-def test_bulk_names_whitespace_only_prefix_returns_no_assignments():
-    members = [
-        FakeMember(
-            "M001"
-        )
-    ]
-
-    assert (
-        build_bulk_member_names(
-            members,
-            "     ",
-        )
-        == []
-    )
-
-
-def test_bulk_names_preserve_member_order():
-    member_7 = FakeMember(
-        "M007"
-    )
-
-    member_2 = FakeMember(
-        "M002"
-    )
-
-    member_5 = FakeMember(
-        "M005"
-    )
-
-    members = [
-        member_7,
-        member_2,
-        member_5,
-    ]
-
-    assignments = (
-        build_bulk_member_names(
-            members,
-            "Brace",
-        )
-    )
-
-    assert assignments[0] == (
-        member_7,
-        "Brace 1",
-    )
-
-    assert assignments[1] == (
-        member_2,
-        "Brace 2",
-    )
-
-    assert assignments[2] == (
-        member_5,
-        "Brace 3",
-    )
-
-
-def test_building_bulk_names_does_not_modify_members():
-    member_1 = FakeMember(
-        "M001",
-        "Original One",
-    )
-
-    member_2 = FakeMember(
-        "M002",
-        "Original Two",
-    )
-
-    build_bulk_member_names(
+    result = unique_layout_points(
         [
-            member_1,
-            member_2,
+            line_1,
+            line_2,
+        ]
+    )
+
+    assert coordinates(
+        result
+    ) == [
+        (0.0, 0.0, 0.0),
+        (1000.0, 0.0, 0.0),
+        (1000.0, 500.0, 0.0),
+    ]
+
+
+def test_rectangle_creates_four_unique_nodes():
+    objects = [
+        FakeLayoutObject(
+            (0, 0, 0),
+            (1000, 0, 0),
+        ),
+        FakeLayoutObject(
+            (1000, 0, 0),
+            (1000, 500, 0),
+        ),
+        FakeLayoutObject(
+            (1000, 500, 0),
+            (0, 500, 0),
+        ),
+        FakeLayoutObject(
+            (0, 500, 0),
+            (0, 0, 0),
+        ),
+    ]
+
+    result = unique_layout_points(
+        objects
+    )
+
+    assert len(
+        result
+    ) == 4
+
+
+def test_duplicate_lines_do_not_duplicate_nodes():
+    line_1 = FakeLayoutObject(
+        (0, 0, 0),
+        (1000, 0, 0),
+    )
+
+    line_2 = FakeLayoutObject(
+        (0, 0, 0),
+        (1000, 0, 0),
+    )
+
+    result = unique_layout_points(
+        [
+            line_1,
+            line_2,
+        ]
+    )
+
+    assert len(
+        result
+    ) == 2
+
+
+def test_reversed_duplicate_line_does_not_duplicate_nodes():
+    line_1 = FakeLayoutObject(
+        (0, 0, 0),
+        (1000, 0, 0),
+    )
+
+    line_2 = FakeLayoutObject(
+        (1000, 0, 0),
+        (0, 0, 0),
+    )
+
+    result = unique_layout_points(
+        [
+            line_1,
+            line_2,
+        ]
+    )
+
+    assert len(
+        result
+    ) == 2
+
+
+def test_unrelated_objects_are_ignored():
+    line = FakeLayoutObject(
+        (0, 0, 0),
+        (1000, 0, 0),
+    )
+
+    result = unique_layout_points(
+        [
+            FakeUnrelatedObject(),
+            line,
+        ]
+    )
+
+    assert coordinates(
+        result
+    ) == [
+        (0.0, 0.0, 0.0),
+        (1000.0, 0.0, 0.0),
+    ]
+
+
+def test_nearly_identical_coordinates_are_treated_as_same_node():
+    line_1 = FakeLayoutObject(
+        (0, 0, 0),
+        (1000.0000001, 0, 0),
+    )
+
+    line_2 = FakeLayoutObject(
+        (1000.0000002, 0, 0),
+        (1000, 500, 0),
+    )
+
+    result = unique_layout_points(
+        [
+            line_1,
+            line_2,
+        ]
+    )
+
+    assert len(
+        result
+    ) == 3
+
+
+# ---------------------------------------------------------
+# Existing-node lookup
+# ---------------------------------------------------------
+
+def test_node_by_point_returns_existing_node():
+    node = FakeNodeObject(
+        "N001",
+        (100, 200, 300),
+        SOURCE_MANUAL,
+    )
+
+    group = FakeNodesGroup(
+        [node]
+    )
+
+    result = node_by_point(
+        group,
+        FakeVector(
+            100,
+            200,
+            300,
+        ),
+    )
+
+    assert result is node
+
+
+def test_node_by_point_returns_none_when_missing():
+    node = FakeNodeObject(
+        "N001",
+        (100, 200, 300),
+        SOURCE_MANUAL,
+    )
+
+    group = FakeNodesGroup(
+        [node]
+    )
+
+    result = node_by_point(
+        group,
+        FakeVector(
+            500,
+            500,
+            500,
+        ),
+    )
+
+    assert result is None
+
+
+# ---------------------------------------------------------
+# Node numbering
+# ---------------------------------------------------------
+
+def test_next_node_id_starts_at_n001():
+    group = FakeNodesGroup()
+
+    assert (
+        next_node_id(
+            group
+        )
+        == "N001"
+    )
+
+
+def test_next_node_id_uses_highest_existing_number():
+    group = FakeNodesGroup(
+        [
+            FakeNodeObject(
+                "N001",
+                (0, 0, 0),
+            ),
+            FakeNodeObject(
+                "N005",
+                (1, 0, 0),
+            ),
+            FakeNodeObject(
+                "N003",
+                (2, 0, 0),
+            ),
+        ]
+    )
+
+    assert (
+        next_node_id(
+            group
+        )
+        == "N006"
+    )
+
+
+def test_next_node_id_ignores_invalid_ids():
+    group = FakeNodesGroup(
+        [
+            FakeNodeObject(
+                "Node",
+                (0, 0, 0),
+            ),
+            FakeNodeObject(
+                "NABC",
+                (1, 0, 0),
+            ),
+            FakeNodeObject(
+                "N007",
+                (2, 0, 0),
+            ),
+        ]
+    )
+
+    assert (
+        next_node_id(
+            group
+        )
+        == "N008"
+    )
+
+
+# ---------------------------------------------------------
+# Source migration
+# ---------------------------------------------------------
+
+def test_legacy_node_matching_layout_becomes_layout():
+    node = FakeNodeObject(
+        "N001",
+        (0, 0, 0),
+    )
+
+    group = FakeNodesGroup(
+        [node]
+    )
+
+    migrate_existing_node_sources(
+        group,
+        [
+            FakeVector(
+                0,
+                0,
+                0,
+            )
         ],
-        "Crossmember",
     )
 
     assert (
-        member_1.MemberName
-        == "Original One"
+        node.SourceType
+        == SOURCE_LAYOUT
+    )
+
+
+def test_legacy_node_not_matching_layout_becomes_manual():
+    node = FakeNodeObject(
+        "N005",
+        (0, 0, 1000),
+    )
+
+    group = FakeNodesGroup(
+        [node]
+    )
+
+    migrate_existing_node_sources(
+        group,
+        [
+            FakeVector(
+                0,
+                0,
+                0,
+            )
+        ],
     )
 
     assert (
-        member_2.MemberName
-        == "Original Two"
+        node.SourceType
+        == SOURCE_MANUAL
+    )
+
+
+def test_existing_manual_source_type_is_preserved():
+    node = FakeNodeObject(
+        "N005",
+        (0, 0, 1000),
+        SOURCE_MANUAL,
+    )
+
+    group = FakeNodesGroup(
+        [node]
+    )
+
+    migrate_existing_node_sources(
+        group,
+        [
+            FakeVector(
+                0,
+                0,
+                1000,
+            )
+        ],
+    )
+
+    assert (
+        node.SourceType
+        == SOURCE_MANUAL
+    )
+
+
+def test_existing_layout_source_type_is_preserved():
+    node = FakeNodeObject(
+        "N001",
+        (0, 0, 0),
+        SOURCE_LAYOUT,
+    )
+
+    group = FakeNodesGroup(
+        [node]
+    )
+
+    migrate_existing_node_sources(
+        group,
+        [
+            FakeVector(
+                0,
+                0,
+                0,
+            )
+        ],
+    )
+
+    assert (
+        node.SourceType
+        == SOURCE_LAYOUT
+    )
+
+
+def test_manual_node_at_layout_coordinate_is_not_reclassified():
+    node = FakeNodeObject(
+        "N010",
+        (1000, 500, 750),
+        SOURCE_MANUAL,
+    )
+
+    group = FakeNodesGroup(
+        [node]
+    )
+
+    migrate_existing_node_sources(
+        group,
+        [
+            FakeVector(
+                1000,
+                500,
+                750,
+            )
+        ],
+    )
+
+    assert (
+        node.SourceType
+        == SOURCE_MANUAL
     )
     
