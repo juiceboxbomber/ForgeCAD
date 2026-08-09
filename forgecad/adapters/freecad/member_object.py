@@ -6,6 +6,10 @@ import Part
 from forgecad.services import (
     create_default_tube_library,
 )
+from forgecad.adapters.freecad.member_notch import (
+    build_member_shape,
+    ensure_notch_properties,
+)
 
 
 def build_tube_shape(
@@ -281,6 +285,12 @@ class TubeMemberProxy:
             member.profile,
         )
 
+        # Every ForgeCAD member now knows whether it should
+        # regenerate as a plain tube or as a coped tube.
+        ensure_notch_properties(
+            obj
+        )
+
         for property_name in (
             "MemberID",
             "StartPoint",
@@ -460,7 +470,7 @@ class TubeMemberProxy:
         self,
         obj,
     ):
-        """Regenerate the tube using the selected profile."""
+        """Regenerate the plain or coped tube geometry."""
 
         if self._updating:
             return
@@ -475,14 +485,15 @@ class TubeMemberProxy:
             )
 
             shape, length = (
-                build_tube_shape(
-                    obj.StartPoint,
-                    obj.EndPoint,
+                build_member_shape(
+                    obj,
                     profile,
+                    build_tube_shape,
                 )
             )
 
             obj.Shape = shape
+
             obj.MemberLength = (
                 length
             )
