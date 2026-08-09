@@ -41,6 +41,11 @@ class ForgeCADWorkbench(FreeCADGui.Workbench):
             register_command as register_member_properties_command,
         )
 
+        from forgecad.adapters.freecad.commands.select_members import (
+            COMMAND_NAME as SELECT_MEMBERS_COMMAND,
+            register_command as register_select_members_command,
+        )
+
         from forgecad.adapters.freecad.commands.cut_list import (
             COMMAND_NAME as CUT_LIST_COMMAND,
             register_command as register_cut_list_command,
@@ -58,6 +63,8 @@ class ForgeCADWorkbench(FreeCADGui.Workbench):
 
         register_member_properties_command()
 
+        register_select_members_command()
+
         register_cut_list_command()
 
         commands = [
@@ -67,6 +74,7 @@ class ForgeCADWorkbench(FreeCADGui.Workbench):
             DRAW_LAYOUT_LINE_INTERACTIVE_COMMAND,
             GENERATE_FROM_SELECTION_COMMAND,
             MEMBER_PROPERTIES_COMMAND,
+            SELECT_MEMBERS_COMMAND,
             CUT_LIST_COMMAND,
         ]
 
