@@ -119,11 +119,236 @@ sys.modules.setdefault(
 # ---------------------------------------------------------
 
 from forgecad.adapters.freecad.commands.select_members import (
+    available_materials,
     frame_members,
+    members_with_length_range,
+    members_with_material,
     members_with_name_prefix,
     members_with_profile,
 )
 
+# ---------------------------------------------------------
+# Material filtering
+# ---------------------------------------------------------
+
+
+def test_members_with_material_returns_matches():
+    member_1 = FakeMember(
+        "M001",
+        "1.750 x .120 DOM",
+    )
+    member_1.Material = "A513 Type 5 DOM"
+
+    member_2 = FakeMember(
+        "M002",
+        "1.750 x .120 DOM",
+    )
+    member_2.Material = "4130 Chromoly"
+
+    member_3 = FakeMember(
+        "M003",
+        "1.000 x .065 DOM",
+    )
+    member_3.Material = "A513 Type 5 DOM"
+
+    result = members_with_material(
+        [
+            member_1,
+            member_2,
+            member_3,
+        ],
+        "A513 Type 5 DOM",
+    )
+
+    assert result == [
+        member_1,
+        member_3,
+    ]
+
+
+def test_members_with_material_is_case_insensitive():
+    member = FakeMember(
+        "M001",
+        "1.750 x .120 DOM",
+    )
+    member.Material = "A513 Type 5 DOM"
+
+    assert members_with_material(
+        [member],
+        "a513 type 5 dom",
+    ) == [member]
+
+
+def test_members_with_material_returns_empty_for_blank_material():
+    member = FakeMember(
+        "M001",
+        "1.750 x .120 DOM",
+    )
+    member.Material = "A513 Type 5 DOM"
+
+    assert members_with_material(
+        [member],
+        "   ",
+    ) == []
+
+
+# ---------------------------------------------------------
+# Available materials
+# ---------------------------------------------------------
+
+
+def test_available_materials_returns_unique_materials():
+    member_1 = FakeMember(
+        "M001",
+        "1.750 x .120 DOM",
+    )
+    member_1.Material = "A513 Type 5 DOM"
+
+    member_2 = FakeMember(
+        "M002",
+        "1.750 x .120 DOM",
+    )
+    member_2.Material = "4130 Chromoly"
+
+    member_3 = FakeMember(
+        "M003",
+        "1.000 x .065 DOM",
+    )
+    member_3.Material = "A513 Type 5 DOM"
+
+    assert available_materials(
+        [
+            member_1,
+            member_2,
+            member_3,
+        ]
+    ) == [
+        "A513 Type 5 DOM",
+        "4130 Chromoly",
+    ]
+
+
+def test_available_materials_ignores_empty_materials():
+    member_1 = FakeMember(
+        "M001",
+        "1.750 x .120 DOM",
+    )
+    member_1.Material = ""
+
+    member_2 = FakeMember(
+        "M002",
+        "1.750 x .120 DOM",
+    )
+    member_2.Material = "A513 Type 5 DOM"
+
+    assert available_materials(
+        [
+            member_1,
+            member_2,
+        ]
+    ) == [
+        "A513 Type 5 DOM",
+    ]
+
+
+# ---------------------------------------------------------
+# Length-range filtering
+# ---------------------------------------------------------
+
+
+def test_members_with_length_range_returns_matches():
+    member_1 = FakeMember(
+        "M001",
+        "1.750 x .120 DOM",
+    )
+    member_1.MemberLength = 500.0
+
+    member_2 = FakeMember(
+        "M002",
+        "1.750 x .120 DOM",
+    )
+    member_2.MemberLength = 800.0
+
+    member_3 = FakeMember(
+        "M003",
+        "1.750 x .120 DOM",
+    )
+    member_3.MemberLength = 1000.0
+
+    member_4 = FakeMember(
+        "M004",
+        "1.750 x .120 DOM",
+    )
+    member_4.MemberLength = 1500.0
+
+    result = members_with_length_range(
+        [
+            member_1,
+            member_2,
+            member_3,
+            member_4,
+        ],
+        750.0,
+        1100.0,
+    )
+
+    assert result == [
+        member_2,
+        member_3,
+    ]
+
+
+def test_members_with_length_range_includes_boundaries():
+    member_1 = FakeMember(
+        "M001",
+        "1.750 x .120 DOM",
+    )
+    member_1.MemberLength = 750.0
+
+    member_2 = FakeMember(
+        "M002",
+        "1.750 x .120 DOM",
+    )
+    member_2.MemberLength = 1100.0
+
+    assert members_with_length_range(
+        [
+            member_1,
+            member_2,
+        ],
+        750.0,
+        1100.0,
+    ) == [
+        member_1,
+        member_2,
+    ]
+
+
+def test_members_with_length_range_accepts_reversed_range():
+    member = FakeMember(
+        "M001",
+        "1.750 x .120 DOM",
+    )
+    member.MemberLength = 900.0
+
+    assert members_with_length_range(
+        [member],
+        1100.0,
+        750.0,
+    ) == [member]
+
+
+def test_members_with_length_range_ignores_missing_length():
+    member = FakeMember(
+        "M001",
+        "1.750 x .120 DOM",
+    )
+
+    assert members_with_length_range(
+        [member],
+        0.0,
+        1000.0,
+    ) == []
 
 class FakeMember:
     def __init__(
