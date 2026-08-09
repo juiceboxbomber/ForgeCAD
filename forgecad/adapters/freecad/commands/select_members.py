@@ -100,11 +100,137 @@ def members_with_name_prefix(
     return matches
 
 
+def members_with_material(
+    members,
+    material_name,
+):
+    """Return members using the requested material."""
+
+    cleaned_material = (
+        str(material_name).strip()
+    )
+
+    if not cleaned_material:
+        return []
+
+    normalized_material = (
+        cleaned_material.lower()
+    )
+
+    matches = []
+
+    for member in members:
+        member_material = str(
+            getattr(
+                member,
+                "Material",
+                "",
+            )
+        ).strip()
+
+        if (
+            member_material.lower()
+            == normalized_material
+        ):
+            matches.append(
+                member
+            )
+
+    return matches
+
+
+def members_with_length_range(
+    members,
+    minimum_length,
+    maximum_length,
+):
+    """Return members whose lengths fall inside the range."""
+
+    minimum = float(
+        minimum_length
+    )
+
+    maximum = float(
+        maximum_length
+    )
+
+    if minimum > maximum:
+        minimum, maximum = (
+            maximum,
+            minimum,
+        )
+
+    matches = []
+
+    for member in members:
+        if not hasattr(
+            member,
+            "MemberLength",
+        ):
+            continue
+
+        length = float(
+            member.MemberLength
+        )
+
+        if (
+            minimum
+            <= length
+            <= maximum
+        ):
+            matches.append(
+                member
+            )
+
+    return matches
+
+
+def available_materials(
+    members,
+):
+    """Return unique non-empty material names in member order."""
+
+    materials = []
+
+    seen = set()
+
+    for member in members:
+        material_name = str(
+            getattr(
+                member,
+                "Material",
+                "",
+            )
+        ).strip()
+
+        if not material_name:
+            continue
+
+        normalized_name = (
+            material_name.lower()
+        )
+
+        if normalized_name in seen:
+            continue
+
+        seen.add(
+            normalized_name
+        )
+
+        materials.append(
+            material_name
+        )
+
+    return materials
+
+
 class SelectMembersDialog(QtGui.QDialog):
     """Select generated ForgeCAD members by properties."""
 
     FILTER_PROFILE = "Tube Profile"
     FILTER_NAME_PREFIX = "Name Prefix"
+    FILTER_MATERIAL = "Material"
+    FILTER_LENGTH_RANGE = "Length Range"
 
     def __init__(
         self,
@@ -126,7 +252,7 @@ class SelectMembersDialog(QtGui.QDialog):
         )
 
         self.setMinimumWidth(
-            440
+            460
         )
 
         # -----------------------------------------------------
@@ -143,6 +269,14 @@ class SelectMembersDialog(QtGui.QDialog):
 
         self.filter_type.addItem(
             self.FILTER_NAME_PREFIX
+        )
+
+        self.filter_type.addItem(
+            self.FILTER_MATERIAL
+        )
+
+        self.filter_type.addItem(
+            self.FILTER_LENGTH_RANGE
         )
 
         # -----------------------------------------------------
@@ -175,12 +309,89 @@ class SelectMembersDialog(QtGui.QDialog):
         )
 
         # -----------------------------------------------------
+        # Material selector
+        # -----------------------------------------------------
+
+        self.material_combo = (
+            QtGui.QComboBox()
+        )
+
+        for material_name in available_materials(
+            self.members
+        ):
+            self.material_combo.addItem(
+                material_name
+            )
+
+        # -----------------------------------------------------
+        # Length range
+        # -----------------------------------------------------
+
+        self.minimum_length = (
+            QtGui.QDoubleSpinBox()
+        )
+
+        self.minimum_length.setRange(
+            0.0,
+            1_000_000.0,
+        )
+
+        self.minimum_length.setDecimals(
+            2
+        )
+
+        self.minimum_length.setSuffix(
+            " mm"
+        )
+
+        self.minimum_length.setValue(
+            0.0
+        )
+
+        self.maximum_length = (
+            QtGui.QDoubleSpinBox()
+        )
+
+        self.maximum_length.setRange(
+            0.0,
+            1_000_000.0,
+        )
+
+        self.maximum_length.setDecimals(
+            2
+        )
+
+        self.maximum_length.setSuffix(
+            " mm"
+        )
+
+        longest_member = max(
+            (
+                float(
+                    getattr(
+                        member,
+                        "MemberLength",
+                        0.0,
+                    )
+                )
+                for member in self.members
+            ),
+            default=0.0,
+        )
+
+        self.maximum_length.setValue(
+            longest_member
+        )
+
+        # -----------------------------------------------------
         # Input stack
         # -----------------------------------------------------
 
         self.filter_stack = (
             QtGui.QStackedWidget()
         )
+
+        # Profile page
 
         profile_widget = (
             QtGui.QWidget()
@@ -205,6 +416,8 @@ class SelectMembersDialog(QtGui.QDialog):
             profile_layout
         )
 
+        # Name page
+
         name_widget = (
             QtGui.QWidget()
         )
@@ -228,12 +441,86 @@ class SelectMembersDialog(QtGui.QDialog):
             name_layout
         )
 
+        # Material page
+
+        material_widget = (
+            QtGui.QWidget()
+        )
+
+        material_layout = (
+            QtGui.QHBoxLayout()
+        )
+
+        material_layout.setContentsMargins(
+            0,
+            0,
+            0,
+            0,
+        )
+
+        material_layout.addWidget(
+            self.material_combo
+        )
+
+        material_widget.setLayout(
+            material_layout
+        )
+
+        # Length page
+
+        length_widget = (
+            QtGui.QWidget()
+        )
+
+        length_layout = (
+            QtGui.QHBoxLayout()
+        )
+
+        length_layout.setContentsMargins(
+            0,
+            0,
+            0,
+            0,
+        )
+
+        length_layout.addWidget(
+            QtGui.QLabel(
+                "Min:"
+            )
+        )
+
+        length_layout.addWidget(
+            self.minimum_length
+        )
+
+        length_layout.addWidget(
+            QtGui.QLabel(
+                "Max:"
+            )
+        )
+
+        length_layout.addWidget(
+            self.maximum_length
+        )
+
+        length_widget.setLayout(
+            length_layout
+        )
+
         self.filter_stack.addWidget(
             profile_widget
         )
 
         self.filter_stack.addWidget(
             name_widget
+        )
+
+        self.filter_stack.addWidget(
+            material_widget
+        )
+
+        self.filter_stack.addWidget(
+            length_widget
         )
 
         # -----------------------------------------------------
@@ -253,6 +540,18 @@ class SelectMembersDialog(QtGui.QDialog):
         )
 
         self.name_prefix.textChanged.connect(
+            self.update_match_count
+        )
+
+        self.material_combo.currentIndexChanged.connect(
+            self.update_match_count
+        )
+
+        self.minimum_length.valueChanged.connect(
+            self.update_match_count
+        )
+
+        self.maximum_length.valueChanged.connect(
             self.update_match_count
         )
 
@@ -347,6 +646,24 @@ class SelectMembersDialog(QtGui.QDialog):
 
             self.name_prefix.setFocus()
 
+        elif (
+            filter_name
+            == self.FILTER_MATERIAL
+        ):
+            self.filter_stack.setCurrentIndex(
+                2
+            )
+
+        elif (
+            filter_name
+            == self.FILTER_LENGTH_RANGE
+        ):
+            self.filter_stack.setCurrentIndex(
+                3
+            )
+
+            self.minimum_length.setFocus()
+
         else:
             self.filter_stack.setCurrentIndex(
                 0
@@ -368,6 +685,25 @@ class SelectMembersDialog(QtGui.QDialog):
             return members_with_name_prefix(
                 self.members,
                 self.name_prefix.text(),
+            )
+
+        if (
+            filter_name
+            == self.FILTER_MATERIAL
+        ):
+            return members_with_material(
+                self.members,
+                self.material_combo.currentText(),
+            )
+
+        if (
+            filter_name
+            == self.FILTER_LENGTH_RANGE
+        ):
+            return members_with_length_range(
+                self.members,
+                self.minimum_length.value(),
+                self.maximum_length.value(),
             )
 
         return members_with_profile(
@@ -418,7 +754,7 @@ class SelectMembersCommand:
             "MenuText": "Select Members",
             "ToolTip": (
                 "Select generated ForgeCAD members "
-                "by tube profile or name prefix"
+                "by profile, name, material, or length"
             ),
         }
 
