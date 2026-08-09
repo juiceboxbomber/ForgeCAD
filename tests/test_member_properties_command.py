@@ -110,10 +110,11 @@ sys.modules.setdefault(
 
 
 # ---------------------------------------------------------
-# Import command helpers after stubbing FreeCAD
+# Import helpers after stubbing FreeCAD
 # ---------------------------------------------------------
 
 from forgecad.adapters.freecad.commands.member_properties import (
+    build_bulk_member_names,
     is_forgecad_member,
     selected_member,
     selected_members,
@@ -126,9 +127,10 @@ class FakeMember:
     def __init__(
         self,
         member_id="M001",
+        member_name="Left Main Rail",
     ):
         self.MemberID = member_id
-        self.MemberName = "Left Main Rail"
+        self.MemberName = member_name
         self.TubeProfile = "1.750 x .120 DOM"
         self.MemberLength = 1000.0
         self.Material = "A513 Type 5 DOM"
@@ -147,6 +149,11 @@ class FakeUnrelatedObject:
     """Non-ForgeCAD object."""
 
     pass
+
+
+# ---------------------------------------------------------
+# ForgeCAD member detection
+# ---------------------------------------------------------
 
 
 def test_generated_member_is_recognized():
@@ -208,6 +215,11 @@ def test_member_missing_required_property_is_rejected():
     )
 
 
+# ---------------------------------------------------------
+# Single-member selection
+# ---------------------------------------------------------
+
+
 def test_selected_member_returns_single_member():
     member = FakeMember()
 
@@ -262,6 +274,11 @@ def test_selected_member_returns_none_for_unrelated_object():
         selected_member()
         is None
     )
+
+
+# ---------------------------------------------------------
+# Multi-member selection
+# ---------------------------------------------------------
 
 
 def test_selected_members_returns_all_selected_members():
@@ -363,5 +380,219 @@ def test_selected_members_rejects_member_and_unrelated_object():
     assert (
         selected_members()
         == []
+    )
+
+
+# ---------------------------------------------------------
+# Bulk member naming
+# ---------------------------------------------------------
+
+
+def test_bulk_names_start_at_one_by_default():
+    members = [
+        FakeMember(
+            "M001"
+        ),
+        FakeMember(
+            "M002"
+        ),
+        FakeMember(
+            "M003"
+        ),
+    ]
+
+    assignments = (
+        build_bulk_member_names(
+            members,
+            "Crossmember",
+        )
+    )
+
+    assert assignments == [
+        (
+            members[0],
+            "Crossmember 1",
+        ),
+        (
+            members[1],
+            "Crossmember 2",
+        ),
+        (
+            members[2],
+            "Crossmember 3",
+        ),
+    ]
+
+
+def test_bulk_names_support_custom_start_number():
+    members = [
+        FakeMember(
+            "M004"
+        ),
+        FakeMember(
+            "M005"
+        ),
+        FakeMember(
+            "M006"
+        ),
+    ]
+
+    assignments = (
+        build_bulk_member_names(
+            members,
+            "Roof Bar",
+            start_number=5,
+        )
+    )
+
+    assert assignments == [
+        (
+            members[0],
+            "Roof Bar 5",
+        ),
+        (
+            members[1],
+            "Roof Bar 6",
+        ),
+        (
+            members[2],
+            "Roof Bar 7",
+        ),
+    ]
+
+
+def test_bulk_names_trim_prefix_whitespace():
+    members = [
+        FakeMember(
+            "M001"
+        ),
+        FakeMember(
+            "M002"
+        ),
+    ]
+
+    assignments = (
+        build_bulk_member_names(
+            members,
+            "   Door Bar   ",
+        )
+    )
+
+    assert assignments == [
+        (
+            members[0],
+            "Door Bar 1",
+        ),
+        (
+            members[1],
+            "Door Bar 2",
+        ),
+    ]
+
+
+def test_bulk_names_empty_prefix_returns_no_assignments():
+    members = [
+        FakeMember(
+            "M001"
+        ),
+        FakeMember(
+            "M002"
+        ),
+    ]
+
+    assert (
+        build_bulk_member_names(
+            members,
+            "",
+        )
+        == []
+    )
+
+
+def test_bulk_names_whitespace_only_prefix_returns_no_assignments():
+    members = [
+        FakeMember(
+            "M001"
+        )
+    ]
+
+    assert (
+        build_bulk_member_names(
+            members,
+            "     ",
+        )
+        == []
+    )
+
+
+def test_bulk_names_preserve_member_order():
+    member_7 = FakeMember(
+        "M007"
+    )
+
+    member_2 = FakeMember(
+        "M002"
+    )
+
+    member_5 = FakeMember(
+        "M005"
+    )
+
+    members = [
+        member_7,
+        member_2,
+        member_5,
+    ]
+
+    assignments = (
+        build_bulk_member_names(
+            members,
+            "Brace",
+        )
+    )
+
+    assert assignments[0] == (
+        member_7,
+        "Brace 1",
+    )
+
+    assert assignments[1] == (
+        member_2,
+        "Brace 2",
+    )
+
+    assert assignments[2] == (
+        member_5,
+        "Brace 3",
+    )
+
+
+def test_building_bulk_names_does_not_modify_members():
+    member_1 = FakeMember(
+        "M001",
+        "Original One",
+    )
+
+    member_2 = FakeMember(
+        "M002",
+        "Original Two",
+    )
+
+    build_bulk_member_names(
+        [
+            member_1,
+            member_2,
+        ],
+        "Crossmember",
+    )
+
+    assert (
+        member_1.MemberName
+        == "Original One"
+    )
+
+    assert (
+        member_2.MemberName
+        == "Original Two"
     )
     
