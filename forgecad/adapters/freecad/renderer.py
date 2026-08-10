@@ -7,10 +7,16 @@ from forgecad.fabrication import (
     Frame,
     Member,
 )
+from forgecad.fabrication.joint_treatment import (
+    JointTreatment,
+)
 from forgecad.services import (
     detect_joints,
     member_other_node,
     notch_specifications_for_joint,
+)
+from forgecad.services.notch_analysis import (
+    cope_specifications_for_treatment,
 )
 from forgecad.adapters.freecad.member_object import (
     TubeMemberProxy,
@@ -34,11 +40,18 @@ def node_vector(
     )
 
 
+# ---------------------------------------------------------
+# Legacy automatic-notch helpers
+#
+# Keep these available while the rest of ForgeCAD migrates
+# from NotchSpecification to generalized CopeSpecification.
+# ---------------------------------------------------------
+
 def through_axis_for_specification(
     specification,
 ):
     """
-    Return a continuous FreeCAD axis for a notch cutter.
+    Return a continuous FreeCAD axis for a legacy notch cutter.
 
     The two through members meet at the joint. Their opposite
     endpoints define the complete through-tube centerline.
@@ -83,7 +96,7 @@ def through_axis_for_specification(
 def automatic_notch_specifications(
     frame,
 ):
-    """Return every automatic notch specification in a frame."""
+    """Return legacy automatic notch specifications for a frame."""
 
     specifications = []
 
@@ -106,10 +119,10 @@ def configure_automatic_notches(
     rendered_objects,
 ):
     """
-    Apply frame joint notch information to rendered members.
+    Apply legacy automatic notch information to rendered members.
 
-    Domain members and rendered objects correspond by position
-    in frame.members.
+    This remains available for compatibility while the renderer
+    itself uses the generalized cope path.
     """
 
     if (
@@ -129,8 +142,6 @@ def configure_automatic_notches(
         )
     }
 
-    # Always begin clean so stale metadata cannot survive
-    # a frame regeneration.
     for obj in rendered_objects:
         clear_notch(
             obj
@@ -156,10 +167,10 @@ def configure_automatic_notches(
         if branch_object is None:
             continue
 
-        # Current metadata supports one cope operation per
-        # rendered member. Do not silently replace an already
-        # configured cope at the opposite end.
-        if branch_key in configured_member_ids:
+        if (
+            branch_key
+            in configured_member_ids
+        ):
             raise ValueError(
                 "Automatic notch generation currently "
                 "supports one notched end per member."
@@ -180,6 +191,155 @@ def configure_automatic_notches(
 
         configured_member_ids.add(
             branch_key
+        )
+
+    return rendered_objects
+
+
+# ---------------------------------------------------------
+# Generalized cope helpers
+# ---------------------------------------------------------
+
+def target_axis_for_cope_specification(
+    specification,
+):
+    """
+    Return the target tube axis for a generalized cope.
+
+    Unlike the legacy notch path, a cope target can be one
+    member rather than a two-member straight-through pair.
+    """
+
+    target_member = (
+        specification.target_member
+    )
+
+    return (
+        node_vector(
+            target_member.start
+        ),
+        node_vector(
+            target_member.end
+        ),
+    )
+
+
+def automatic_cope_specifications(
+    frame,
+):
+    """
+    Return generalized cope specifications using AUTO treatment.
+
+    Automatic behavior intentionally remains unchanged:
+    straight-through T-joints are resolved automatically,
+    while corners receive no cope until a designer treatment
+    is explicitly stored.
+    """
+
+    specifications = []
+
+    for joint in detect_joints(
+        frame
+    ):
+        treatment = (
+            JointTreatment.automatic(
+                joint
+            )
+        )
+
+        specifications.extend(
+            cope_specifications_for_treatment(
+                treatment
+            )
+        )
+
+    return tuple(
+        specifications
+    )
+
+
+def configure_automatic_copes(
+    frame,
+    rendered_objects,
+):
+    """
+    Apply generalized automatic cope information to rendered members.
+
+    Domain members and rendered objects correspond by position
+    in frame.members.
+    """
+
+    if (
+        len(rendered_objects)
+        != len(frame.members)
+    ):
+        raise ValueError(
+            "Rendered member count does not match "
+            "the domain frame."
+        )
+
+    object_by_member_identity = {
+        id(member): obj
+        for member, obj in zip(
+            frame.members,
+            rendered_objects,
+        )
+    }
+
+    # Always clear existing metadata before applying the
+    # treatment resolved from the current frame.
+    for obj in rendered_objects:
+        clear_notch(
+            obj
+        )
+
+    configured_member_ids = set()
+
+    for specification in (
+        automatic_cope_specifications(
+            frame
+        )
+    ):
+        coped_key = id(
+            specification.coped_member
+        )
+
+        coped_object = (
+            object_by_member_identity.get(
+                coped_key
+            )
+        )
+
+        if coped_object is None:
+            continue
+
+        # Current FreeCAD member metadata stores one cope
+        # operation per member. Multiple cope operations on
+        # one member will be added in a later feature.
+        if (
+            coped_key
+            in configured_member_ids
+        ):
+            raise ValueError(
+                "Automatic cope generation currently "
+                "supports one notched end per member."
+            )
+
+        target_start, target_end = (
+            target_axis_for_cope_specification(
+                specification
+            )
+        )
+
+        configure_notch(
+            coped_object,
+            target_start,
+            target_end,
+            specification.target_outside_diameter,
+        )
+
+        configured_member_ids.add(
+            coped_key
         )
 
     return rendered_objects
@@ -303,7 +463,7 @@ class FrameRenderer:
         frame: Frame,
         source_layout_ids=None,
     ):
-        """Render every member and apply automatic tube notches."""
+        """Render every member and apply automatic tube copes."""
 
         rendered_objects = []
 
@@ -352,18 +512,17 @@ class FrameRenderer:
             )
 
         # -------------------------------------------------
-        # Analyze the completed domain frame and configure
-        # branch-member notches.
+        # Resolve AUTO joint treatments and configure their
+        # generalized member-to-member cope operations.
         # -------------------------------------------------
 
-        configure_automatic_notches(
+        configure_automatic_copes(
             frame,
             rendered_objects,
         )
 
-        # Recompute after notch metadata has been assigned.
-        # TubeMemberProxy.execute() will now regenerate each
-        # configured branch using the coped-geometry path.
+        # TubeMemberProxy.execute() regenerates configured
+        # members through the persistent cope geometry path.
         document.recompute()
 
         return rendered_objects

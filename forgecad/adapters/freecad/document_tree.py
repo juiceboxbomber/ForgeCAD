@@ -4,11 +4,30 @@ import FreeCAD
 
 
 GROUP_DEFINITIONS = {
-    "Layout": ("ForgeCADLayout", "Layout"),
-    "Frame": ("ForgeCADFrame", "Frame"),
-    "Nodes": ("ForgeCADNodes", "Nodes"),
-    "Tube Library": ("ForgeCADTubeLibrary", "Tube Library"),
-    "Settings": ("ForgeCADSettings", "Settings"),
+    "Layout": (
+        "ForgeCADLayout",
+        "Layout",
+    ),
+    "Frame": (
+        "ForgeCADFrame",
+        "Frame",
+    ),
+    "Nodes": (
+        "ForgeCADNodes",
+        "Nodes",
+    ),
+    "Joint Treatments": (
+        "ForgeCADJointTreatments",
+        "Joint Treatments",
+    ),
+    "Tube Library": (
+        "ForgeCADTubeLibrary",
+        "Tube Library",
+    ),
+    "Settings": (
+        "ForgeCADSettings",
+        "Settings",
+    ),
 }
 
 
@@ -49,7 +68,9 @@ def clear_group(
 
     for obj in objects_to_remove:
         try:
-            group.removeObject(obj)
+            group.removeObject(
+                obj
+            )
         except Exception:
             pass
 
@@ -63,7 +84,9 @@ def clear_group(
     document.recompute()
 
 
-def initialize_project_tree(document):
+def initialize_project_tree(
+    document,
+):
     """Create or return the standard ForgeCAD project tree."""
 
     root = document.getObject(
@@ -76,7 +99,9 @@ def initialize_project_tree(document):
             "ForgeCADProject",
         )
 
-        root.Label = "ForgeCAD Project"
+        root.Label = (
+            "ForgeCAD Project"
+        )
 
     children = {}
 
@@ -84,11 +109,14 @@ def initialize_project_tree(document):
         "Layout",
         "Frame",
         "Nodes",
+        "Joint Treatments",
         "Tube Library",
         "Settings",
     ):
         internal_name, label = (
-            GROUP_DEFINITIONS[key]
+            GROUP_DEFINITIONS[
+                key
+            ]
         )
 
         group = get_or_create_group(
@@ -102,6 +130,8 @@ def initialize_project_tree(document):
                 group
             )
 
-        children[key] = group
+        children[
+            key
+        ] = group
 
     return children
