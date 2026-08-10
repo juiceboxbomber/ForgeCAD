@@ -4,8 +4,13 @@ import FreeCAD
 import FreeCADGui
 from PySide import QtGui
 
-from forgecad import ApplicationType, DisplayUnits
-from forgecad.adapters.freecad import FrameRenderer
+from forgecad import (
+    ApplicationType,
+    DisplayUnits,
+)
+from forgecad.adapters.freecad import (
+    FrameRenderer,
+)
 from forgecad.adapters.freecad.commands.draw_layout_line import (
     ensure_layout_id,
 )
@@ -26,7 +31,9 @@ from forgecad.services.layout_conversion import (
 COMMAND_NAME = "ForgeCAD_GenerateFromSelection"
 
 
-def project_from_document(document):
+def project_from_document(
+    document,
+):
     """Build a ForgeCAD domain project from the FreeCAD document."""
 
     project_object = document.getObject(
@@ -175,7 +182,9 @@ def selected_or_project_layout_lines(
         document
     )
 
-    layout_group = groups["Layout"]
+    layout_group = groups[
+        "Layout"
+    ]
 
     layout_objects = list(
         layout_group.Group
@@ -197,13 +206,36 @@ def selected_or_project_layout_lines(
     return layout_objects
 
 
+def project_layout_lines(
+    document,
+):
+    """
+    Return every ForgeCAD layout object.
+
+    This intentionally ignores the current GUI selection and is
+    used when another command needs a complete frame regeneration.
+    """
+
+    groups = initialize_project_tree(
+        document
+    )
+
+    return list(
+        groups[
+            "Layout"
+        ].Group
+    )
+
+
 def layout_ids_for_objects(
     objects,
 ):
     """Return stable IDs for layout objects."""
 
     return [
-        ensure_layout_id(obj)
+        ensure_layout_id(
+            obj
+        )
         for obj in objects
     ]
 
@@ -215,7 +247,9 @@ def profile_overrides_for_objects(
 
     overrides = []
 
-    library = create_default_tube_library()
+    library = (
+        create_default_tube_library()
+    )
 
     valid_names = set(
         library.names
@@ -244,7 +278,10 @@ def apply_profile_overrides(
 ):
     """Restore stored tube-profile overrides to generated members."""
 
-    if len(rendered_objects) != len(overrides):
+    if (
+        len(rendered_objects)
+        != len(overrides)
+    ):
         raise ValueError(
             "Profile override count does not match "
             "the number of generated members."
@@ -257,7 +294,131 @@ def apply_profile_overrides(
         if not override:
             continue
 
-        obj.TubeProfile = override
+        obj.TubeProfile = (
+            override
+        )
+
+
+def regenerate_frame(
+    document,
+    layout_objects=None,
+    clear_selection=True,
+    adjust_view=True,
+):
+    """
+    Regenerate ForgeCAD frame geometry.
+
+    This is the shared regeneration entry point used by both
+    the Generate / Regenerate Frame command and other commands
+    such as the Joint Inspector.
+
+    When layout_objects is omitted, the complete project layout
+    is regenerated regardless of the current GUI selection.
+    """
+
+    if document is None:
+        raise ValueError(
+            "No active FreeCAD document."
+        )
+
+    if layout_objects is None:
+        layout_objects = (
+            project_layout_lines(
+                document
+            )
+        )
+    else:
+        layout_objects = list(
+            layout_objects
+        )
+
+    layout = (
+        layout_from_selected_objects(
+            layout_objects
+        )
+    )
+
+    if layout.line_count == 0:
+        raise ValueError(
+            "Draw or define one or more ForgeCAD "
+            "layout lines before generating the frame."
+        )
+
+    source_layout_ids = (
+        layout_ids_for_objects(
+            layout_objects
+        )
+    )
+
+    profile_overrides = (
+        profile_overrides_for_objects(
+            layout_objects
+        )
+    )
+
+    project = project_from_document(
+        document
+    )
+
+    frame = build_frame_from_layout(
+        project,
+        layout,
+    )
+
+    groups = initialize_project_tree(
+        document
+    )
+
+    clear_group(
+        document,
+        groups[
+            "Frame"
+        ],
+    )
+
+    if clear_selection:
+        FreeCADGui.Selection.clearSelection()
+
+    renderer = FrameRenderer()
+
+    rendered_objects = (
+        renderer.render_frame(
+            document,
+            frame,
+            source_layout_ids=(
+                source_layout_ids
+            ),
+        )
+    )
+
+    apply_profile_overrides(
+        rendered_objects,
+        profile_overrides,
+    )
+
+    for obj in rendered_objects:
+        groups[
+            "Frame"
+        ].addObject(
+            obj
+        )
+
+    document.recompute()
+
+    if adjust_view:
+        gui_document = (
+            FreeCADGui.activeDocument()
+        )
+
+        if gui_document is not None:
+            view = (
+                gui_document.activeView()
+            )
+
+            view.viewAxonometric()
+            view.fitAll()
+
+    return rendered_objects
 
 
 class GenerateFromSelectionCommand:
@@ -265,7 +426,8 @@ class GenerateFromSelectionCommand:
 
     def GetResources(self):
         return {
-            "MenuText": "Generate / Regenerate Frame",
+            "MenuText":
+                "Generate / Regenerate Frame",
             "ToolTip": (
                 "Generate the frame from selected layout "
                 "lines or the complete project layout"
@@ -273,13 +435,18 @@ class GenerateFromSelectionCommand:
         }
 
     def Activated(self):
-        document = FreeCAD.ActiveDocument
+        document = (
+            FreeCAD.ActiveDocument
+        )
 
         if document is None:
             QtGui.QMessageBox.warning(
                 FreeCADGui.getMainWindow(),
                 "No Active Document",
-                "Create or draw a ForgeCAD layout first.",
+                (
+                    "Create or draw a ForgeCAD "
+                    "layout first."
+                ),
             )
             return
 
@@ -289,88 +456,26 @@ class GenerateFromSelectionCommand:
             )
         )
 
-        layout = layout_from_selected_objects(
-            layout_objects
-        )
-
-        if layout.line_count == 0:
-            QtGui.QMessageBox.warning(
-                FreeCADGui.getMainWindow(),
-                "No Layout Lines",
-                (
-                    "Draw or define one or more ForgeCAD "
-                    "layout lines before generating the frame."
-                ),
-            )
-            return
-
-        source_layout_ids = (
-            layout_ids_for_objects(
-                layout_objects
-            )
-        )
-
-        profile_overrides = (
-            profile_overrides_for_objects(
-                layout_objects
-            )
-        )
-
         try:
-            project = project_from_document(
-                document
+            regenerate_frame(
+                document,
+                layout_objects=(
+                    layout_objects
+                ),
+                clear_selection=True,
+                adjust_view=True,
             )
+
         except (
             ValueError,
             KeyError,
         ) as error:
             QtGui.QMessageBox.warning(
                 FreeCADGui.getMainWindow(),
-                "ForgeCAD Project Error",
+                "Frame Generation Failed",
                 str(error),
             )
             return
-
-        frame = build_frame_from_layout(
-            project,
-            layout,
-        )
-
-        groups = initialize_project_tree(
-            document
-        )
-
-        clear_group(
-            document,
-            groups["Frame"],
-        )
-
-        FreeCADGui.Selection.clearSelection()
-
-        renderer = FrameRenderer()
-
-        rendered_objects = (
-            renderer.render_frame(
-                document,
-                frame,
-                source_layout_ids=source_layout_ids,
-            )
-        )
-
-        apply_profile_overrides(
-            rendered_objects,
-            profile_overrides,
-        )
-
-        for obj in rendered_objects:
-            groups["Frame"].addObject(
-                obj
-            )
-
-        document.recompute()
-
-        FreeCADGui.activeDocument().activeView().viewAxonometric()
-        FreeCADGui.activeDocument().activeView().fitAll()
 
     def IsActive(self):
         return (

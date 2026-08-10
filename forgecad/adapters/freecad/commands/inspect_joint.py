@@ -1,13 +1,25 @@
-"""FreeCAD command for inspecting a ForgeCAD tube joint."""
+"""FreeCAD command for inspecting and configuring a ForgeCAD tube joint."""
 
 import FreeCAD
 import FreeCADGui
 from PySide import QtGui
 
+from forgecad.adapters.freecad.commands.generate_from_selection import (
+    regenerate_frame,
+)
 from forgecad.adapters.freecad.joint_inspector_adapter import (
     frame_member_objects,
     is_forgecad_node,
     joint_from_node_object,
+)
+from forgecad.adapters.freecad.joint_treatment_options import (
+    selected_option_index,
+    treatment_options_for_members,
+)
+from forgecad.adapters.freecad.joint_treatment_store import (
+    load_joint_treatment,
+    save_joint_treatment,
+    vector_key,
 )
 from forgecad.services.joint_inspector import (
     inspect_joint,
@@ -148,10 +160,11 @@ def classification_display_name(
 class JointInspectorDialog(
     QtGui.QDialog
 ):
-    """Display analysis information for one ForgeCAD joint."""
+    """Display and configure one ForgeCAD joint."""
 
     def __init__(
         self,
+        document,
         node_object,
         inspection,
         member_objects,
@@ -159,6 +172,10 @@ class JointInspectorDialog(
     ):
         super().__init__(
             parent
+        )
+
+        self.document = (
+            document
         )
 
         self.node_object = (
@@ -173,34 +190,23 @@ class JointInspectorDialog(
             member_objects
         )
 
+        self.member_names = {}
+
+        self.treatment_options = ()
+
         self.setWindowTitle(
             "ForgeCAD Joint Inspector"
         )
 
         self.setMinimumWidth(
-            720
+            760
         )
 
         self.setMinimumHeight(
-            520
+            600
         )
 
-        # -------------------------------------------------
-        # Map temporary domain members back to generated
-        # FreeCAD member labels.
-        # -------------------------------------------------
-
-        self.member_names = {}
-
-        for domain_member, member_object in zip(
-            inspection.joint.members,
-            self.member_objects,
-        ):
-            self.member_names[
-                id(domain_member)
-            ] = member_display_name(
-                member_object
-            )
+        self.build_member_name_map()
 
         # -------------------------------------------------
         # Joint summary
@@ -273,13 +279,76 @@ class JointInspectorDialog(
         )
 
         summary_form.addRow(
-            "Required Notches:",
+            "Automatic Notches:",
             QtGui.QLabel(
                 str(
                     inspection.notch_count
                 )
             ),
         )
+
+        # -------------------------------------------------
+        # Treatment controls
+        # -------------------------------------------------
+
+        treatment_group = (
+            QtGui.QGroupBox(
+                "Joint Treatment"
+            )
+        )
+
+        treatment_layout = (
+            QtGui.QVBoxLayout()
+        )
+
+        treatment_form = (
+            QtGui.QFormLayout()
+        )
+
+        self.treatment_combo = (
+            QtGui.QComboBox()
+        )
+
+        treatment_form.addRow(
+            "Treatment:",
+            self.treatment_combo,
+        )
+
+        treatment_layout.addLayout(
+            treatment_form
+        )
+
+        self.treatment_status = (
+            QtGui.QLabel()
+        )
+
+        self.treatment_status.setWordWrap(
+            True
+        )
+
+        treatment_layout.addWidget(
+            self.treatment_status
+        )
+
+        self.apply_treatment_button = (
+            QtGui.QPushButton(
+                "Apply Treatment"
+            )
+        )
+
+        self.apply_treatment_button.clicked.connect(
+            self.apply_treatment
+        )
+
+        treatment_layout.addWidget(
+            self.apply_treatment_button
+        )
+
+        treatment_group.setLayout(
+            treatment_layout
+        )
+
+        self.refresh_treatment_controls()
 
         # -------------------------------------------------
         # Tabs
@@ -301,7 +370,7 @@ class JointInspectorDialog(
 
         tabs.addTab(
             self.create_notches_tab(),
-            "Notches",
+            "Automatic Notches",
         )
 
         # -------------------------------------------------
@@ -339,6 +408,14 @@ class JointInspectorDialog(
         )
 
         layout.addWidget(
+            treatment_group
+        )
+
+        layout.addSpacing(
+            8
+        )
+
+        layout.addWidget(
             tabs
         )
 
@@ -352,6 +429,218 @@ class JointInspectorDialog(
 
         self.setLayout(
             layout
+        )
+
+    def build_member_name_map(
+        self,
+    ):
+        """Map temporary domain members to generated member names."""
+
+        self.member_names = {}
+
+        for (
+            domain_member,
+            member_object,
+        ) in zip(
+            self.inspection.joint.members,
+            self.member_objects,
+        ):
+            self.member_names[
+                id(domain_member)
+            ] = member_display_name(
+                member_object
+            )
+
+    def saved_treatment(
+        self,
+    ):
+        """Return the treatment currently stored for this joint."""
+
+        return load_joint_treatment(
+            self.document,
+            vector_key(
+                self.node_object.Position
+            ),
+        )
+
+    def refresh_treatment_controls(
+        self,
+    ):
+        """Reload treatment options and select the saved treatment."""
+
+        self.treatment_options = (
+            treatment_options_for_members(
+                self.member_objects
+            )
+        )
+
+        saved = (
+            self.saved_treatment()
+        )
+
+        current_index = (
+            selected_option_index(
+                self.treatment_options,
+                saved,
+            )
+        )
+
+        self.treatment_combo.blockSignals(
+            True
+        )
+
+        self.treatment_combo.clear()
+
+        for option in (
+            self.treatment_options
+        ):
+            self.treatment_combo.addItem(
+                option.label
+            )
+
+        if (
+            current_index >= 0
+            and current_index
+            < len(
+                self.treatment_options
+            )
+        ):
+            self.treatment_combo.setCurrentIndex(
+                current_index
+            )
+
+        self.treatment_combo.blockSignals(
+            False
+        )
+
+        if saved is None:
+            self.treatment_status.setText(
+                (
+                    "Current treatment: Automatic "
+                    "(no manual treatment saved)"
+                )
+            )
+        else:
+            selected_index = (
+                self.treatment_combo.currentIndex()
+            )
+
+            if (
+                selected_index >= 0
+                and selected_index
+                < len(
+                    self.treatment_options
+                )
+            ):
+                option = (
+                    self.treatment_options[
+                        selected_index
+                    ]
+                )
+
+                self.treatment_status.setText(
+                    (
+                        "Current treatment: "
+                        f"{option.label}"
+                    )
+                )
+            else:
+                self.treatment_status.setText(
+                    "Current treatment: Automatic"
+                )
+
+    def refresh_after_regeneration(
+        self,
+    ):
+        """
+        Rebuild inspector references after frame regeneration.
+
+        Generated frame members are replaced during regeneration,
+        so the dialog must discard its old member-object references.
+        """
+
+        self.member_objects = (
+            connected_member_objects(
+                self.document,
+                self.node_object,
+            )
+        )
+
+        joint = (
+            joint_from_node_object(
+                self.document,
+                self.node_object,
+            )
+        )
+
+        self.inspection = (
+            inspect_joint(
+                joint
+            )
+        )
+
+        self.build_member_name_map()
+
+        self.refresh_treatment_controls()
+
+    def apply_treatment(
+        self,
+    ):
+        """Save the selected treatment and regenerate immediately."""
+
+        index = (
+            self.treatment_combo.currentIndex()
+        )
+
+        if (
+            index < 0
+            or index
+            >= len(
+                self.treatment_options
+            )
+        ):
+            return
+
+        option = (
+            self.treatment_options[
+                index
+            ]
+        )
+
+        try:
+            save_joint_treatment(
+                self.document,
+                vector_key(
+                    self.node_object.Position
+                ),
+                option.mode,
+                option.through_layout_ids,
+            )
+
+            regenerate_frame(
+                self.document,
+                clear_selection=False,
+                adjust_view=False,
+            )
+
+            self.refresh_after_regeneration()
+
+        except (
+            ValueError,
+            KeyError,
+        ) as error:
+            QtGui.QMessageBox.warning(
+                self,
+                "Joint Treatment Failed",
+                str(error),
+            )
+            return
+
+        self.treatment_status.setText(
+            (
+                "Current treatment: "
+                f"{option.label}"
+            )
         )
 
     def domain_member_name(
@@ -389,7 +678,9 @@ class JointInspectorDialog(
             True
         )
 
-    def create_members_tab(self):
+    def create_members_tab(
+        self,
+    ):
         """Create connected-member information tab."""
 
         widget = (
@@ -437,7 +728,10 @@ class JointInspectorDialog(
                 ),
             ]
 
-            for column_index, value in enumerate(
+            for (
+                column_index,
+                value,
+            ) in enumerate(
                 values
             ):
                 table.setItem(
@@ -466,7 +760,9 @@ class JointInspectorDialog(
 
         return widget
 
-    def create_angles_tab(self):
+    def create_angles_tab(
+        self,
+    ):
         """Create member-pair angle tab."""
 
         widget = (
@@ -508,7 +804,10 @@ class JointInspectorDialog(
                 f"{item.angle_degrees:.2f}",
             ]
 
-            for column_index, value in enumerate(
+            for (
+                column_index,
+                value,
+            ) in enumerate(
                 values
             ):
                 table.setItem(
@@ -537,8 +836,16 @@ class JointInspectorDialog(
 
         return widget
 
-    def create_notches_tab(self):
-        """Create required-notch information tab."""
+    def create_notches_tab(
+        self,
+    ):
+        """
+        Create the automatic-notch analysis tab.
+
+        This tab intentionally reports ForgeCAD's geometric
+        automatic analysis. The Treatment control above reports
+        the actual persistent designer-selected treatment.
+        """
 
         widget = (
             QtGui.QWidget()
@@ -585,7 +892,10 @@ class JointInspectorDialog(
                 ),
             ]
 
-            for column_index, value in enumerate(
+            for (
+                column_index,
+                value,
+            ) in enumerate(
                 values
             ):
                 table.setItem(
@@ -609,7 +919,7 @@ class JointInspectorDialog(
                 QtGui.QLabel(
                     (
                         "No automatic tube notches are "
-                        "required at this joint."
+                        "identified at this joint."
                     )
                 )
             )
@@ -626,19 +936,23 @@ class JointInspectorDialog(
 
 
 class InspectJointCommand:
-    """Inspect the tube joint at one selected ForgeCAD node."""
+    """Inspect and configure the joint at one selected ForgeCAD node."""
 
-    def GetResources(self):
+    def GetResources(
+        self,
+    ):
         return {
             "MenuText":
                 "Inspect Joint",
             "ToolTip": (
-                "Inspect connected members, angles, roles, "
-                "and notch requirements at a ForgeCAD node"
+                "Inspect connected members, angles, "
+                "and fabrication treatment at a ForgeCAD node"
             ),
         }
 
-    def Activated(self):
+    def Activated(
+        self,
+    ):
         document = (
             FreeCAD.ActiveDocument
         )
@@ -670,7 +984,9 @@ class InspectJointCommand:
             return
 
         node_object = (
-            selection[0]
+            selection[
+                0
+            ]
         )
 
         if not is_forgecad_node(
@@ -693,7 +1009,10 @@ class InspectJointCommand:
             )
         )
 
-        if joint.member_count < 2:
+        if (
+            joint.member_count
+            < 2
+        ):
             QtGui.QMessageBox.warning(
                 FreeCADGui.getMainWindow(),
                 "No Joint At Node",
@@ -726,16 +1045,21 @@ class InspectJointCommand:
             )
         )
 
-        dialog = JointInspectorDialog(
-            node_object,
-            inspection,
-            connected_objects,
-            FreeCADGui.getMainWindow(),
+        dialog = (
+            JointInspectorDialog(
+                document,
+                node_object,
+                inspection,
+                connected_objects,
+                FreeCADGui.getMainWindow(),
+            )
         )
 
         dialog.exec_()
 
-    def IsActive(self):
+    def IsActive(
+        self,
+    ):
         return (
             FreeCAD.ActiveDocument
             is not None

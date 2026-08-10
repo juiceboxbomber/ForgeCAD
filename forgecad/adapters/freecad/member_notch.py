@@ -1,14 +1,18 @@
-"""FreeCAD member-notch metadata and geometry helpers."""
+"""FreeCAD member fabrication metadata and notch geometry helpers."""
 
 import FreeCAD
 
 from forgecad.adapters.freecad.notch_geometry import (
     cope_tube_shape,
+    design_member_length,
+    extended_member_endpoints,
 )
 
 
-def ensure_notch_properties(obj):
-    """Ensure a ForgeCAD member contains notch metadata."""
+def ensure_notch_properties(
+    obj,
+):
+    """Ensure a ForgeCAD member contains fabrication metadata."""
 
     if not hasattr(
         obj,
@@ -66,10 +70,36 @@ def ensure_notch_properties(obj):
 
         obj.NotchThroughDiameter = 0.0
 
+    if not hasattr(
+        obj,
+        "StartExtension",
+    ):
+        obj.addProperty(
+            "App::PropertyLength",
+            "StartExtension",
+            "ForgeCAD Fabrication",
+        )
+
+        obj.StartExtension = 0.0
+
+    if not hasattr(
+        obj,
+        "EndExtension",
+    ):
+        obj.addProperty(
+            "App::PropertyLength",
+            "EndExtension",
+            "ForgeCAD Fabrication",
+        )
+
+        obj.EndExtension = 0.0
+
     for property_name in (
         "NotchThroughStart",
         "NotchThroughEnd",
         "NotchThroughDiameter",
+        "StartExtension",
+        "EndExtension",
     ):
         try:
             obj.setEditorMode(
@@ -108,13 +138,74 @@ def clear_notch(
     obj.NotchThroughDiameter = 0.0
 
 
+def clear_extensions(
+    obj,
+):
+    """Remove fabrication extensions from both member ends."""
+
+    ensure_notch_properties(
+        obj
+    )
+
+    obj.StartExtension = 0.0
+    obj.EndExtension = 0.0
+
+
+def configure_start_extension(
+    obj,
+    extension,
+):
+    """Configure extra physical stock beyond the start node."""
+
+    ensure_notch_properties(
+        obj
+    )
+
+    extension = float(
+        extension
+    )
+
+    if extension < 0:
+        raise ValueError(
+            "Start extension cannot be negative."
+        )
+
+    obj.StartExtension = (
+        extension
+    )
+
+
+def configure_end_extension(
+    obj,
+    extension,
+):
+    """Configure extra physical stock beyond the end node."""
+
+    ensure_notch_properties(
+        obj
+    )
+
+    extension = float(
+        extension
+    )
+
+    if extension < 0:
+        raise ValueError(
+            "End extension cannot be negative."
+        )
+
+    obj.EndExtension = (
+        extension
+    )
+
+
 def configure_notch(
     obj,
     through_start,
     through_end,
     through_outside_diameter,
 ):
-    """Configure a member to cope against a through tube."""
+    """Configure a member to cope against a target tube."""
 
     ensure_notch_properties(
         obj
@@ -149,6 +240,31 @@ def configure_notch(
     obj.NotchEnabled = True
 
 
+def physical_member_endpoints(
+    obj,
+):
+    """Return physical endpoints including fabrication extension."""
+
+    ensure_notch_properties(
+        obj
+    )
+
+    return extended_member_endpoints(
+        obj.StartPoint,
+        obj.EndPoint,
+        start_extension=(
+            float(
+                obj.StartExtension
+            )
+        ),
+        end_extension=(
+            float(
+                obj.EndExtension
+            )
+        ),
+    )
+
+
 def build_member_shape(
     obj,
     profile,
@@ -157,21 +273,41 @@ def build_member_shape(
     """
     Build either a plain or coped ForgeCAD member shape.
 
-    The normal tube builder is supplied by member_object.py
-    so the modules remain independent.
+    StartPoint and EndPoint remain the design centerline geometry.
+    StartExtension and EndExtension affect only the physical solid.
     """
 
     ensure_notch_properties(
         obj
     )
 
+    design_length = (
+        design_member_length(
+            obj.StartPoint,
+            obj.EndPoint,
+        )
+    )
+
+    physical_start, physical_end = (
+        physical_member_endpoints(
+            obj
+        )
+    )
+
     if not bool(
         obj.NotchEnabled
     ):
-        return plain_shape_builder(
-            obj.StartPoint,
-            obj.EndPoint,
-            profile,
+        shape, _ = (
+            plain_shape_builder(
+                physical_start,
+                physical_end,
+                profile,
+            )
+        )
+
+        return (
+            shape,
+            design_length,
         )
 
     diameter = float(
@@ -179,18 +315,30 @@ def build_member_shape(
     )
 
     if diameter <= 0:
-        return plain_shape_builder(
-            obj.StartPoint,
-            obj.EndPoint,
-            profile,
+        shape, _ = (
+            plain_shape_builder(
+                physical_start,
+                physical_end,
+                profile,
+            )
         )
 
-    return cope_tube_shape(
-        branch_start=obj.StartPoint,
-        branch_end=obj.EndPoint,
+        return (
+            shape,
+            design_length,
+        )
+
+    shape, _ = cope_tube_shape(
+        branch_start=physical_start,
+        branch_end=physical_end,
         branch_profile=profile,
         through_start=obj.NotchThroughStart,
         through_end=obj.NotchThroughEnd,
         through_outside_diameter=diameter,
         plain_shape_builder=plain_shape_builder,
+    )
+
+    return (
+        shape,
+        design_length,
     )

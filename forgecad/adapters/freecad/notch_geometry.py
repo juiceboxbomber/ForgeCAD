@@ -27,7 +27,7 @@ def extended_axis_endpoints(
 
     This is useful for Boolean cutting tools because the
     cutting cylinder should extend completely through the
-    branch tube.
+    member being cut.
     """
 
     direction = vector_between(
@@ -40,6 +40,15 @@ def extended_axis_endpoints(
     if length <= 0:
         raise ValueError(
             "Cannot extend a zero-length axis."
+        )
+
+    extension = float(
+        extension
+    )
+
+    if extension < 0:
+        raise ValueError(
+            "Axis extension cannot be negative."
         )
 
     unit = FreeCAD.Vector(
@@ -66,6 +75,91 @@ def extended_axis_endpoints(
     )
 
 
+def extended_member_endpoints(
+    start,
+    end,
+    start_extension=0.0,
+    end_extension=0.0,
+):
+    """
+    Return physical member endpoints after fabrication extension.
+
+    Start and end extensions are independent because a member may
+    require additional stock at only one joint.
+    """
+
+    start_extension = float(
+        start_extension
+    )
+
+    end_extension = float(
+        end_extension
+    )
+
+    if start_extension < 0:
+        raise ValueError(
+            "Member start extension cannot be negative."
+        )
+
+    if end_extension < 0:
+        raise ValueError(
+            "Member end extension cannot be negative."
+        )
+
+    direction = vector_between(
+        start,
+        end,
+    )
+
+    length = direction.Length
+
+    if length <= 0:
+        raise ValueError(
+            "Cannot extend a zero-length member."
+        )
+
+    unit = FreeCAD.Vector(
+        direction.x / length,
+        direction.y / length,
+        direction.z / length,
+    )
+
+    physical_start = FreeCAD.Vector(
+        start.x
+        - unit.x * start_extension,
+        start.y
+        - unit.y * start_extension,
+        start.z
+        - unit.z * start_extension,
+    )
+
+    physical_end = FreeCAD.Vector(
+        end.x
+        + unit.x * end_extension,
+        end.y
+        + unit.y * end_extension,
+        end.z
+        + unit.z * end_extension,
+    )
+
+    return (
+        physical_start,
+        physical_end,
+    )
+
+
+def design_member_length(
+    start,
+    end,
+):
+    """Return the original design-centerline member length."""
+
+    return vector_between(
+        start,
+        end,
+    ).Length
+
+
 def build_through_tube_cutting_tool(
     start,
     end,
@@ -73,10 +167,10 @@ def build_through_tube_cutting_tool(
     extension=None,
 ):
     """
-    Build a solid cylindrical cutting tool for a through tube.
+    Build a solid cylindrical cutting tool for a target tube.
 
-    The cutter represents the through tube's outside surface.
-    Subtracting it from a branch tube produces the cope.
+    The cutter represents the target tube's outside surface.
+    Subtracting it from another tube produces the cope.
     """
 
     outside_diameter = float(
@@ -140,11 +234,10 @@ def cope_tube_shape(
     plain_shape_builder,
 ):
     """
-    Build a branch tube and cope it against a through tube.
+    Build a tube and cope it against a target tube.
 
-    The caller supplies the normal ForgeCAD tube builder.
-    This keeps notch geometry independent from
-    member_object.py and avoids a circular import.
+    branch_start and branch_end are the physical fabrication
+    endpoints. They may extend beyond the original design node.
     """
 
     branch_shape, branch_length = (
