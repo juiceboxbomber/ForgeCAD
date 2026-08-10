@@ -181,18 +181,39 @@ def is_joint_treatment_object(
     )
 
 
+def existing_treatment_group(
+    document,
+):
+    """
+    Return the existing Joint Treatments group without creating it.
+
+    Read operations must not modify the FreeCAD document.
+    """
+
+    if document is None:
+        return None
+
+    return document.getObject(
+        "ForgeCADJointTreatments"
+    )
+
+
 def treatment_objects(
     document,
 ):
-    """Return all persistent ForgeCAD joint-treatment records."""
+    """
+    Return all persistent ForgeCAD joint-treatment records.
 
-    groups = initialize_project_tree(
+    This is intentionally read-only. If the project does not yet
+    contain a Joint Treatments group, an empty tuple is returned.
+    """
+
+    group = existing_treatment_group(
         document
     )
 
-    group = groups[
-        "Joint Treatments"
-    ]
+    if group is None:
+        return ()
 
     return tuple(
         obj
@@ -230,7 +251,12 @@ def find_joint_treatment(
 def create_joint_treatment_object(
     document,
 ):
-    """Create one persistent joint-treatment record."""
+    """
+    Create one persistent joint-treatment record.
+
+    This is a write operation, so it may initialize the
+    ForgeCAD project tree when necessary.
+    """
 
     groups = initialize_project_tree(
         document
@@ -350,6 +376,8 @@ def load_joint_treatment(
         mode, through_layout_ids
 
     None is returned when the joint has no persistent treatment.
+
+    This function never creates or modifies document objects.
     """
 
     obj = find_joint_treatment(
@@ -390,20 +418,17 @@ def remove_joint_treatment(
     if obj is None:
         return False
 
-    groups = initialize_project_tree(
+    group = existing_treatment_group(
         document
     )
 
-    group = groups[
-        "Joint Treatments"
-    ]
-
-    try:
-        group.removeObject(
-            obj
-        )
-    except Exception:
-        pass
+    if group is not None:
+        try:
+            group.removeObject(
+                obj
+            )
+        except Exception:
+            pass
 
     document.removeObject(
         obj.Name
