@@ -26,7 +26,7 @@ class CopeInstruction:
 
 @dataclass(frozen=True, slots=True)
 class JointTreatmentResolution:
-    """Resolved fabrication instructions for one joint."""
+    """Resolved cylindrical cope instructions for one joint."""
 
     treatment: JointTreatment
 
@@ -42,7 +42,7 @@ class JointTreatmentResolution:
 
     @property
     def cope_count(self) -> int:
-        """Return the number of cope operations."""
+        """Return the number of cylindrical cope operations."""
 
         return len(
             self.cope_instructions
@@ -131,37 +131,18 @@ def resolve_member_through(
 def resolve_both_coped(
     treatment: JointTreatment,
 ) -> JointTreatmentResolution:
-    """Resolve a two-member joint where both members are coped."""
+    """
+    Resolve the legacy both-coped mode.
 
-    joint = treatment.joint
-
-    first_member = (
-        joint.members[
-            0
-        ]
-    )
-
-    second_member = (
-        joint.members[
-            1
-        ]
-    )
+    The mode is now implemented as a shared planar miter,
+    so it intentionally produces no cylindrical cope
+    instructions.
+    """
 
     return JointTreatmentResolution(
         treatment=treatment,
         through_members=(),
-        cope_instructions=(
-            CopeInstruction(
-                joint=joint,
-                coped_member=first_member,
-                target_member=second_member,
-            ),
-            CopeInstruction(
-                joint=joint,
-                coped_member=second_member,
-                target_member=first_member,
-            ),
-        ),
+        cope_instructions=(),
     )
 
 
@@ -203,7 +184,7 @@ def resolve_joint_treatment(
     treatment: JointTreatment,
     straight_tolerance_degrees: float = 3.0,
 ) -> JointTreatmentResolution:
-    """Resolve a joint treatment into explicit cope instructions."""
+    """Resolve a joint treatment into cylindrical cope instructions."""
 
     if (
         treatment.mode

@@ -1,7 +1,10 @@
-"""FreeCAD member fabrication metadata and notch geometry helpers."""
+"""FreeCAD member fabrication metadata and geometry helpers."""
 
 import FreeCAD
 
+from forgecad.adapters.freecad.miter_geometry import (
+    miter_tube_shape,
+)
 from forgecad.adapters.freecad.notch_geometry import (
     cope_tube_shape,
     design_member_length,
@@ -94,12 +97,75 @@ def ensure_notch_properties(
 
         obj.EndExtension = 0.0
 
+    if not hasattr(
+        obj,
+        "MiterEnabled",
+    ):
+        obj.addProperty(
+            "App::PropertyBool",
+            "MiterEnabled",
+            "ForgeCAD Miter",
+        )
+
+        obj.MiterEnabled = False
+
+    if not hasattr(
+        obj,
+        "MiterPlanePoint",
+    ):
+        obj.addProperty(
+            "App::PropertyVector",
+            "MiterPlanePoint",
+            "ForgeCAD Miter",
+        )
+
+        obj.MiterPlanePoint = FreeCAD.Vector(
+            0,
+            0,
+            0,
+        )
+
+    if not hasattr(
+        obj,
+        "MiterPlaneNormal",
+    ):
+        obj.addProperty(
+            "App::PropertyVector",
+            "MiterPlaneNormal",
+            "ForgeCAD Miter",
+        )
+
+        obj.MiterPlaneNormal = FreeCAD.Vector(
+            0,
+            0,
+            0,
+        )
+
+    if not hasattr(
+        obj,
+        "MiterKeepPoint",
+    ):
+        obj.addProperty(
+            "App::PropertyVector",
+            "MiterKeepPoint",
+            "ForgeCAD Miter",
+        )
+
+        obj.MiterKeepPoint = FreeCAD.Vector(
+            0,
+            0,
+            0,
+        )
+
     for property_name in (
         "NotchThroughStart",
         "NotchThroughEnd",
         "NotchThroughDiameter",
         "StartExtension",
         "EndExtension",
+        "MiterPlanePoint",
+        "MiterPlaneNormal",
+        "MiterKeepPoint",
     ):
         try:
             obj.setEditorMode(
@@ -115,7 +181,7 @@ def ensure_notch_properties(
 def clear_notch(
     obj,
 ):
-    """Disable notch geometry on a member."""
+    """Disable cylindrical cope geometry."""
 
     ensure_notch_properties(
         obj
@@ -141,7 +207,7 @@ def clear_notch(
 def clear_extensions(
     obj,
 ):
-    """Remove fabrication extensions from both member ends."""
+    """Remove fabrication extensions from both ends."""
 
     ensure_notch_properties(
         obj
@@ -151,11 +217,41 @@ def clear_extensions(
     obj.EndExtension = 0.0
 
 
+def clear_miter(
+    obj,
+):
+    """Disable planar miter geometry."""
+
+    ensure_notch_properties(
+        obj
+    )
+
+    obj.MiterEnabled = False
+
+    obj.MiterPlanePoint = FreeCAD.Vector(
+        0,
+        0,
+        0,
+    )
+
+    obj.MiterPlaneNormal = FreeCAD.Vector(
+        0,
+        0,
+        0,
+    )
+
+    obj.MiterKeepPoint = FreeCAD.Vector(
+        0,
+        0,
+        0,
+    )
+
+
 def configure_start_extension(
     obj,
     extension,
 ):
-    """Configure extra physical stock beyond the start node."""
+    """Configure extra stock beyond the start node."""
 
     ensure_notch_properties(
         obj
@@ -170,16 +266,14 @@ def configure_start_extension(
             "Start extension cannot be negative."
         )
 
-    obj.StartExtension = (
-        extension
-    )
+    obj.StartExtension = extension
 
 
 def configure_end_extension(
     obj,
     extension,
 ):
-    """Configure extra physical stock beyond the end node."""
+    """Configure extra stock beyond the end node."""
 
     ensure_notch_properties(
         obj
@@ -194,9 +288,7 @@ def configure_end_extension(
             "End extension cannot be negative."
         )
 
-    obj.EndExtension = (
-        extension
-    )
+    obj.EndExtension = extension
 
 
 def configure_notch(
@@ -205,7 +297,7 @@ def configure_notch(
     through_end,
     through_outside_diameter,
 ):
-    """Configure a member to cope against a target tube."""
+    """Configure a cylindrical tube cope."""
 
     ensure_notch_properties(
         obj
@@ -233,11 +325,46 @@ def configure_notch(
         through_end.z,
     )
 
-    obj.NotchThroughDiameter = (
-        diameter
+    obj.NotchThroughDiameter = diameter
+    obj.NotchEnabled = True
+
+
+def configure_miter(
+    obj,
+    plane_point,
+    plane_normal,
+    keep_point,
+):
+    """Configure a planar miter trim."""
+
+    ensure_notch_properties(
+        obj
     )
 
-    obj.NotchEnabled = True
+    if plane_normal.Length <= 0:
+        raise ValueError(
+            "Miter plane normal cannot be zero."
+        )
+
+    obj.MiterPlanePoint = FreeCAD.Vector(
+        plane_point.x,
+        plane_point.y,
+        plane_point.z,
+    )
+
+    obj.MiterPlaneNormal = FreeCAD.Vector(
+        plane_normal.x,
+        plane_normal.y,
+        plane_normal.z,
+    )
+
+    obj.MiterKeepPoint = FreeCAD.Vector(
+        keep_point.x,
+        keep_point.y,
+        keep_point.z,
+    )
+
+    obj.MiterEnabled = True
 
 
 def physical_member_endpoints(
@@ -252,15 +379,11 @@ def physical_member_endpoints(
     return extended_member_endpoints(
         obj.StartPoint,
         obj.EndPoint,
-        start_extension=(
-            float(
-                obj.StartExtension
-            )
+        start_extension=float(
+            obj.StartExtension
         ),
-        end_extension=(
-            float(
-                obj.EndExtension
-            )
+        end_extension=float(
+            obj.EndExtension
         ),
     )
 
@@ -271,21 +394,24 @@ def build_member_shape(
     plain_shape_builder,
 ):
     """
-    Build either a plain or coped ForgeCAD member shape.
+    Build the final fabricated member.
 
-    StartPoint and EndPoint remain the design centerline geometry.
-    StartExtension and EndExtension affect only the physical solid.
+    Processing order:
+
+        design centerline
+        -> physical extension
+        -> hollow tube
+        -> cylindrical cope
+        -> planar miter
     """
 
     ensure_notch_properties(
         obj
     )
 
-    design_length = (
-        design_member_length(
-            obj.StartPoint,
-            obj.EndPoint,
-        )
+    design_length = design_member_length(
+        obj.StartPoint,
+        obj.EndPoint,
     )
 
     physical_start, physical_end = (
@@ -294,49 +420,49 @@ def build_member_shape(
         )
     )
 
-    if not bool(
+    shape, _ = plain_shape_builder(
+        physical_start,
+        physical_end,
+        profile,
+    )
+
+    if bool(
         obj.NotchEnabled
     ):
-        shape, _ = (
-            plain_shape_builder(
-                physical_start,
-                physical_end,
-                profile,
+        diameter = float(
+            obj.NotchThroughDiameter
+        )
+
+        if diameter > 0:
+            shape, _ = cope_tube_shape(
+                branch_start=physical_start,
+                branch_end=physical_end,
+                branch_profile=profile,
+                through_start=obj.NotchThroughStart,
+                through_end=obj.NotchThroughEnd,
+                through_outside_diameter=diameter,
+                plain_shape_builder=plain_shape_builder,
             )
+
+    if bool(
+        obj.MiterEnabled
+    ):
+        cutter_size = max(
+            physical_start.distanceToPoint(
+                physical_end
+            ),
+            float(
+                profile.outside_diameter
+            ),
+        ) * 4.0
+
+        shape = miter_tube_shape(
+            tube_shape=shape,
+            plane_point=obj.MiterPlanePoint,
+            plane_normal=obj.MiterPlaneNormal,
+            keep_point=obj.MiterKeepPoint,
+            cutter_size=cutter_size,
         )
-
-        return (
-            shape,
-            design_length,
-        )
-
-    diameter = float(
-        obj.NotchThroughDiameter
-    )
-
-    if diameter <= 0:
-        shape, _ = (
-            plain_shape_builder(
-                physical_start,
-                physical_end,
-                profile,
-            )
-        )
-
-        return (
-            shape,
-            design_length,
-        )
-
-    shape, _ = cope_tube_shape(
-        branch_start=physical_start,
-        branch_end=physical_end,
-        branch_profile=profile,
-        through_start=obj.NotchThroughStart,
-        through_end=obj.NotchThroughEnd,
-        through_outside_diameter=diameter,
-        plain_shape_builder=plain_shape_builder,
-    )
 
     return (
         shape,

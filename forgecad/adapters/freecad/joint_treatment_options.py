@@ -169,7 +169,7 @@ def treatment_options_for_members(
         Automatic
         Member A Through
         Member B Through
-        Both Coped
+        Both Mitered
 
     Three-or-more-member joints receive:
         Automatic
@@ -208,7 +208,7 @@ def treatment_options_for_members(
     if len(members) == 2:
         options.append(
             JointTreatmentOption(
-                label="Both Coped",
+                label="Both Mitered",
                 mode=(
                     JointTreatmentMode.BOTH_COPED
                 ),

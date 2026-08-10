@@ -4,10 +4,6 @@ import sys
 import types
 
 
-# ---------------------------------------------------------
-# Minimal FreeCAD / Part stubs
-# ---------------------------------------------------------
-
 sys.modules[
     "FreeCAD"
 ] = types.ModuleType(
@@ -120,16 +116,14 @@ def test_corner_has_four_treatment_options():
         options
     ) == 4
 
-    assert options[
-        0
-    ].mode == (
-        JointTreatmentMode.AUTO
+    assert (
+        options[0].mode
+        == JointTreatmentMode.AUTO
     )
 
-    assert options[
-        1
-    ].mode == (
-        JointTreatmentMode.MEMBER_THROUGH
+    assert (
+        options[1].mode
+        == JointTreatmentMode.MEMBER_THROUGH
     )
 
     assert options[
@@ -144,14 +138,13 @@ def test_corner_has_four_treatment_options():
         "L002",
     )
 
-    assert options[
-        3
-    ].mode == (
-        JointTreatmentMode.BOTH_COPED
+    assert (
+        options[3].mode
+        == JointTreatmentMode.BOTH_COPED
     )
 
 
-def test_corner_labels_identify_through_members():
+def test_corner_labels_identify_through_members_and_miter():
     first = FakeMember(
         "M001",
         "L001",
@@ -188,7 +181,7 @@ def test_corner_labels_identify_through_members():
     assert options[
         3
     ].label == (
-        "Both Coped"
+        "Both Mitered"
     )
 
 
@@ -218,9 +211,6 @@ def test_t_joint_has_single_and_pair_options():
         )
     )
 
-    # Automatic
-    # 3 individual-through choices
-    # 3 possible through pairs
     assert len(
         options
     ) == 7
@@ -348,6 +338,40 @@ def test_saved_member_through_matches_option():
         (
             "L001",
         ),
+    )
+
+
+def test_saved_miter_treatment_matches_legacy_persistence_value():
+    members = [
+        FakeMember(
+            "M001",
+            "L001",
+        ),
+        FakeMember(
+            "M002",
+            "L002",
+        ),
+    ]
+
+    options = (
+        treatment_options_for_members(
+            members
+        )
+    )
+
+    assert option_matches_saved_treatment(
+        options[
+            3
+        ],
+        "both_coped",
+        (),
+    )
+
+    assert (
+        options[
+            3
+        ].label
+        == "Both Mitered"
     )
 
 

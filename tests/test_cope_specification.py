@@ -282,12 +282,16 @@ def test_member_through_corner_produces_one_cope():
     ) == 1
 
     assert (
-        specifications[0].coped_member
+        specifications[
+            0
+        ].coped_member
         is vertical
     )
 
     assert (
-        specifications[0].target_member
+        specifications[
+            0
+        ].target_member
         is horizontal
     )
 
@@ -315,17 +319,21 @@ def test_opposite_corner_priority_reverses_cope():
     ) == 1
 
     assert (
-        specifications[0].coped_member
+        specifications[
+            0
+        ].coped_member
         is horizontal
     )
 
     assert (
-        specifications[0].target_member
+        specifications[
+            0
+        ].target_member
         is vertical
     )
 
 
-def test_both_coped_corner_produces_two_specs():
+def test_both_mitered_corner_produces_no_cylindrical_cope_specs():
     joint, horizontal, vertical = (
         make_corner()
     )
@@ -336,34 +344,11 @@ def test_both_coped_corner_produces_two_specs():
         )
     )
 
-    specifications = (
+    assert (
         cope_specifications_for_treatment(
             treatment
         )
-    )
-
-    assert len(
-        specifications
-    ) == 2
-
-    assert (
-        specifications[0].coped_member
-        is horizontal
-    )
-
-    assert (
-        specifications[0].target_member
-        is vertical
-    )
-
-    assert (
-        specifications[1].coped_member
-        is vertical
-    )
-
-    assert (
-        specifications[1].target_member
-        is horizontal
+        == ()
     )
 
 

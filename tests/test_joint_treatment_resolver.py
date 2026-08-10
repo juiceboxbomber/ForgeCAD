@@ -164,10 +164,7 @@ def test_auto_t_joint_resolves_branch_cope():
         right,
     )
 
-    assert (
-        resolution.cope_count
-        == 1
-    )
+    assert resolution.cope_count == 1
 
     instruction = (
         resolution.cope_instructions[
@@ -236,10 +233,7 @@ def test_corner_first_member_through():
         first,
     )
 
-    assert (
-        resolution.cope_count
-        == 1
-    )
+    assert resolution.cope_count == 1
 
     instruction = (
         resolution.cope_instructions[
@@ -293,7 +287,7 @@ def test_corner_second_member_through():
     )
 
 
-def test_corner_both_coped_produces_two_instructions():
+def test_both_mitered_corner_produces_no_cylindrical_copes():
     joint, first, second = (
         make_corner()
     )
@@ -311,40 +305,18 @@ def test_corner_both_coped_produces_two_instructions():
     )
 
     assert (
+        resolution.through_members
+        == ()
+    )
+
+    assert (
         resolution.cope_count
-        == 2
-    )
-
-    first_instruction = (
-        resolution.cope_instructions[
-            0
-        ]
-    )
-
-    second_instruction = (
-        resolution.cope_instructions[
-            1
-        ]
+        == 0
     )
 
     assert (
-        first_instruction.coped_member
-        is first
-    )
-
-    assert (
-        first_instruction.target_member
-        is second
-    )
-
-    assert (
-        second_instruction.coped_member
-        is second
-    )
-
-    assert (
-        second_instruction.target_member
-        is first
+        resolution.cope_instructions
+        == ()
     )
 
 
@@ -375,10 +347,7 @@ def test_t_joint_explicit_through_pair():
         right,
     )
 
-    assert (
-        resolution.cope_count
-        == 1
-    )
+    assert resolution.cope_count == 1
 
     instruction = (
         resolution.cope_instructions[
@@ -424,10 +393,7 @@ def test_t_joint_can_choose_nonstandard_through_pair():
         branch,
     )
 
-    assert (
-        resolution.cope_count
-        == 1
-    )
+    assert resolution.cope_count == 1
 
     instruction = (
         resolution.cope_instructions[
@@ -513,10 +479,7 @@ def test_multi_branch_explicit_pair_copes_all_remaining_members():
         )
     )
 
-    assert (
-        resolution.cope_count
-        == 2
-    )
+    assert resolution.cope_count == 2
 
     assert {
         instruction.coped_member

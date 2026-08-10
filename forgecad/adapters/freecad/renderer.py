@@ -16,6 +16,14 @@ from forgecad.services import (
     member_other_node,
     notch_specifications_for_joint,
 )
+from forgecad.services.joint_extension import (
+    MEMBER_END_END,
+    MEMBER_END_START,
+    extension_specifications_for_treatment,
+)
+from forgecad.services.joint_miter import (
+    miter_specifications_for_treatment,
+)
 from forgecad.services.notch_analysis import (
     cope_specifications_for_treatment,
 )
@@ -28,8 +36,13 @@ from forgecad.adapters.freecad.member_object import (
     build_tube_shape,
 )
 from forgecad.adapters.freecad.member_notch import (
+    clear_extensions,
+    clear_miter,
     clear_notch,
+    configure_end_extension,
+    configure_miter,
     configure_notch,
+    configure_start_extension,
 )
 
 
@@ -47,20 +60,12 @@ def node_vector(
 
 # ---------------------------------------------------------
 # Legacy automatic-notch helpers
-#
-# Keep these available while the rest of ForgeCAD migrates
-# from NotchSpecification to generalized CopeSpecification.
 # ---------------------------------------------------------
 
 def through_axis_for_specification(
     specification,
 ):
-    """
-    Return a continuous FreeCAD axis for a legacy notch cutter.
-
-    The two through members meet at the joint. Their opposite
-    endpoints define the complete through-tube centerline.
-    """
+    """Return a continuous FreeCAD axis for a legacy notch cutter."""
 
     first_member = (
         specification.through_members[
@@ -123,12 +128,7 @@ def configure_automatic_notches(
     frame,
     rendered_objects,
 ):
-    """
-    Apply legacy automatic notch information to rendered members.
-
-    This remains available for compatibility while the renderer
-    itself uses the generalized cope path.
-    """
+    """Apply legacy automatic notch information."""
 
     if (
         len(rendered_objects)
@@ -202,18 +202,13 @@ def configure_automatic_notches(
 
 
 # ---------------------------------------------------------
-# Generalized cope helpers
+# Generalized treatment helpers
 # ---------------------------------------------------------
 
 def target_axis_for_cope_specification(
     specification,
 ):
-    """
-    Return the target tube axis for a generalized cope.
-
-    A generalized cope targets one actual member rather than
-    requiring a two-member straight-through pair.
-    """
+    """Return the target member centerline for a cope cutter."""
 
     target_member = (
         specification.target_member
@@ -233,7 +228,7 @@ def member_layout_id_map(
     frame,
     source_layout_ids,
 ):
-    """Map domain-member identity to its persistent layout ID."""
+    """Map domain-member identity to persistent layout ID."""
 
     if source_layout_ids is None:
         source_layout_ids = [
@@ -267,11 +262,7 @@ def member_for_layout_id(
     layout_id,
     layout_ids_by_member,
 ):
-    """
-    Return the joint member associated with a layout ID.
-
-    Only members belonging to the requested joint are searched.
-    """
+    """Return the joint member associated with a persistent layout ID."""
 
     requested_id = str(
         layout_id
@@ -307,8 +298,7 @@ def saved_treatment_for_joint(
     """
     Rebuild a JointTreatment from persistent FreeCAD data.
 
-    Invalid or stale persistent references safely fall back
-    to automatic treatment.
+    Invalid or stale references safely fall back to AUTO.
     """
 
     automatic = (
@@ -440,17 +430,12 @@ def saved_treatment_for_joint(
     return automatic
 
 
-def cope_specifications_for_frame(
+def treatments_for_frame(
     document,
     frame,
     source_layout_ids=None,
 ):
-    """
-    Return generalized cope specifications for a frame.
-
-    Saved joint treatments override automatic behavior.
-    Joints without a valid saved treatment use AUTO.
-    """
+    """Return saved-or-automatic treatment for every joint."""
 
     layout_ids_by_member = (
         member_layout_id_map(
@@ -459,12 +444,12 @@ def cope_specifications_for_frame(
         )
     )
 
-    specifications = []
+    treatments = []
 
     for joint in detect_joints(
         frame
     ):
-        treatment = (
+        treatments.append(
             saved_treatment_for_joint(
                 document,
                 joint,
@@ -472,8 +457,77 @@ def cope_specifications_for_frame(
             )
         )
 
+    return tuple(
+        treatments
+    )
+
+
+def cope_specifications_for_frame(
+    document,
+    frame,
+    source_layout_ids=None,
+):
+    """Return all cylindrical cope specifications for a frame."""
+
+    specifications = []
+
+    for treatment in treatments_for_frame(
+        document,
+        frame,
+        source_layout_ids=source_layout_ids,
+    ):
         specifications.extend(
             cope_specifications_for_treatment(
+                treatment
+            )
+        )
+
+    return tuple(
+        specifications
+    )
+
+
+def extension_specifications_for_frame(
+    document,
+    frame,
+    source_layout_ids=None,
+):
+    """Return all physical member extensions required by treatments."""
+
+    specifications = []
+
+    for treatment in treatments_for_frame(
+        document,
+        frame,
+        source_layout_ids=source_layout_ids,
+    ):
+        specifications.extend(
+            extension_specifications_for_treatment(
+                treatment
+            )
+        )
+
+    return tuple(
+        specifications
+    )
+
+
+def miter_specifications_for_frame(
+    document,
+    frame,
+    source_layout_ids=None,
+):
+    """Return all planar miter specifications for a frame."""
+
+    specifications = []
+
+    for treatment in treatments_for_frame(
+        document,
+        frame,
+        source_layout_ids=source_layout_ids,
+    ):
+        specifications.extend(
+            miter_specifications_for_treatment(
                 treatment
             )
         )
@@ -486,11 +540,7 @@ def cope_specifications_for_frame(
 def automatic_cope_specifications(
     frame,
 ):
-    """
-    Return generalized cope specifications using AUTO treatment.
-
-    This helper remains available for compatibility and tests.
-    """
+    """Return generalized cope specifications using AUTO treatment."""
 
     specifications = []
 
@@ -518,8 +568,9 @@ def configure_cope_specifications(
     frame,
     rendered_objects,
     specifications,
+    clear_existing=True,
 ):
-    """Apply generalized cope specifications to rendered members."""
+    """Apply cylindrical cope specifications to rendered members."""
 
     if (
         len(rendered_objects)
@@ -538,10 +589,11 @@ def configure_cope_specifications(
         )
     }
 
-    for obj in rendered_objects:
-        clear_notch(
-            obj
-        )
+    if clear_existing:
+        for obj in rendered_objects:
+            clear_notch(
+                obj
+            )
 
     configured_member_ids = set()
 
@@ -559,9 +611,6 @@ def configure_cope_specifications(
         if coped_object is None:
             continue
 
-        # Current member metadata supports one cope operation
-        # per member. This is sufficient for either-through and
-        # both-coped two-member corners.
         if (
             coped_key
             in configured_member_ids
@@ -591,15 +640,229 @@ def configure_cope_specifications(
     return rendered_objects
 
 
+def configure_extension_specifications(
+    frame,
+    rendered_objects,
+    specifications,
+    clear_existing=True,
+):
+    """
+    Apply physical member-end extensions.
+
+    Multiple joints may affect opposite ends of the same member.
+    If several requirements affect the same end, the largest wins.
+    """
+
+    if (
+        len(rendered_objects)
+        != len(frame.members)
+    ):
+        raise ValueError(
+            "Rendered member count does not match "
+            "the domain frame."
+        )
+
+    object_by_member_identity = {
+        id(member): obj
+        for member, obj in zip(
+            frame.members,
+            rendered_objects,
+        )
+    }
+
+    if clear_existing:
+        for obj in rendered_objects:
+            clear_extensions(
+                obj
+            )
+
+    start_extensions = {}
+    end_extensions = {}
+
+    for specification in specifications:
+        member_key = id(
+            specification.member
+        )
+
+        if (
+            member_key
+            not in object_by_member_identity
+        ):
+            continue
+
+        extension = float(
+            specification.extension_mm
+        )
+
+        if (
+            specification.member_end
+            == MEMBER_END_START
+        ):
+            start_extensions[
+                member_key
+            ] = max(
+                start_extensions.get(
+                    member_key,
+                    0.0,
+                ),
+                extension,
+            )
+
+        elif (
+            specification.member_end
+            == MEMBER_END_END
+        ):
+            end_extensions[
+                member_key
+            ] = max(
+                end_extensions.get(
+                    member_key,
+                    0.0,
+                ),
+                extension,
+            )
+
+        else:
+            raise ValueError(
+                "Unknown member extension end."
+            )
+
+    for (
+        member_key,
+        extension,
+    ) in start_extensions.items():
+        configure_start_extension(
+            object_by_member_identity[
+                member_key
+            ],
+            extension,
+        )
+
+    for (
+        member_key,
+        extension,
+    ) in end_extensions.items():
+        configure_end_extension(
+            object_by_member_identity[
+                member_key
+            ],
+            extension,
+        )
+
+    return rendered_objects
+
+
+def configure_miter_specifications(
+    frame,
+    rendered_objects,
+    specifications,
+    clear_existing=True,
+):
+    """Apply planar miter specifications to rendered members."""
+
+    if (
+        len(rendered_objects)
+        != len(frame.members)
+    ):
+        raise ValueError(
+            "Rendered member count does not match "
+            "the domain frame."
+        )
+
+    object_by_member_identity = {
+        id(member): obj
+        for member, obj in zip(
+            frame.members,
+            rendered_objects,
+        )
+    }
+
+    if clear_existing:
+        for obj in rendered_objects:
+            clear_miter(
+                obj
+            )
+
+    configured_member_ids = set()
+
+    for specification in specifications:
+        member_key = id(
+            specification.member
+        )
+
+        member_object = (
+            object_by_member_identity.get(
+                member_key
+            )
+        )
+
+        if member_object is None:
+            continue
+
+        if (
+            member_key
+            in configured_member_ids
+        ):
+            raise ValueError(
+                "Miter generation currently supports "
+                "one miter operation per member."
+            )
+
+        plane_point = FreeCAD.Vector(
+            specification.plane_point[
+                0
+            ],
+            specification.plane_point[
+                1
+            ],
+            specification.plane_point[
+                2
+            ],
+        )
+
+        plane_normal = FreeCAD.Vector(
+            specification.plane_normal[
+                0
+            ],
+            specification.plane_normal[
+                1
+            ],
+            specification.plane_normal[
+                2
+            ],
+        )
+
+        keep_point = FreeCAD.Vector(
+            specification.keep_point[
+                0
+            ],
+            specification.keep_point[
+                1
+            ],
+            specification.keep_point[
+                2
+            ],
+        )
+
+        configure_miter(
+            member_object,
+            plane_point,
+            plane_normal,
+            keep_point,
+        )
+
+        configured_member_ids.add(
+            member_key
+        )
+
+    return rendered_objects
+
+
 def configure_automatic_copes(
     frame,
     rendered_objects,
 ):
-    """
-    Apply generalized AUTO cope information to rendered members.
-
-    This helper remains available for compatibility.
-    """
+    """Apply generalized AUTO cope information."""
 
     return configure_cope_specifications(
         frame,
@@ -610,17 +873,33 @@ def configure_automatic_copes(
     )
 
 
-def configure_saved_copes(
+def configure_saved_fabrication(
     document,
     frame,
     rendered_objects,
     source_layout_ids=None,
 ):
     """
-    Apply saved treatments, falling back to AUTO where needed.
+    Apply saved fabrication treatment.
+
+    Processing order:
+
+        extension
+        cylindrical cope
+        planar miter
     """
 
-    specifications = (
+    extension_specs = (
+        extension_specifications_for_frame(
+            document,
+            frame,
+            source_layout_ids=(
+                source_layout_ids
+            ),
+        )
+    )
+
+    cope_specs = (
         cope_specifications_for_frame(
             document,
             frame,
@@ -630,10 +909,68 @@ def configure_saved_copes(
         )
     )
 
-    return configure_cope_specifications(
+    miter_specs = (
+        miter_specifications_for_frame(
+            document,
+            frame,
+            source_layout_ids=(
+                source_layout_ids
+            ),
+        )
+    )
+
+    for obj in rendered_objects:
+        clear_extensions(
+            obj
+        )
+
+        clear_notch(
+            obj
+        )
+
+        clear_miter(
+            obj
+        )
+
+    configure_extension_specifications(
         frame,
         rendered_objects,
-        specifications,
+        extension_specs,
+        clear_existing=False,
+    )
+
+    configure_cope_specifications(
+        frame,
+        rendered_objects,
+        cope_specs,
+        clear_existing=False,
+    )
+
+    configure_miter_specifications(
+        frame,
+        rendered_objects,
+        miter_specs,
+        clear_existing=False,
+    )
+
+    return rendered_objects
+
+
+def configure_saved_copes(
+    document,
+    frame,
+    rendered_objects,
+    source_layout_ids=None,
+):
+    """Compatibility wrapper for saved fabrication."""
+
+    return configure_saved_fabrication(
+        document,
+        frame,
+        rendered_objects,
+        source_layout_ids=(
+            source_layout_ids
+        ),
     )
 
 
@@ -739,8 +1076,6 @@ class FrameRenderer:
             True
         )
 
-        # SourceLayoutID now exists, so the proxy can find the
-        # originating layout line and restore its persistent name.
         proxy.load_member_name_from_source(
             obj
         )
@@ -755,12 +1090,7 @@ class FrameRenderer:
         frame: Frame,
         source_layout_ids=None,
     ):
-        """
-        Render every member and apply persisted joint treatments.
-
-        Joints without a stored treatment continue to use
-        ForgeCAD's automatic treatment.
-        """
+        """Render every member and apply saved fabrication treatment."""
 
         rendered_objects = []
 
@@ -778,10 +1108,6 @@ class FrameRenderer:
                 "Layout identity count does not match "
                 "the number of frame members."
             )
-
-        # -------------------------------------------------
-        # Render all members first
-        # -------------------------------------------------
 
         for index, member in enumerate(
             frame.members,
@@ -808,14 +1134,7 @@ class FrameRenderer:
                 obj
             )
 
-        # -------------------------------------------------
-        # Load persistent joint treatments.
-        #
-        # Missing or stale treatments automatically fall back
-        # to ForgeCAD's existing geometric behavior.
-        # -------------------------------------------------
-
-        configure_saved_copes(
+        configure_saved_fabrication(
             document,
             frame,
             rendered_objects,
@@ -824,8 +1143,6 @@ class FrameRenderer:
             ),
         )
 
-        # TubeMemberProxy.execute() regenerates configured
-        # members through the persistent cope geometry path.
         document.recompute()
 
         return rendered_objects
