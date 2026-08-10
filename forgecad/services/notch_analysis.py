@@ -16,6 +16,10 @@ from forgecad.services.joint_service import (
 from forgecad.services.joint_member_roles import (
     identify_member_roles,
 )
+from forgecad.services.joint_treatment_resolver import (
+    CopeInstruction,
+    resolve_joint_treatment,
+)
 
 
 BRANCH_END_START = "start"
@@ -24,7 +28,13 @@ BRANCH_END_END = "end"
 
 @dataclass(frozen=True, slots=True)
 class NotchSpecification:
-    """Describe one branch-tube cope against a through tube."""
+    """
+    Describe one branch-tube cope against a traditional
+    two-member through path.
+
+    This remains for compatibility with the existing
+    automatic notch renderer.
+    """
 
     joint: Joint
 
@@ -44,6 +54,31 @@ class NotchSpecification:
     branch_wall_thickness: float
 
     through_outside_diameter: float
+
+
+@dataclass(frozen=True, slots=True)
+class CopeSpecification:
+    """
+    Describe one generalized member-to-member cope.
+
+    Unlike NotchSpecification, this does not require a
+    two-member straight-through path.
+    """
+
+    joint: Joint
+
+    coped_member: Member
+    target_member: Member
+
+    coped_end: str
+
+    angle_degrees: float
+
+    coped_outside_diameter: float
+    coped_inside_diameter: float
+    coped_wall_thickness: float
+
+    target_outside_diameter: float
 
 
 def member_end_at_node(
@@ -70,8 +105,8 @@ def through_outside_diameter(
     """
     Return the common outside diameter of a through pair.
 
-    The first notch implementation requires both halves of
-    the through path to use the same outside diameter.
+    The legacy automatic notch implementation requires both
+    halves of the through path to use the same outside diameter.
     """
 
     if len(
@@ -130,12 +165,135 @@ def branch_through_angle(
     )
 
 
+def cope_angle(
+    coped_member: Member,
+    target_member: Member,
+    joint_node: Node,
+) -> float:
+    """Return the acute fabrication angle for a member-to-member cope."""
+
+    return branch_through_angle(
+        coped_member,
+        target_member,
+        joint_node,
+    )
+
+
+def build_cope_specification(
+    instruction: CopeInstruction,
+) -> CopeSpecification:
+    """Build one validated generalized cope specification."""
+
+    joint = instruction.joint
+
+    coped_member = (
+        instruction.coped_member
+    )
+
+    target_member = (
+        instruction.target_member
+    )
+
+    if (
+        coped_member
+        is target_member
+    ):
+        raise ValueError(
+            "A member cannot be coped against itself."
+        )
+
+    if not member_touches_node(
+        coped_member,
+        joint.node,
+    ):
+        raise ValueError(
+            "Coped member does not touch the joint."
+        )
+
+    if not member_touches_node(
+        target_member,
+        joint.node,
+    ):
+        raise ValueError(
+            "Target member does not touch the joint."
+        )
+
+    angle = cope_angle(
+        coped_member,
+        target_member,
+        joint.node,
+    )
+
+    if angle <= 1e-6:
+        raise ValueError(
+            "Cannot create a cope for collinear members."
+        )
+
+    coped_profile = (
+        coped_member.profile
+    )
+
+    target_profile = (
+        target_member.profile
+    )
+
+    return CopeSpecification(
+        joint=joint,
+        coped_member=coped_member,
+        target_member=target_member,
+        coped_end=member_end_at_node(
+            coped_member,
+            joint.node,
+        ),
+        angle_degrees=angle,
+        coped_outside_diameter=float(
+            coped_profile.outside_diameter
+        ),
+        coped_inside_diameter=float(
+            coped_profile.inside_diameter
+        ),
+        coped_wall_thickness=float(
+            coped_profile.wall_thickness
+        ),
+        target_outside_diameter=float(
+            target_profile.outside_diameter
+        ),
+    )
+
+
+def cope_specifications_for_treatment(
+    treatment,
+    straight_tolerance_degrees: float = 3.0,
+) -> tuple[CopeSpecification, ...]:
+    """
+    Resolve a joint treatment and return all required cope specs.
+
+    This is the generalized path used for corners, explicit
+    designer treatments, and eventually all automatic joints.
+    """
+
+    resolution = resolve_joint_treatment(
+        treatment,
+        straight_tolerance_degrees=(
+            straight_tolerance_degrees
+        ),
+    )
+
+    return tuple(
+        build_cope_specification(
+            instruction
+        )
+        for instruction
+        in resolution.cope_instructions
+    )
+
+
 def build_notch_specification(
     joint: Joint,
     branch_member: Member,
     through_members,
 ) -> NotchSpecification:
-    """Build one validated tube-notch specification."""
+    """Build one validated legacy tube-notch specification."""
 
     if not member_touches_node(
         branch_member,
@@ -223,9 +381,10 @@ def notch_specifications_for_joint(
     straight_tolerance_degrees: float = 3.0,
 ) -> tuple[NotchSpecification, ...]:
     """
-    Return notch specifications for all branches at a joint.
+    Return legacy automatic notch specifications for a joint.
 
-    Joints without a valid through pair return no notch specs.
+    This function intentionally remains unchanged in behavior
+    until the FreeCAD renderer is migrated to CopeSpecification.
     """
 
     roles = identify_member_roles(
