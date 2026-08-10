@@ -1,6 +1,5 @@
 """Joint review-status helpers for ForgeCAD."""
 
-
 from dataclasses import dataclass
 from enum import Enum
 
@@ -51,6 +50,25 @@ class JointStatus:
 
     is_manual: bool
 
+    @property
+    def needs_attention(
+        self,
+    ) -> bool:
+        """
+        Return True when the joint requires designer attention.
+
+        Unreviewed joints require review.
+
+        Invalid saved treatments also require attention even
+        though a treatment record exists.
+        """
+
+        return (
+            not self.is_reviewed
+            or self.code
+            == JointStatusCode.INVALID
+        )
+
 
 UNREVIEWED_STATUS = JointStatus(
     code=JointStatusCode.UNREVIEWED,
@@ -59,14 +77,12 @@ UNREVIEWED_STATUS = JointStatus(
     is_manual=False,
 )
 
-
 AUTOMATIC_STATUS = JointStatus(
     code=JointStatusCode.AUTOMATIC,
     label="Automatic",
     is_reviewed=True,
     is_manual=False,
 )
-
 
 MEMBER_THROUGH_STATUS = JointStatus(
     code=JointStatusCode.MEMBER_THROUGH,
@@ -75,7 +91,6 @@ MEMBER_THROUGH_STATUS = JointStatus(
     is_manual=True,
 )
 
-
 BOTH_MITERED_STATUS = JointStatus(
     code=JointStatusCode.BOTH_MITERED,
     label="Both Mitered",
@@ -83,14 +98,12 @@ BOTH_MITERED_STATUS = JointStatus(
     is_manual=True,
 )
 
-
 THROUGH_PAIR_STATUS = JointStatus(
     code=JointStatusCode.THROUGH_PAIR,
     label="Through Pair",
     is_reviewed=True,
     is_manual=True,
 )
-
 
 INVALID_STATUS = JointStatus(
     code=JointStatusCode.INVALID,
@@ -131,6 +144,7 @@ def joint_status_from_saved_treatment(
         mode, through_layout_ids = (
             saved_treatment
         )
+
     except (
         TypeError,
         ValueError,

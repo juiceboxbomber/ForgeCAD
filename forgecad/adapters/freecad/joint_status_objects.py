@@ -91,6 +91,16 @@ def ensure_joint_status_properties(
             PROPERTY_GROUP,
         )
 
+    if not hasattr(
+        obj,
+        "NeedsAttention",
+    ):
+        obj.addProperty(
+            "App::PropertyBool",
+            "NeedsAttention",
+            PROPERTY_GROUP,
+        )
+
     for property_name in (
         "JointID",
         "NodeKey",
@@ -99,12 +109,14 @@ def ensure_joint_status_properties(
         "Treatment",
         "Reviewed",
         "ManualTreatment",
+        "NeedsAttention",
     ):
         try:
             obj.setEditorMode(
                 property_name,
                 1,
             )
+
         except Exception:
             pass
 
@@ -155,6 +167,10 @@ def create_joint_status_object(
 
     obj.ManualTreatment = (
         item.status.is_manual
+    )
+
+    obj.NeedsAttention = (
+        item.status.needs_attention
     )
 
     obj.Label = (
