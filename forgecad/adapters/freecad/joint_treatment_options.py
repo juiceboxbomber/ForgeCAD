@@ -2,10 +2,14 @@
 
 from dataclasses import dataclass
 from itertools import combinations
+from math import acos, degrees, sqrt
 
 from forgecad.fabrication.joint_treatment import (
     JointTreatmentMode,
 )
+
+
+DEFAULT_RIGHT_ANGLE_TOLERANCE_DEGREES = 3.0
 
 
 @dataclass(frozen=True, slots=True)
@@ -76,6 +80,263 @@ def member_has_persistent_identity(
     )
 
 
+def point_key(
+    point,
+    precision=6,
+):
+    """Return a stable coordinate key for a FreeCAD-like point."""
+
+    return (
+        round(
+            float(point.x),
+            precision,
+        ),
+        round(
+            float(point.y),
+            precision,
+        ),
+        round(
+            float(point.z),
+            precision,
+        ),
+    )
+
+
+def vector_components(
+    start,
+    end,
+):
+    """Return XYZ vector components from start to end."""
+
+    return (
+        float(
+            end.x - start.x
+        ),
+        float(
+            end.y - start.y
+        ),
+        float(
+            end.z - start.z
+        ),
+    )
+
+
+def vector_length(
+    vector,
+):
+    """Return vector magnitude."""
+
+    return sqrt(
+        vector[0] * vector[0]
+        + vector[1] * vector[1]
+        + vector[2] * vector[2]
+    )
+
+
+def common_member_point(
+    first_member,
+    second_member,
+):
+    """Return the common endpoint of two generated members."""
+
+    first_points = (
+        first_member.StartPoint,
+        first_member.EndPoint,
+    )
+
+    second_points = (
+        second_member.StartPoint,
+        second_member.EndPoint,
+    )
+
+    for first_point in first_points:
+        first_key = point_key(
+            first_point
+        )
+
+        for second_point in second_points:
+            if (
+                point_key(
+                    second_point
+                )
+                == first_key
+            ):
+                return first_point
+
+    return None
+
+
+def member_other_point(
+    member,
+    joint_point,
+):
+    """Return the endpoint of a member away from the joint."""
+
+    joint_key = point_key(
+        joint_point
+    )
+
+    if (
+        point_key(
+            member.StartPoint
+        )
+        == joint_key
+    ):
+        return member.EndPoint
+
+    if (
+        point_key(
+            member.EndPoint
+        )
+        == joint_key
+    ):
+        return member.StartPoint
+
+    raise ValueError(
+        "Member does not touch the supplied joint point."
+    )
+
+
+def two_member_angle_degrees(
+    first_member,
+    second_member,
+):
+    """
+    Return the smaller angle between two connected members.
+
+    None is returned when the objects do not contain usable
+    generated-member geometry.
+    """
+
+    required_properties = (
+        "StartPoint",
+        "EndPoint",
+    )
+
+    for member in (
+        first_member,
+        second_member,
+    ):
+        if not all(
+            hasattr(
+                member,
+                property_name,
+            )
+            for property_name
+            in required_properties
+        ):
+            return None
+
+    joint_point = common_member_point(
+        first_member,
+        second_member,
+    )
+
+    if joint_point is None:
+        return None
+
+    try:
+        first_other = member_other_point(
+            first_member,
+            joint_point,
+        )
+
+        second_other = member_other_point(
+            second_member,
+            joint_point,
+        )
+
+    except ValueError:
+        return None
+
+    first_vector = vector_components(
+        joint_point,
+        first_other,
+    )
+
+    second_vector = vector_components(
+        joint_point,
+        second_other,
+    )
+
+    first_length = vector_length(
+        first_vector
+    )
+
+    second_length = vector_length(
+        second_vector
+    )
+
+    if (
+        first_length <= 1e-12
+        or second_length <= 1e-12
+    ):
+        return None
+
+    cosine = (
+        (
+            first_vector[0]
+            * second_vector[0]
+            + first_vector[1]
+            * second_vector[1]
+            + first_vector[2]
+            * second_vector[2]
+        )
+        / (
+            first_length
+            * second_length
+        )
+    )
+
+    cosine = max(
+        -1.0,
+        min(
+            1.0,
+            cosine,
+        ),
+    )
+
+    angle = degrees(
+        acos(
+            cosine
+        )
+    )
+
+    return min(
+        angle,
+        180.0 - angle,
+    )
+
+
+def is_right_angle_corner(
+    first_member,
+    second_member,
+    tolerance_degrees=(
+        DEFAULT_RIGHT_ANGLE_TOLERANCE_DEGREES
+    ),
+):
+    """Return True when a two-member corner is approximately 90°."""
+
+    angle = (
+        two_member_angle_degrees(
+            first_member,
+            second_member,
+        )
+    )
+
+    if angle is None:
+        return False
+
+    return (
+        abs(
+            angle - 90.0
+        )
+        <= float(
+            tolerance_degrees
+        )
+    )
+
+
 def automatic_treatment_option():
     """Return the default automatic treatment option."""
 
@@ -112,6 +373,17 @@ def member_through_option(
         ),
         through_layout_ids=(
             layout_id,
+        ),
+    )
+
+
+def both_mitered_option():
+    """Return the two-member shared-miter option."""
+
+    return JointTreatmentOption(
+        label="Both Mitered",
+        mode=(
+            JointTreatmentMode.BOTH_COPED
         ),
     )
 
@@ -161,20 +433,33 @@ def through_pair_option(
 
 def treatment_options_for_members(
     member_objects,
+    right_angle_tolerance_degrees=(
+        DEFAULT_RIGHT_ANGLE_TOLERANCE_DEGREES
+    ),
 ):
     """
     Return treatment choices appropriate for connected members.
 
-    Two-member joints receive:
+    Two-member approximately 90-degree corners receive:
+
         Automatic
         Member A Through
         Member B Through
         Both Mitered
 
+    Two-member angled corners receive:
+
+        Automatic
+        Both Mitered
+
     Three-or-more-member joints receive:
+
         Automatic
         each individual member through
         every possible two-member through pair
+
+    Cylindrical coping is therefore reserved for square
+    two-member corners and genuine branch/through joints.
     """
 
     members = list(
@@ -185,7 +470,9 @@ def treatment_options_for_members(
         automatic_treatment_option()
     ]
 
-    if len(members) < 2:
+    if len(
+        members
+    ) < 2:
         return tuple(
             options
         )
@@ -198,25 +485,56 @@ def treatment_options_for_members(
         )
     ]
 
+    # ---------------------------------------------------------
+    # Two-member corner
+    # ---------------------------------------------------------
+
+    if len(
+        members
+    ) == 2:
+        first_member = (
+            members[
+                0
+            ]
+        )
+
+        second_member = (
+            members[
+                1
+            ]
+        )
+
+        if is_right_angle_corner(
+            first_member,
+            second_member,
+            tolerance_degrees=(
+                right_angle_tolerance_degrees
+            ),
+        ):
+            for member in persistent_members:
+                options.append(
+                    member_through_option(
+                        member
+                    )
+                )
+
+        options.append(
+            both_mitered_option()
+        )
+
+        return tuple(
+            options
+        )
+
+    # ---------------------------------------------------------
+    # Three-or-more-member branch joint
+    # ---------------------------------------------------------
+
     for member in persistent_members:
         options.append(
             member_through_option(
                 member
             )
-        )
-
-    if len(members) == 2:
-        options.append(
-            JointTreatmentOption(
-                label="Both Mitered",
-                mode=(
-                    JointTreatmentMode.BOTH_COPED
-                ),
-            )
-        )
-
-        return tuple(
-            options
         )
 
     for (
@@ -254,10 +572,14 @@ def option_matches_saved_treatment(
     ).strip()
 
     saved_ids = tuple(
-        str(layout_id).strip()
+        str(
+            layout_id
+        ).strip()
         for layout_id
         in through_layout_ids
-        if str(layout_id).strip()
+        if str(
+            layout_id
+        ).strip()
     )
 
     return (

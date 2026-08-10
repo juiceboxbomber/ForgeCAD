@@ -22,9 +22,13 @@ from forgecad.services.joint_extension import (
     extension_specifications_for_treatment,
 )
 from forgecad.services.joint_miter import (
+    MITER_END_END,
+    MITER_END_START,
     miter_specifications_for_treatment,
 )
 from forgecad.services.notch_analysis import (
+    BRANCH_END_END,
+    BRANCH_END_START,
     cope_specifications_for_treatment,
 )
 from forgecad.adapters.freecad.joint_treatment_store import (
@@ -39,10 +43,12 @@ from forgecad.adapters.freecad.member_notch import (
     clear_extensions,
     clear_miter,
     clear_notch,
+    configure_end_cope,
     configure_end_extension,
-    configure_miter,
-    configure_notch,
+    configure_end_miter,
+    configure_start_cope,
     configure_start_extension,
+    configure_start_miter,
 )
 
 
@@ -128,7 +134,11 @@ def configure_automatic_notches(
     frame,
     rendered_objects,
 ):
-    """Apply legacy automatic notch information."""
+    """
+    Apply legacy automatic-notch information by member end.
+
+    A member may be coped once at its start and once at its end.
+    """
 
     if (
         len(rendered_objects)
@@ -152,7 +162,7 @@ def configure_automatic_notches(
             obj
         )
 
-    configured_member_ids = set()
+    configured_member_ends = set()
 
     for specification in (
         automatic_notch_specifications(
@@ -172,13 +182,22 @@ def configure_automatic_notches(
         if branch_object is None:
             continue
 
+        branch_end = (
+            specification.branch_end
+        )
+
+        configuration_key = (
+            branch_key,
+            branch_end,
+        )
+
         if (
-            branch_key
-            in configured_member_ids
+            configuration_key
+            in configured_member_ends
         ):
             raise ValueError(
-                "Automatic notch generation currently "
-                "supports one notched end per member."
+                "Automatic notch generation received "
+                "more than one cope for the same member end."
             )
 
         through_start, through_end = (
@@ -187,15 +206,35 @@ def configure_automatic_notches(
             )
         )
 
-        configure_notch(
-            branch_object,
-            through_start,
-            through_end,
-            specification.through_outside_diameter,
-        )
+        if (
+            branch_end
+            == BRANCH_END_START
+        ):
+            configure_start_cope(
+                branch_object,
+                through_start,
+                through_end,
+                specification.through_outside_diameter,
+            )
 
-        configured_member_ids.add(
-            branch_key
+        elif (
+            branch_end
+            == BRANCH_END_END
+        ):
+            configure_end_cope(
+                branch_object,
+                through_start,
+                through_end,
+                specification.through_outside_diameter,
+            )
+
+        else:
+            raise ValueError(
+                "Unknown automatic-notch member end."
+            )
+
+        configured_member_ends.add(
+            configuration_key
         )
 
     return rendered_objects
@@ -570,7 +609,13 @@ def configure_cope_specifications(
     specifications,
     clear_existing=True,
 ):
-    """Apply cylindrical cope specifications to rendered members."""
+    """
+    Apply cylindrical cope specifications by member end.
+
+    A member may have one cope at its start and one cope at its
+    end. Conflicting cope specifications for the same physical
+    member end are rejected.
+    """
 
     if (
         len(rendered_objects)
@@ -595,7 +640,7 @@ def configure_cope_specifications(
                 obj
             )
 
-    configured_member_ids = set()
+    configured_member_ends = set()
 
     for specification in specifications:
         coped_key = id(
@@ -611,13 +656,22 @@ def configure_cope_specifications(
         if coped_object is None:
             continue
 
+        coped_end = (
+            specification.coped_end
+        )
+
+        configuration_key = (
+            coped_key,
+            coped_end,
+        )
+
         if (
-            coped_key
-            in configured_member_ids
+            configuration_key
+            in configured_member_ends
         ):
             raise ValueError(
-                "Cope generation currently supports "
-                "one notched end per member."
+                "Cope generation received more than "
+                "one treatment for the same member end."
             )
 
         target_start, target_end = (
@@ -626,15 +680,35 @@ def configure_cope_specifications(
             )
         )
 
-        configure_notch(
-            coped_object,
-            target_start,
-            target_end,
-            specification.target_outside_diameter,
-        )
+        if (
+            coped_end
+            == BRANCH_END_START
+        ):
+            configure_start_cope(
+                coped_object,
+                target_start,
+                target_end,
+                specification.target_outside_diameter,
+            )
 
-        configured_member_ids.add(
-            coped_key
+        elif (
+            coped_end
+            == BRANCH_END_END
+        ):
+            configure_end_cope(
+                coped_object,
+                target_start,
+                target_end,
+                specification.target_outside_diameter,
+            )
+
+        else:
+            raise ValueError(
+                "Unknown cope member end."
+            )
+
+        configured_member_ends.add(
+            configuration_key
         )
 
     return rendered_objects
@@ -758,7 +832,16 @@ def configure_miter_specifications(
     specifications,
     clear_existing=True,
 ):
-    """Apply planar miter specifications to rendered members."""
+    """
+    Apply planar miter specifications to rendered members.
+
+    A member may have one miter at its start and one miter at
+    its end. Two independent end treatments on the same physical
+    tube are therefore valid.
+
+    Conflicting specifications for the same member end are
+    rejected.
+    """
 
     if (
         len(rendered_objects)
@@ -783,7 +866,7 @@ def configure_miter_specifications(
                 obj
             )
 
-    configured_member_ids = set()
+    configured_member_ends = set()
 
     for specification in specifications:
         member_key = id(
@@ -799,13 +882,22 @@ def configure_miter_specifications(
         if member_object is None:
             continue
 
+        member_end = (
+            specification.member_end
+        )
+
+        configuration_key = (
+            member_key,
+            member_end,
+        )
+
         if (
-            member_key
-            in configured_member_ids
+            configuration_key
+            in configured_member_ends
         ):
             raise ValueError(
-                "Miter generation currently supports "
-                "one miter operation per member."
+                "Miter generation received more than "
+                "one treatment for the same member end."
             )
 
         plane_point = FreeCAD.Vector(
@@ -844,15 +936,35 @@ def configure_miter_specifications(
             ],
         )
 
-        configure_miter(
-            member_object,
-            plane_point,
-            plane_normal,
-            keep_point,
-        )
+        if (
+            member_end
+            == MITER_END_START
+        ):
+            configure_start_miter(
+                member_object,
+                plane_point,
+                plane_normal,
+                keep_point,
+            )
 
-        configured_member_ids.add(
-            member_key
+        elif (
+            member_end
+            == MITER_END_END
+        ):
+            configure_end_miter(
+                member_object,
+                plane_point,
+                plane_normal,
+                keep_point,
+            )
+
+        else:
+            raise ValueError(
+                "Unknown miter member end."
+            )
+
+        configured_member_ends.add(
+            configuration_key
         )
 
     return rendered_objects
@@ -884,9 +996,9 @@ def configure_saved_fabrication(
 
     Processing order:
 
-        extension
-        cylindrical cope
-        planar miter
+        physical extension
+        start/end cylindrical copes
+        start/end planar miters
     """
 
     extension_specs = (
@@ -1042,7 +1154,9 @@ class FrameRenderer:
             "TubeMember",
         )
 
-        obj.Label = "Tube Member"
+        obj.Label = (
+            "Tube Member"
+        )
 
         proxy = TubeMemberProxy(
             obj,
@@ -1146,4 +1260,3 @@ class FrameRenderer:
         document.recompute()
 
         return rendered_objects
-    

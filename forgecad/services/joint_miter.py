@@ -13,6 +13,10 @@ from forgecad.fabrication.joint_treatment import (
 )
 
 
+MITER_END_START = "start"
+MITER_END_END = "end"
+
+
 @dataclass(frozen=True, slots=True)
 class Vector3:
     """Simple geometry vector independent of FreeCAD."""
@@ -50,10 +54,12 @@ class Vector3:
 
 @dataclass(frozen=True, slots=True)
 class MiterSpecification:
-    """Describe one member trimmed by a shared miter plane."""
+    """Describe one member end trimmed by a shared miter plane."""
 
     joint: Joint
     member: Member
+
+    member_end: str
 
     plane_point: tuple[
         float,
@@ -72,6 +78,23 @@ class MiterSpecification:
         float,
         float,
     ]
+
+
+def member_end_at_joint(
+    member: Member,
+    joint: Joint,
+) -> str:
+    """Return which member end lies at the supplied joint."""
+
+    if member.start == joint.node:
+        return MITER_END_START
+
+    if member.end == joint.node:
+        return MITER_END_END
+
+    raise ValueError(
+        "Member does not touch the supplied joint."
+    )
 
 
 def member_direction_from_joint(
@@ -146,12 +169,11 @@ def equal_miter_plane_normal(
 
     The member directions point away from the joint.
 
-    Their sum points along the internal angle bisector,
-    which is the direction the miter plane itself must
-    follow through the joint.
+    Their sum follows the internal angle bisector, which is
+    the direction of the miter plane itself.
 
-    Therefore the plane normal is formed from the
-    difference of the two unit member directions.
+    The plane normal is therefore formed from the difference
+    of the two unit member directions.
     """
 
     first_direction = (
@@ -240,6 +262,10 @@ def both_mitered_specifications(
         MiterSpecification(
             joint=joint,
             member=first_member,
+            member_end=member_end_at_joint(
+                first_member,
+                joint,
+            ),
             plane_point=plane_point,
             plane_normal=plane_normal,
             keep_point=member_keep_point(
@@ -250,6 +276,10 @@ def both_mitered_specifications(
         MiterSpecification(
             joint=joint,
             member=second_member,
+            member_end=member_end_at_joint(
+                second_member,
+                joint,
+            ),
             plane_point=plane_point,
             plane_normal=plane_normal,
             keep_point=member_keep_point(
@@ -270,7 +300,7 @@ def miter_specifications_for_treatment(
     Return miter specifications for a joint treatment.
 
     BOTH_COPED is retained as the persistence-compatible
-    internal mode for the user-facing Both Mitered treatment.
+    internal value for the user-facing Both Mitered treatment.
     """
 
     if (

@@ -16,6 +16,10 @@ GROUP_DEFINITIONS = {
         "ForgeCADNodes",
         "Nodes",
     ),
+    "Joints": (
+        "ForgeCADJoints",
+        "Joints",
+    ),
     "Joint Treatments": (
         "ForgeCADJointTreatments",
         "Joint Treatments",
@@ -109,6 +113,7 @@ def initialize_project_tree(
         "Layout",
         "Frame",
         "Nodes",
+        "Joints",
         "Joint Treatments",
         "Tube Library",
         "Settings",
