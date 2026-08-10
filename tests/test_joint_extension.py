@@ -21,6 +21,7 @@ from forgecad.services.joint_extension import (
     extension_to_outer_surface,
     fabrication_angle,
     member_end_at_joint,
+    member_through_extension,
 )
 
 
@@ -97,6 +98,58 @@ def make_corner():
     )
 
 
+def make_60_degree_corner():
+    """Return a two-member 60-degree corner."""
+
+    center = Node(
+        0,
+        0,
+        0,
+    )
+
+    first = make_member(
+        center,
+        Node(
+            500,
+            0,
+            0,
+        ),
+    )
+
+    angle = math.radians(
+        60.0
+    )
+
+    second = make_member(
+        center,
+        Node(
+            500.0
+            * math.cos(
+                angle
+            ),
+            500.0
+            * math.sin(
+                angle
+            ),
+            0,
+        ),
+    )
+
+    joint = Joint(
+        node=center,
+        members=[
+            first,
+            second,
+        ],
+    )
+
+    return (
+        joint,
+        first,
+        second,
+    )
+
+
 def test_member_end_at_joint_detects_start():
     joint, first, second = (
         make_corner()
@@ -157,7 +210,7 @@ def test_corner_fabrication_angle_is_90_degrees():
     )
 
 
-def test_90_degree_extension_equals_other_tube_radius():
+def test_90_degree_miter_extension_equals_other_tube_radius():
     joint, first, second = (
         make_corner()
     )
@@ -175,7 +228,7 @@ def test_90_degree_extension_equals_other_tube_radius():
     )
 
 
-def test_extension_uses_intersecting_tube_radius():
+def test_miter_extension_uses_intersecting_tube_radius():
     center = Node(
         0,
         0,
@@ -227,41 +280,9 @@ def test_extension_uses_intersecting_tube_radius():
     )
 
 
-def test_60_degree_corner_extends_farther_than_radius():
-    center = Node(
-        0,
-        0,
-        0,
-    )
-
-    first = make_member(
-        center,
-        Node(
-            500,
-            0,
-            0,
-        ),
-    )
-
-    angle = math.radians(
-        60.0
-    )
-
-    second = make_member(
-        center,
-        Node(
-            500.0 * math.cos(angle),
-            500.0 * math.sin(angle),
-            0,
-        ),
-    )
-
-    joint = Joint(
-        node=center,
-        members=[
-            first,
-            second,
-        ],
+def test_60_degree_miter_extension_is_angle_corrected():
+    joint, first, second = (
+        make_60_degree_corner()
     )
 
     extension = (
@@ -285,8 +306,61 @@ def test_60_degree_corner_extends_farther_than_radius():
         expected
     )
 
+    assert extension > (
+        44.45 / 2.0
+    )
 
-def test_member_through_extends_selected_member():
+
+def test_member_through_extension_equals_intersecting_radius():
+    joint, first, second = (
+        make_corner()
+    )
+
+    extension = (
+        member_through_extension(
+            second
+        )
+    )
+
+    assert extension == pytest.approx(
+        44.45 / 2.0
+    )
+
+
+def test_member_through_extension_uses_intersecting_profile():
+    joint, first, second = (
+        make_corner()
+    )
+
+    larger_profile = profile(
+        outside_diameter=50.8,
+    )
+
+    larger_member = make_member(
+        second.start,
+        second.end,
+        larger_profile,
+    )
+
+    extension = (
+        member_through_extension(
+            larger_member
+        )
+    )
+
+    assert extension == pytest.approx(
+        25.4
+    )
+
+
+def test_member_through_extends_selected_member_only():
+    """
+    Member Through extends only the selected through member.
+
+    The coped member retains its design endpoint and is shaped
+    by the cope operation.
+    """
+
     joint, first, second = (
         make_corner()
     )
@@ -324,12 +398,15 @@ def test_member_through_extends_selected_member():
         == MEMBER_END_START
     )
 
-    assert specification.extension_mm == pytest.approx(
-        44.45 / 2.0
+    assert (
+        specification.extension_mm
+        == pytest.approx(
+            44.45 / 2.0
+        )
     )
 
 
-def test_reversing_corner_priority_extends_other_member():
+def test_reversing_member_through_extends_other_selected_member():
     joint, first, second = (
         make_corner()
     )
@@ -347,11 +424,113 @@ def test_reversing_corner_priority_extends_other_member():
         )
     )
 
+    assert len(
+        specifications
+    ) == 1
+
     assert (
         specifications[
             0
         ].member
         is second
+    )
+
+    assert (
+        specifications[
+            0
+        ].member_end
+        == MEMBER_END_START
+    )
+
+
+def test_angled_member_through_extends_selected_member_only():
+    """
+    An angled Member Through still extends only the selected
+    through tube.
+    """
+
+    joint, first, second = (
+        make_60_degree_corner()
+    )
+
+    treatment = (
+        JointTreatment.member_through(
+            joint,
+            first,
+        )
+    )
+
+    specifications = (
+        extension_specifications_for_treatment(
+            treatment
+        )
+    )
+
+    assert len(
+        specifications
+    ) == 1
+
+    assert (
+        specifications[
+            0
+        ].member
+        is first
+    )
+
+
+def test_angled_member_through_uses_radius_not_projected_distance():
+    """
+    Member Through is a physical continuation to the outside
+    surface of the other tube.
+
+    Its extension therefore remains one intersecting-tube
+    radius even when the joint is angled.
+    """
+
+    joint, first, second = (
+        make_60_degree_corner()
+    )
+
+    treatment = (
+        JointTreatment.member_through(
+            joint,
+            first,
+        )
+    )
+
+    specifications = (
+        extension_specifications_for_treatment(
+            treatment
+        )
+    )
+
+    radius = (
+        44.45 / 2.0
+    )
+
+    projected_distance = (
+        radius
+        / math.sin(
+            math.radians(
+                60.0
+            )
+        )
+    )
+
+    assert (
+        specifications[
+            0
+        ].extension_mm
+        == pytest.approx(
+            radius
+        )
+    )
+
+    assert (
+        specifications[
+            0
+        ].extension_mm
+        < projected_distance
     )
 
 
@@ -400,6 +579,59 @@ def test_both_coped_extends_both_members():
         ].extension_mm
         == pytest.approx(
             44.45 / 2.0
+        )
+    )
+
+
+def test_angled_both_coped_keeps_angle_corrected_extension():
+    """
+    Unlike Member Through, miter stock is angle corrected.
+    """
+
+    joint, first, second = (
+        make_60_degree_corner()
+    )
+
+    treatment = (
+        JointTreatment.both_coped(
+            joint
+        )
+    )
+
+    specifications = (
+        extension_specifications_for_treatment(
+            treatment
+        )
+    )
+
+    expected = (
+        (44.45 / 2.0)
+        / math.sin(
+            math.radians(
+                60.0
+            )
+        )
+    )
+
+    assert len(
+        specifications
+    ) == 2
+
+    assert (
+        specifications[
+            0
+        ].extension_mm
+        == pytest.approx(
+            expected
+        )
+    )
+
+    assert (
+        specifications[
+            1
+        ].extension_mm
+        == pytest.approx(
+            expected
         )
     )
 
@@ -482,7 +714,7 @@ def test_through_pair_has_no_extension():
     )
 
 
-def test_collinear_extension_is_rejected():
+def test_collinear_miter_extension_is_rejected():
     center = Node(
         0,
         0,

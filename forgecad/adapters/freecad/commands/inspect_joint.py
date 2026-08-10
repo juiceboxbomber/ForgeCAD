@@ -51,6 +51,92 @@ def point_key(
     )
 
 
+def is_joint_status_object(
+    obj,
+):
+    """Return True when an object is a ForgeCAD joint-status object."""
+
+    if obj is None:
+        return False
+
+    required_properties = (
+        "JointID",
+        "NodeKey",
+        "Position",
+        "ReviewStatus",
+    )
+
+    return all(
+        hasattr(
+            obj,
+            property_name,
+        )
+        for property_name
+        in required_properties
+    )
+
+
+def node_object_at_position(
+    document,
+    position,
+):
+    """Return the ForgeCAD node located at a position."""
+
+    if document is None:
+        return None
+
+    nodes_group = document.getObject(
+        "ForgeCADNodes"
+    )
+
+    if nodes_group is None:
+        return None
+
+    target_key = point_key(
+        position
+    )
+
+    for obj in nodes_group.Group:
+        if not is_forgecad_node(
+            obj
+        ):
+            continue
+
+        if point_key(
+            obj.Position
+        ) == target_key:
+            return obj
+
+    return None
+
+
+def node_object_for_inspection(
+    document,
+    selected_object,
+):
+    """
+    Resolve an Inspect Joint selection to a ForgeCAD node.
+
+    The user may select either the original ForgeCAD node
+    or a status object from the Joints project-tree group.
+    """
+
+    if is_forgecad_node(
+        selected_object
+    ):
+        return selected_object
+
+    if not is_joint_status_object(
+        selected_object
+    ):
+        return None
+
+    return node_object_at_position(
+        document,
+        selected_object.Position,
+    )
+
+
 def member_object_touches_position(
     member_object,
     position,
@@ -936,7 +1022,12 @@ class JointInspectorDialog(
 
 
 class InspectJointCommand:
-    """Inspect and configure the joint at one selected ForgeCAD node."""
+    """
+    Inspect and configure one selected ForgeCAD joint.
+
+    The selection may be either a ForgeCAD node or a status
+    object from the project's Joints group.
+    """
 
     def GetResources(
         self,
@@ -946,7 +1037,7 @@ class InspectJointCommand:
                 "Inspect Joint",
             "ToolTip": (
                 "Inspect connected members, angles, "
-                "and fabrication treatment at a ForgeCAD node"
+                "and fabrication treatment at a ForgeCAD joint"
             ),
         }
 
@@ -975,29 +1066,34 @@ class InspectJointCommand:
         if len(selection) != 1:
             QtGui.QMessageBox.warning(
                 FreeCADGui.getMainWindow(),
-                "Select One Node",
+                "Select One Joint",
                 (
                     "Select exactly one ForgeCAD node "
-                    "to inspect."
+                    "or Joints-tree item to inspect."
                 ),
             )
             return
 
-        node_object = (
+        selected_object = (
             selection[
                 0
             ]
         )
 
-        if not is_forgecad_node(
-            node_object
-        ):
+        node_object = (
+            node_object_for_inspection(
+                document,
+                selected_object,
+            )
+        )
+
+        if node_object is None:
             QtGui.QMessageBox.warning(
                 FreeCADGui.getMainWindow(),
                 "Invalid Selection",
                 (
-                    "The selected object is not "
-                    "a ForgeCAD node."
+                    "Select a ForgeCAD node or "
+                    "a joint from the Joints group."
                 ),
             )
             return

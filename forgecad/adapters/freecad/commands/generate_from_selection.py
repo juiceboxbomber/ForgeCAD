@@ -26,6 +26,9 @@ from forgecad.services import (
 from forgecad.services.layout_conversion import (
     layout_from_selected_objects,
 )
+from forgecad.adapters.freecad.joint_status_objects import (
+    rebuild_joint_status_objects,
+)
 
 
 COMMAND_NAME = "ForgeCAD_GenerateFromSelection"
@@ -299,6 +302,68 @@ def apply_profile_overrides(
         )
 
 
+def document_object_names(
+    document,
+):
+    """Return the internal names currently present in a document."""
+
+    return {
+        obj.Name
+        for obj in getattr(
+            document,
+            "Objects",
+            [],
+        )
+        if hasattr(
+            obj,
+            "Name",
+        )
+    }
+
+
+def remove_objects_created_after(
+    document,
+    existing_names,
+):
+    """Remove objects created after a document snapshot."""
+
+    existing_names = set(
+        existing_names
+    )
+
+    created_objects = [
+        obj
+        for obj in list(
+            getattr(
+                document,
+                "Objects",
+                [],
+            )
+        )
+        if (
+            hasattr(
+                obj,
+                "Name",
+            )
+            and obj.Name
+            not in existing_names
+        )
+    ]
+
+    for obj in created_objects:
+        try:
+            document.removeObject(
+                obj.Name
+            )
+        except Exception:
+            pass
+
+    try:
+        document.recompute()
+    except Exception:
+        pass
+
+
 def regenerate_frame(
     document,
     layout_objects=None,
@@ -306,11 +371,12 @@ def regenerate_frame(
     adjust_view=True,
 ):
     """
-    Regenerate ForgeCAD frame geometry.
+    Regenerate ForgeCAD frame geometry atomically.
 
-    This is the shared regeneration entry point used by both
-    the Generate / Regenerate Frame command and other commands
-    such as the Joint Inspector.
+    The existing Frame group remains untouched until a complete
+    replacement frame has rendered successfully. If rendering fails,
+    every object created by the failed attempt is removed and the
+    previous frame remains intact.
 
     When layout_objects is omitted, the complete project layout
     is regenerated regardless of the current GUI selection.
@@ -369,31 +435,47 @@ def regenerate_frame(
         document
     )
 
+    # Snapshot after all required project groups exist. New objects
+    # created by FrameRenderer can then be identified reliably.
+    existing_names = (
+        document_object_names(
+            document
+        )
+    )
+
+    renderer = FrameRenderer()
+
+    try:
+        rendered_objects = (
+            renderer.render_frame(
+                document,
+                frame,
+                source_layout_ids=(
+                    source_layout_ids
+                ),
+            )
+        )
+
+        apply_profile_overrides(
+            rendered_objects,
+            profile_overrides,
+        )
+
+    except Exception:
+        # The old Frame group has not been touched yet. Remove only
+        # the partial replacement objects and propagate the error.
+        remove_objects_created_after(
+            document,
+            existing_names,
+        )
+        raise
+
+    # Rendering succeeded completely. Only now replace the old frame.
     clear_group(
         document,
         groups[
             "Frame"
         ],
-    )
-
-    if clear_selection:
-        FreeCADGui.Selection.clearSelection()
-
-    renderer = FrameRenderer()
-
-    rendered_objects = (
-        renderer.render_frame(
-            document,
-            frame,
-            source_layout_ids=(
-                source_layout_ids
-            ),
-        )
-    )
-
-    apply_profile_overrides(
-        rendered_objects,
-        profile_overrides,
     )
 
     for obj in rendered_objects:
@@ -403,7 +485,14 @@ def regenerate_frame(
             obj
         )
 
+    if clear_selection:
+        FreeCADGui.Selection.clearSelection()
+
     document.recompute()
+
+    rebuild_joint_status_objects(
+        document
+    )
 
     if adjust_view:
         gui_document = (
@@ -466,10 +555,7 @@ class GenerateFromSelectionCommand:
                 adjust_view=True,
             )
 
-        except (
-            ValueError,
-            KeyError,
-        ) as error:
+        except Exception as error:
             QtGui.QMessageBox.warning(
                 FreeCADGui.getMainWindow(),
                 "Frame Generation Failed",
@@ -491,4 +577,3 @@ def register_command():
         COMMAND_NAME,
         GenerateFromSelectionCommand(),
     )
-    

@@ -66,16 +66,40 @@ def fabrication_angle(
     )
 
 
+def member_through_extension(
+    intersecting_member: Member,
+) -> float:
+    """
+    Return the physical extension for a selected through member.
+
+    A through tube continues from the design node to the outside
+    surface of the intersecting tube.
+
+    This is a physical end extension, not a projected tangent
+    distance along the joint angle.
+    """
+
+    return (
+        float(
+            intersecting_member
+            .profile
+            .outside_diameter
+        )
+        / 2.0
+    )
+
+
 def extension_to_outer_surface(
     extended_member: Member,
     intersecting_member: Member,
     joint: Joint,
 ) -> float:
     """
-    Return required extension beyond the joint centerline.
+    Return angle-corrected stock required for a miter.
 
-    The extension reaches the outermost surface of the
-    intersecting tube.
+    This calculation is appropriate when stock must reach the
+    complete projected outer surface before being trimmed by an
+    angled shared plane.
 
         extension = intersecting radius / sin(angle)
     """
@@ -104,7 +128,9 @@ def extension_to_outer_surface(
 
     target_radius = (
         float(
-            intersecting_member.profile.outside_diameter
+            intersecting_member
+            .profile
+            .outside_diameter
         )
         / 2.0
     )
@@ -121,7 +147,14 @@ def member_through_extensions(
     MemberExtensionSpecification,
     ...,
 ]:
-    """Return extension required for one through member."""
+    """
+    Return extension for the selected through member only.
+
+    Only the selected through tube receives a real physical
+    extension. Coped members retain their design endpoints.
+    """
+
+    joint = treatment.joint
 
     through_member = (
         treatment.through_members[
@@ -131,36 +164,28 @@ def member_through_extensions(
 
     other_members = [
         member
-        for member in treatment.joint.members
+        for member in joint.members
         if member is not through_member
     ]
 
     if not other_members:
         return ()
 
-    required_extensions = [
-        extension_to_outer_surface(
-            through_member,
-            other_member,
-            treatment.joint,
-        )
-        for other_member in other_members
-    ]
-
-    # If several branches meet the same through member,
-    # enough physical stock must exist for the largest
-    # required outer-surface reach.
     extension = max(
-        required_extensions
+        member_through_extension(
+            other_member
+        )
+        for other_member
+        in other_members
     )
 
     return (
         MemberExtensionSpecification(
-            joint=treatment.joint,
+            joint=joint,
             member=through_member,
             member_end=member_end_at_joint(
                 through_member,
-                treatment.joint,
+                joint,
             ),
             extension_mm=extension,
         ),
@@ -173,7 +198,12 @@ def both_coped_extensions(
     MemberExtensionSpecification,
     ...,
 ]:
-    """Return physical extensions for a both-coped corner."""
+    """
+    Return stock extensions for a mitered corner.
+
+    BOTH_COPED remains the persistence-compatible internal
+    name for the user-facing Both Mitered treatment.
+    """
 
     first_member = (
         treatment.joint.members[
@@ -231,22 +261,7 @@ def extension_specifications_for_treatment(
     MemberExtensionSpecification,
     ...,
 ]:
-    """
-    Return physical extension requirements for a treatment.
-
-    AUTO:
-        No explicit extension.
-
-    MEMBER_THROUGH:
-        Extend the selected through member.
-
-    BOTH_COPED:
-        Extend both corner members.
-
-    THROUGH_PAIR:
-        No extension. The two selected members already form
-        the complete through path on opposite sides of the node.
-    """
+    """Return physical member extensions required by a treatment."""
 
     if (
         treatment.mode
