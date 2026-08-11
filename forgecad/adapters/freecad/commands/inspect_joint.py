@@ -29,6 +29,28 @@ from forgecad.services.joint_inspector import (
 COMMAND_NAME = "ForgeCAD_InspectJoint"
 
 
+class InspectionNode:
+    """
+    Lightweight node representation for joint inspection.
+
+    This allows a Joints-tree item to be inspected even when
+    the project does not contain generated ForgeCAD node objects.
+    """
+
+    def __init__(
+        self,
+        node_id,
+        position,
+    ):
+        self.NodeID = str(
+            node_id
+        )
+
+        self.Position = (
+            position
+        )
+
+
 def point_key(
     point,
     precision=6,
@@ -115,10 +137,17 @@ def node_object_for_inspection(
     selected_object,
 ):
     """
-    Resolve an Inspect Joint selection to a ForgeCAD node.
+    Resolve an Inspect Joint selection to a node-like object.
 
-    The user may select either the original ForgeCAD node
-    or a status object from the Joints project-tree group.
+    The user may select:
+
+        - a generated ForgeCAD node
+        - a status/marker object from the Joints group
+
+    A physical Nodes-group object is not required. When a
+    Joints-tree item is selected and no generated node exists
+    at that position, ForgeCAD creates a lightweight inspection
+    node using the joint marker's stored position.
     """
 
     if is_forgecad_node(
@@ -131,9 +160,30 @@ def node_object_for_inspection(
     ):
         return None
 
-    return node_object_at_position(
-        document,
-        selected_object.Position,
+    existing_node = (
+        node_object_at_position(
+            document,
+            selected_object.Position,
+        )
+    )
+
+    if existing_node is not None:
+        return existing_node
+
+    joint_id = str(
+        getattr(
+            selected_object,
+            "JointID",
+            "Joint",
+        )
+    ).strip()
+
+    if not joint_id:
+        joint_id = "Joint"
+
+    return InspectionNode(
+        node_id=joint_id,
+        position=selected_object.Position,
     )
 
 

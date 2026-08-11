@@ -1,6 +1,7 @@
 """FreeCAD document objects for ForgeCAD joint review status."""
 
 import FreeCAD
+import Part
 
 from forgecad.adapters.freecad.document_tree import (
     clear_group,
@@ -9,11 +10,37 @@ from forgecad.adapters.freecad.document_tree import (
 from forgecad.adapters.freecad.joint_status_adapter import (
     joint_review_for_document,
 )
+from forgecad.services.joint_status_visual import (
+    joint_status_label,
+    joint_status_visual,
+)
 
 
 PROPERTY_GROUP = (
     "ForgeCAD Joint"
 )
+
+
+MARKER_RADIUS_BY_CATEGORY = {
+    "attention": 14.0,
+    "manual": 11.0,
+    "automatic": 9.0,
+}
+
+
+def marker_radius_for_category(
+    category,
+):
+    """Return display-marker radius for a visual category."""
+
+    return float(
+        MARKER_RADIUS_BY_CATEGORY.get(
+            str(
+                category
+            ).strip(),
+            9.0,
+        )
+    )
 
 
 def ensure_joint_status_properties(
@@ -91,6 +118,56 @@ def ensure_joint_status_properties(
             PROPERTY_GROUP,
         )
 
+    if not hasattr(
+        obj,
+        "NeedsAttention",
+    ):
+        obj.addProperty(
+            "App::PropertyBool",
+            "NeedsAttention",
+            PROPERTY_GROUP,
+        )
+
+    if not hasattr(
+        obj,
+        "VisualStatus",
+    ):
+        obj.addProperty(
+            "App::PropertyString",
+            "VisualStatus",
+            PROPERTY_GROUP,
+        )
+
+    if not hasattr(
+        obj,
+        "VisualSymbol",
+    ):
+        obj.addProperty(
+            "App::PropertyString",
+            "VisualSymbol",
+            PROPERTY_GROUP,
+        )
+
+    if not hasattr(
+        obj,
+        "VisualCategory",
+    ):
+        obj.addProperty(
+            "App::PropertyString",
+            "VisualCategory",
+            PROPERTY_GROUP,
+        )
+
+    if not hasattr(
+        obj,
+        "MarkerRadius",
+    ):
+        obj.addProperty(
+            "App::PropertyLength",
+            "MarkerRadius",
+            PROPERTY_GROUP,
+        )
+
     for property_name in (
         "JointID",
         "NodeKey",
@@ -99,14 +176,73 @@ def ensure_joint_status_properties(
         "Treatment",
         "Reviewed",
         "ManualTreatment",
+        "NeedsAttention",
+        "VisualStatus",
+        "VisualSymbol",
+        "VisualCategory",
+        "MarkerRadius",
     ):
         try:
             obj.setEditorMode(
                 property_name,
                 1,
             )
+
         except Exception:
             pass
+
+    return obj
+
+
+def build_joint_marker_shape(
+    position,
+    radius,
+):
+    """Build a display-only sphere at a joint location."""
+
+    radius = float(
+        radius
+    )
+
+    if radius <= 0:
+        raise ValueError(
+            "Joint marker radius must be greater than zero."
+        )
+
+    center = FreeCAD.Vector(
+        position.x,
+        position.y,
+        position.z,
+    )
+
+    return Part.makeSphere(
+        radius,
+        center,
+    )
+
+
+def configure_joint_marker(
+    obj,
+):
+    """Apply display-only marker geometry to a joint-status object."""
+
+    radius = marker_radius_for_category(
+        obj.VisualCategory
+    )
+
+    obj.MarkerRadius = (
+        radius
+    )
+
+    obj.Shape = build_joint_marker_shape(
+        obj.Position,
+        radius,
+    )
+
+    try:
+        obj.ViewObject.Visibility = True
+    except Exception:
+        pass
 
     return obj
 
@@ -118,13 +254,22 @@ def create_joint_status_object(
 ):
     """Create one FreeCAD joint-status object."""
 
+    # Plain Part::Feature is intentional.
+    #
+    # Joint markers are disposable display/index objects and do
+    # not require a Python proxy. Using Part::Feature ensures the
+    # Shape is displayed by FreeCAD's normal Part view provider.
     obj = document.addObject(
-        "App::FeaturePython",
+        "Part::Feature",
         "ForgeCADJoint",
     )
 
     ensure_joint_status_properties(
         obj
+    )
+
+    visual = joint_status_visual(
+        item.status
     )
 
     obj.JointID = (
@@ -157,9 +302,29 @@ def create_joint_status_object(
         item.status.is_manual
     )
 
-    obj.Label = (
-        f"{joint_id} - "
-        f"{item.status.label}"
+    obj.NeedsAttention = (
+        item.status.needs_attention
+    )
+
+    obj.VisualStatus = (
+        visual.code
+    )
+
+    obj.VisualSymbol = (
+        visual.symbol
+    )
+
+    obj.VisualCategory = (
+        visual.category
+    )
+
+    obj.Label = joint_status_label(
+        joint_id,
+        item.status,
+    )
+
+    configure_joint_marker(
+        obj
     )
 
     return obj

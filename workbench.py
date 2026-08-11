@@ -3,14 +3,22 @@
 import FreeCADGui
 
 
-class ForgeCADWorkbench(FreeCADGui.Workbench):
+class ForgeCADWorkbench(
+    FreeCADGui.Workbench
+):
     """Fabrication-first tube-frame design workbench."""
 
     MenuText = "ForgeCAD"
-    ToolTip = "Design tube frames and fabricated structures."
+
+    ToolTip = (
+        "Design tube frames and fabricated structures."
+    )
+
     Icon = ""
 
-    def Initialize(self):
+    def Initialize(
+        self,
+    ):
         from forgecad.adapters.freecad.commands.new_project import (
             COMMAND_NAME as NEW_PROJECT_COMMAND,
             register_command as register_new_project_command,
@@ -76,6 +84,16 @@ class ForgeCADWorkbench(FreeCADGui.Workbench):
             register_command as register_inspect_joint_command,
         )
 
+        from forgecad.adapters.freecad.commands.next_joint_needing_attention import (
+            COMMAND_NAME as NEXT_JOINT_COMMAND,
+            register_command as register_next_joint_command,
+        )
+
+        from forgecad.adapters.freecad.commands.joint_review_summary import (
+            COMMAND_NAME as JOINT_REVIEW_SUMMARY_COMMAND,
+            register_command as register_joint_review_summary_command,
+        )
+
         from forgecad.adapters.freecad.commands.cut_list import (
             COMMAND_NAME as CUT_LIST_COMMAND,
             register_command as register_cut_list_command,
@@ -107,6 +125,10 @@ class ForgeCADWorkbench(FreeCADGui.Workbench):
 
         register_inspect_joint_command()
 
+        register_next_joint_command()
+
+        register_joint_review_summary_command()
+
         register_cut_list_command()
 
         commands = [
@@ -123,6 +145,8 @@ class ForgeCADWorkbench(FreeCADGui.Workbench):
             MEMBER_PROPERTIES_COMMAND,
             SELECT_MEMBERS_COMMAND,
             INSPECT_JOINT_COMMAND,
+            NEXT_JOINT_COMMAND,
+            JOINT_REVIEW_SUMMARY_COMMAND,
             CUT_LIST_COMMAND,
         ]
 
@@ -136,12 +160,18 @@ class ForgeCADWorkbench(FreeCADGui.Workbench):
             commands,
         )
 
-    def Activated(self):
+    def Activated(
+        self,
+    ):
         pass
 
-    def Deactivated(self):
+    def Deactivated(
+        self,
+    ):
         pass
 
-    def GetClassName(self):
+    def GetClassName(
+        self,
+    ):
         return "Gui::PythonWorkbench"
     

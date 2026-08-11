@@ -26,6 +26,8 @@ class JointReviewSummary:
 
     invalid_treatments: int
 
+    attention_joints: int
+
     @property
     def all_reviewed(
         self,
@@ -60,6 +62,16 @@ class JointReviewSummary:
         return (
             self.review_fraction
             * 100.0
+        )
+
+    @property
+    def has_attention_items(
+        self,
+    ) -> bool:
+        """Return True when one or more joints need attention."""
+
+        return (
+            self.attention_joints > 0
         )
 
 
@@ -111,6 +123,12 @@ def summarize_joint_statuses(
         == "invalid"
     )
 
+    attention_joints = sum(
+        1
+        for status in statuses
+        if status.needs_attention
+    )
+
     return JointReviewSummary(
         total_joints=total_joints,
         reviewed_joints=reviewed_joints,
@@ -118,4 +136,5 @@ def summarize_joint_statuses(
         manual_treatments=manual_treatments,
         automatic_treatments=automatic_treatments,
         invalid_treatments=invalid_treatments,
+        attention_joints=attention_joints,
     )

@@ -36,11 +36,37 @@ sys.modules[
     "FreeCADGui"
 )
 
-sys.modules[
-    "Part"
-] = types.ModuleType(
+class FakeSphere:
+    """Minimal Part sphere marker."""
+
+    def __init__(
+        self,
+        radius,
+        center,
+    ):
+        self.radius = float(
+            radius
+        )
+
+        self.center = center
+
+
+fake_part = types.ModuleType(
     "Part"
 )
+
+
+fake_part.makeSphere = (
+    lambda radius, center: FakeSphere(
+        radius,
+        center,
+    )
+)
+
+
+sys.modules[
+    "Part"
+] = fake_part
 
 
 from forgecad.adapters.freecad import (
@@ -61,11 +87,14 @@ joint_status_objects.FreeCADGui = (
         "FreeCADGui"
     ]
 )
+
 joint_status_objects.Part = (
     sys.modules[
         "Part"
     ]
 )
+
+
 from forgecad.services.joint_status import (
     joint_status_from_saved_treatment,
 )
@@ -198,6 +227,7 @@ class FakeDocument:
                 type_name,
                 name,
             )
+
         else:
             obj = FakeObject(
                 type_name,
@@ -365,7 +395,7 @@ def test_unreviewed_label():
     )
 
     assert obj.Label == (
-        "J001 - Unreviewed"
+        "[ ] J001 - Unreviewed"
     )
 
     assert not obj.Reviewed
@@ -396,7 +426,7 @@ def test_mitered_label():
     )
 
     assert obj.Label == (
-        "J001 - Both Mitered"
+        "[M] J001 - Both Mitered"
     )
 
     assert obj.Reviewed
