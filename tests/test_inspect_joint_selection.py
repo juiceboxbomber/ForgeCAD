@@ -320,7 +320,7 @@ def test_position_matching_uses_existing_precision():
     assert resolved is node
 
 
-def test_joint_status_returns_none_when_node_missing():
+def test_joint_status_creates_inspection_node_when_node_missing():
     joint_status = (
         FakeJointStatusObject(
             "J003",
@@ -349,7 +349,19 @@ def test_joint_status_returns_none_when_node_missing():
         )
     )
 
-    assert resolved is None
+    assert isinstance(
+        resolved,
+        inspect_joint.InspectionNode,
+    )
+
+    assert (
+        resolved.NodeID
+        == "J003"
+    )
+
+    assert resolved.Position.x == 500
+    assert resolved.Position.y == 250
+    assert resolved.Position.z == 100
 
 
 def test_invalid_selection_returns_none():
@@ -366,7 +378,7 @@ def test_invalid_selection_returns_none():
     assert resolved is None
 
 
-def test_missing_nodes_group_returns_none():
+def test_missing_nodes_group_creates_inspection_node():
     class DocumentWithoutNodes:
         def getObject(
             self,
@@ -394,5 +406,17 @@ def test_missing_nodes_group_returns_none():
         )
     )
 
-    assert resolved is None
+    assert isinstance(
+        resolved,
+        inspect_joint.InspectionNode,
+    )
+
+    assert (
+        resolved.NodeID
+        == "J001"
+    )
+
+    assert resolved.Position.x == 0
+    assert resolved.Position.y == 0
+    assert resolved.Position.z == 0
     

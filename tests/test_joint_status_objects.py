@@ -36,11 +36,37 @@ sys.modules[
     "FreeCADGui"
 )
 
-sys.modules[
-    "Part"
-] = types.ModuleType(
+class FakeSphere:
+    """Minimal Part sphere marker."""
+
+    def __init__(
+        self,
+        radius,
+        center,
+    ):
+        self.radius = float(
+            radius
+        )
+
+        self.center = center
+
+
+fake_part = types.ModuleType(
     "Part"
 )
+
+
+fake_part.makeSphere = (
+    lambda radius, center: FakeSphere(
+        radius,
+        center,
+    )
+)
+
+
+sys.modules[
+    "Part"
+] = fake_part
 
 
 from forgecad.adapters.freecad import (
