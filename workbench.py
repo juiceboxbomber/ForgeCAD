@@ -89,6 +89,11 @@ class ForgeCADWorkbench(
             register_command as register_next_joint_command,
         )
 
+        from forgecad.adapters.freecad.commands.joint_review_summary import (
+            COMMAND_NAME as JOINT_REVIEW_SUMMARY_COMMAND,
+            register_command as register_joint_review_summary_command,
+        )
+
         from forgecad.adapters.freecad.commands.cut_list import (
             COMMAND_NAME as CUT_LIST_COMMAND,
             register_command as register_cut_list_command,
@@ -122,6 +127,8 @@ class ForgeCADWorkbench(
 
         register_next_joint_command()
 
+        register_joint_review_summary_command()
+
         register_cut_list_command()
 
         commands = [
@@ -139,6 +146,7 @@ class ForgeCADWorkbench(
             SELECT_MEMBERS_COMMAND,
             INSPECT_JOINT_COMMAND,
             NEXT_JOINT_COMMAND,
+            JOINT_REVIEW_SUMMARY_COMMAND,
             CUT_LIST_COMMAND,
         ]
 

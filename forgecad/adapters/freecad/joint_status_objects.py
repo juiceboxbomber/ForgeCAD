@@ -9,6 +9,10 @@ from forgecad.adapters.freecad.document_tree import (
 from forgecad.adapters.freecad.joint_status_adapter import (
     joint_review_for_document,
 )
+from forgecad.services.joint_status_visual import (
+    joint_status_label,
+    joint_status_visual,
+)
 
 
 PROPERTY_GROUP = (
@@ -101,6 +105,36 @@ def ensure_joint_status_properties(
             PROPERTY_GROUP,
         )
 
+    if not hasattr(
+        obj,
+        "VisualStatus",
+    ):
+        obj.addProperty(
+            "App::PropertyString",
+            "VisualStatus",
+            PROPERTY_GROUP,
+        )
+
+    if not hasattr(
+        obj,
+        "VisualSymbol",
+    ):
+        obj.addProperty(
+            "App::PropertyString",
+            "VisualSymbol",
+            PROPERTY_GROUP,
+        )
+
+    if not hasattr(
+        obj,
+        "VisualCategory",
+    ):
+        obj.addProperty(
+            "App::PropertyString",
+            "VisualCategory",
+            PROPERTY_GROUP,
+        )
+
     for property_name in (
         "JointID",
         "NodeKey",
@@ -110,6 +144,9 @@ def ensure_joint_status_properties(
         "Reviewed",
         "ManualTreatment",
         "NeedsAttention",
+        "VisualStatus",
+        "VisualSymbol",
+        "VisualCategory",
     ):
         try:
             obj.setEditorMode(
@@ -137,6 +174,10 @@ def create_joint_status_object(
 
     ensure_joint_status_properties(
         obj
+    )
+
+    visual = joint_status_visual(
+        item.status
     )
 
     obj.JointID = (
@@ -173,9 +214,21 @@ def create_joint_status_object(
         item.status.needs_attention
     )
 
-    obj.Label = (
-        f"{joint_id} - "
-        f"{item.status.label}"
+    obj.VisualStatus = (
+        visual.code
+    )
+
+    obj.VisualSymbol = (
+        visual.symbol
+    )
+
+    obj.VisualCategory = (
+        visual.category
+    )
+
+    obj.Label = joint_status_label(
+        joint_id,
+        item.status,
     )
 
     return obj

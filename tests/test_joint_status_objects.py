@@ -61,11 +61,14 @@ joint_status_objects.FreeCADGui = (
         "FreeCADGui"
     ]
 )
+
 joint_status_objects.Part = (
     sys.modules[
         "Part"
     ]
 )
+
+
 from forgecad.services.joint_status import (
     joint_status_from_saved_treatment,
 )
@@ -198,6 +201,7 @@ class FakeDocument:
                 type_name,
                 name,
             )
+
         else:
             obj = FakeObject(
                 type_name,
@@ -365,7 +369,7 @@ def test_unreviewed_label():
     )
 
     assert obj.Label == (
-        "J001 - Unreviewed"
+        "[ ] J001 - Unreviewed"
     )
 
     assert not obj.Reviewed
@@ -396,7 +400,7 @@ def test_mitered_label():
     )
 
     assert obj.Label == (
-        "J001 - Both Mitered"
+        "[M] J001 - Both Mitered"
     )
 
     assert obj.Reviewed
