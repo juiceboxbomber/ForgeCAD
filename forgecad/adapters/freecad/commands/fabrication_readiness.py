@@ -47,7 +47,10 @@ def readiness_text(
             "Frame Ready for Fabrication\n\n"
             f"Total Joints: {result.total_joints}\n"
             f"Ready Joints: {result.ready_joints}\n"
-            "All joints have valid reviewed treatments."
+            "Fabrication Conflicts: 0\n\n"
+            "All joints have valid reviewed treatments "
+            "and no member-end fabrication conflicts "
+            "were detected."
         )
 
     return (
@@ -55,7 +58,8 @@ def readiness_text(
         f"Total Joints: {result.total_joints}\n"
         f"Ready Joints: {result.ready_joints}\n"
         f"Not Ready: {result.not_ready_joints}\n"
-        f"Invalid: {result.invalid_joints}"
+        f"Invalid: {result.invalid_joints}\n"
+        f"Fabrication Conflicts: {result.conflict_count}"
     )
 
 

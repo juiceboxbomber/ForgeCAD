@@ -65,6 +65,7 @@ class FakeResult:
         ready_joints,
         not_ready_joints,
         invalid_joints,
+        conflict_count=0,
     ):
         self.is_ready = (
             is_ready
@@ -84,6 +85,10 @@ class FakeResult:
 
         self.invalid_joints = (
             invalid_joints
+        )
+
+        self.conflict_count = (
+            conflict_count
         )
 
 
@@ -189,6 +194,30 @@ def test_empty_frame_text():
 
     assert (
         "No frame joints are available."
+        in text
+    )
+
+def test_fabrication_conflict_is_reported():
+    result = FakeResult(
+        False,
+        6,
+        6,
+        0,
+        0,
+        conflict_count=2,
+    )
+
+    text = readiness_text(
+        result
+    )
+
+    assert (
+        "Frame Not Ready for Fabrication"
+        in text
+    )
+
+    assert (
+        "Fabrication Conflicts: 2"
         in text
     )
     
