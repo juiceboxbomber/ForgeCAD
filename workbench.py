@@ -94,6 +94,11 @@ class ForgeCADWorkbench(
             register_command as register_joint_review_summary_command,
         )
 
+        from forgecad.adapters.freecad.commands.fabrication_readiness import (
+            COMMAND_NAME as FABRICATION_READINESS_COMMAND,
+            register_command as register_fabrication_readiness_command,
+        )
+
         from forgecad.adapters.freecad.commands.cut_list import (
             COMMAND_NAME as CUT_LIST_COMMAND,
             register_command as register_cut_list_command,
@@ -129,6 +134,8 @@ class ForgeCADWorkbench(
 
         register_joint_review_summary_command()
 
+        register_fabrication_readiness_command()
+
         register_cut_list_command()
 
         commands = [
@@ -147,6 +154,7 @@ class ForgeCADWorkbench(
             INSPECT_JOINT_COMMAND,
             NEXT_JOINT_COMMAND,
             JOINT_REVIEW_SUMMARY_COMMAND,
+            FABRICATION_READINESS_COMMAND,
             CUT_LIST_COMMAND,
         ]
 
