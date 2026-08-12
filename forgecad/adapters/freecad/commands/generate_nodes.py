@@ -11,6 +11,7 @@ from forgecad.adapters.freecad.document_tree import (
 from forgecad.adapters.freecad.commands.generate_from_selection import (
     selected_or_project_layout_lines,
 )
+from forgecad.geometry import point
 
 
 COMMAND_NAME = "ForgeCAD_GenerateNodes"
@@ -41,12 +42,119 @@ def point_key(
     )
 
 
-def unique_layout_points(
+def point_on_segment(
+    point,
+    start,
+    end,
+    tolerance=1e-6,
+):
+    """
+    Return True when point lies on the finite 3D segment start-end.
+
+    This uses vector projection rather than axis-specific comparisons,
+    so it works for layout lines in any 3D orientation.
+    """
+
+    segment_x = float(
+        end.x - start.x
+    )
+    segment_y = float(
+        end.y - start.y
+    )
+    segment_z = float(
+        end.z - start.z
+    )
+
+    point_x = float(
+        point.x - start.x
+    )
+    point_y = float(
+        point.y - start.y
+    )
+    point_z = float(
+        point.z - start.z
+    )
+
+    length_squared = (
+        segment_x * segment_x
+        + segment_y * segment_y
+        + segment_z * segment_z
+    )
+
+    if length_squared <= (
+        tolerance * tolerance
+    ):
+        return False
+
+    parameter = (
+        point_x * segment_x
+        + point_y * segment_y
+        + point_z * segment_z
+    ) / length_squared
+
+    if (
+        parameter < -tolerance
+        or parameter > 1.0 + tolerance
+    ):
+        return False
+
+    parameter = max(
+        0.0,
+        min(
+            1.0,
+            parameter,
+        ),
+    )
+
+    nearest_x = (
+        float(start.x)
+        + parameter * segment_x
+    )
+    nearest_y = (
+        float(start.y)
+        + parameter * segment_y
+    )
+    nearest_z = (
+        float(start.z)
+        + parameter * segment_z
+    )
+
+    delta_x = (
+        float(point.x)
+        - nearest_x
+    )
+    delta_y = (
+        float(point.y)
+        - nearest_y
+    )
+    delta_z = (
+        float(point.z)
+        - nearest_z
+    )
+
+    distance_squared = (
+        delta_x * delta_x
+        + delta_y * delta_y
+        + delta_z * delta_z
+    )
+
+    return distance_squared <= (
+        tolerance * tolerance
+    )
+
+
+def canonical_layout_point(
+    point,
     layout_objects,
 ):
-    """Return unique StartPoint/EndPoint vectors from layout objects."""
+    """
+    Return the exact stored segment position for a layout connection.
 
-    points = {}
+    A snapped branch endpoint may lie on the interior of another
+    layout line. Re-projecting it onto that line gives node generation
+    one stable coordinate for the shared connection without splitting
+    the continuous layout line.
+    """
 
     for obj in layout_objects:
         if not hasattr(
@@ -61,17 +169,116 @@ def unique_layout_points(
         ):
             continue
 
+        start = obj.StartPoint
+        end = obj.EndPoint
+
+        if not point_on_segment(
+            point,
+            start,
+            end,
+        ):
+            continue
+
+        segment_x = float(
+            end.x - start.x
+        )
+        segment_y = float(
+            end.y - start.y
+        )
+        segment_z = float(
+            end.z - start.z
+        )
+
+        length_squared = (
+            segment_x * segment_x
+            + segment_y * segment_y
+            + segment_z * segment_z
+        )
+
+        if length_squared <= 1e-12:
+            continue
+
+        parameter = (
+            float(
+                point.x - start.x
+            ) * segment_x
+            + float(
+                point.y - start.y
+            ) * segment_y
+            + float(
+                point.z - start.z
+            ) * segment_z
+        ) / length_squared
+
+        parameter = max(
+            0.0,
+            min(
+                1.0,
+                parameter,
+            ),
+        )
+
+        try:
+            return type(point)(
+                float(start.x)
+                + parameter * segment_x,
+                float(start.y)
+                + parameter * segment_y,
+                float(start.z)
+                + parameter * segment_z,
+            )
+        except Exception:
+            return point
+
+    return point
+
+
+def unique_layout_points(
+    layout_objects,
+):
+    """
+    Return unique layout endpoints, including interior connections.
+
+    Layout lines remain continuous. When one line endpoint lies on
+    another line's interior, the shared point becomes a node location.
+    """
+
+    objects = [
+        obj
+        for obj in layout_objects
+        if (
+            hasattr(
+                obj,
+                "StartPoint",
+            )
+            and hasattr(
+                obj,
+                "EndPoint",
+            )
+        )
+    ]
+
+    points = {}
+
+    for obj in objects:
         for point in (
             obj.StartPoint,
             obj.EndPoint,
         ):
+            resolved_point = (
+                canonical_layout_point(
+                    point,
+                    objects,
+                )
+            )
+
             key = point_key(
-                point
+                resolved_point
             )
 
             if key not in points:
                 points[key] = (
-                    point
+                    resolved_point
                 )
 
     return list(

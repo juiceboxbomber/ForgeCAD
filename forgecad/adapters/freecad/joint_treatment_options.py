@@ -133,6 +133,114 @@ def vector_length(
     )
 
 
+def point_on_member_interior(
+    point,
+    member,
+    tolerance=1e-6,
+):
+    """Return True when a point lies strictly inside a member segment."""
+
+    if (
+        not hasattr(member, "StartPoint")
+        or not hasattr(member, "EndPoint")
+    ):
+        return False
+
+    start = member.StartPoint
+    end = member.EndPoint
+
+    segment = vector_components(
+        start,
+        end,
+    )
+
+    to_point = vector_components(
+        start,
+        point,
+    )
+
+    length_squared = (
+        segment[0] * segment[0]
+        + segment[1] * segment[1]
+        + segment[2] * segment[2]
+    )
+
+    if length_squared <= 1e-12:
+        return False
+
+    parameter = (
+        to_point[0] * segment[0]
+        + to_point[1] * segment[1]
+        + to_point[2] * segment[2]
+    ) / length_squared
+
+    if (
+        parameter <= tolerance
+        or parameter >= 1.0 - tolerance
+    ):
+        return False
+
+    nearest_x = (
+        float(start.x)
+        + parameter * segment[0]
+    )
+    nearest_y = (
+        float(start.y)
+        + parameter * segment[1]
+    )
+    nearest_z = (
+        float(start.z)
+        + parameter * segment[2]
+    )
+
+    dx = float(point.x) - nearest_x
+    dy = float(point.y) - nearest_y
+    dz = float(point.z) - nearest_z
+
+    distance_squared = (
+        dx * dx
+        + dy * dy
+        + dz * dz
+    )
+
+    return (
+        distance_squared
+        <= tolerance * tolerance
+    )
+
+
+def continuous_member_for_two_member_joint(
+    first_member,
+    second_member,
+):
+    """
+    Return the continuous member when the other member terminates
+    on its interior.
+    """
+
+    for point in (
+        second_member.StartPoint,
+        second_member.EndPoint,
+    ):
+        if point_on_member_interior(
+            point,
+            first_member,
+        ):
+            return first_member
+
+    for point in (
+        first_member.StartPoint,
+        first_member.EndPoint,
+    ):
+        if point_on_member_interior(
+            point,
+            second_member,
+        ):
+            return second_member
+
+    return None
+
+
 def common_member_point(
     first_member,
     second_member,
@@ -503,6 +611,27 @@ def treatment_options_for_members(
                 1
             ]
         )
+
+        continuous_member = (
+            continuous_member_for_two_member_joint(
+                first_member,
+                second_member,
+            )
+        )
+
+        if continuous_member is not None:
+            if member_has_persistent_identity(
+                continuous_member
+            ):
+                options.append(
+                    member_through_option(
+                        continuous_member
+                    )
+                )
+
+            return tuple(
+                options
+            )
 
         if is_right_angle_corner(
             first_member,

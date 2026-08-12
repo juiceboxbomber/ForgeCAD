@@ -9,6 +9,7 @@ from forgecad.fabrication import (
 from forgecad.services.joint_geometry import (
     angle_between_members,
     is_straight_angle,
+    member_contains_node_interior,
 )
 
 
@@ -98,9 +99,43 @@ def identify_member_roles(
     """
     Identify through and branch members at a joint.
 
-    A through pair must be approximately straight.
-    All remaining members are considered branches.
+    A continuous member passing through the joint is the
+    natural through member.
+
+    Otherwise, an approximately straight pair is treated
+    as the through path.
     """
+
+    # -------------------------------------------------
+    # Continuous physical member through the joint
+    # -------------------------------------------------
+
+    continuous_members = tuple(
+        member
+        for member in joint.members
+        if member_contains_node_interior(
+            member,
+            joint.node,
+        )
+    )
+
+    if continuous_members:
+        branch_members = tuple(
+            member
+            for member in joint.members
+            if member
+            not in continuous_members
+        )
+
+        return MemberRoleAnalysis(
+            joint=joint,
+            through_members=continuous_members,
+            branch_members=branch_members,
+        )
+
+    # -------------------------------------------------
+    # Traditional split-member joint
+    # -------------------------------------------------
 
     if joint.member_count < 2:
         return MemberRoleAnalysis(
@@ -132,7 +167,9 @@ def identify_member_roles(
 
     if not is_straight_angle(
         angle,
-        tolerance_degrees=straight_tolerance_degrees,
+        tolerance_degrees=(
+            straight_tolerance_degrees
+        ),
     ):
         return MemberRoleAnalysis(
             joint=joint,
