@@ -263,15 +263,15 @@ class InteractiveLayoutLineTool:
             float(point.z),
         )
 
-    def layout_endpoints(self):
-        """Return existing ForgeCAD layout endpoints."""
+    def layout_segments(self):
+        """Return existing ForgeCAD line segments."""
 
         document = FreeCAD.ActiveDocument
 
         if document is None:
             return []
 
-        endpoints = []
+        segments = []
 
         for obj in document.Objects:
             if not hasattr(obj, "StartPoint"):
@@ -283,20 +283,42 @@ class InteractiveLayoutLineTool:
             start = obj.StartPoint
             end = obj.EndPoint
 
-            endpoints.append(
-                Point3D(
-                    float(start.x),
-                    float(start.y),
-                    float(start.z),
+            start_point = Point3D(
+                float(start.x),
+                float(start.y),
+                float(start.z),
+            )
+
+            end_point = Point3D(
+                float(end.x),
+                float(end.y),
+                float(end.z),
+            )
+
+            if start_point == end_point:
+                continue
+
+            segments.append(
+                (
+                    start_point,
+                    end_point,
                 )
             )
 
+        return segments
+
+    def layout_endpoints(self):
+        """Return existing ForgeCAD layout endpoints."""
+
+        endpoints = []
+
+        for start, end in self.layout_segments():
             endpoints.append(
-                Point3D(
-                    float(end.x),
-                    float(end.y),
-                    float(end.z),
-                )
+                start
+            )
+
+            endpoints.append(
+                end
             )
 
         return endpoints
@@ -347,6 +369,152 @@ class InteractiveLayoutLineTool:
             if distance <= nearest_distance:
                 nearest_distance = distance
                 nearest_point = endpoint
+
+        return nearest_point
+
+    def point_on_screen_segment(
+        self,
+        position,
+        start,
+        end,
+    ):
+        """
+        Return the exact 3D point on a segment nearest the mouse.
+
+        The nearest location is chosen in screen space so snapping
+        feels natural in the active view. The returned point is then
+        interpolated on the original 3D segment, so the committed
+        geometry lies exactly on the existing centerline.
+        """
+
+        if position is None:
+            return None, None
+
+        try:
+            start_x, start_y = (
+                self.point_to_screen(
+                    start
+                )
+            )
+
+            end_x, end_y = (
+                self.point_to_screen(
+                    end
+                )
+            )
+
+        except Exception:
+            return None, None
+
+        mouse_x = float(
+            position[0]
+        )
+
+        mouse_y = float(
+            position[1]
+        )
+
+        segment_x = (
+            end_x - start_x
+        )
+
+        segment_y = (
+            end_y - start_y
+        )
+
+        screen_length_squared = (
+            segment_x * segment_x
+            + segment_y * segment_y
+        )
+
+        if screen_length_squared <= 1e-12:
+            return None, None
+
+        parameter = (
+            (
+                (mouse_x - start_x)
+                * segment_x
+                + (mouse_y - start_y)
+                * segment_y
+            )
+            / screen_length_squared
+        )
+
+        parameter = max(
+            0.0,
+            min(
+                1.0,
+                parameter,
+            ),
+        )
+
+        snap_screen_x = (
+            start_x
+            + parameter * segment_x
+        )
+
+        snap_screen_y = (
+            start_y
+            + parameter * segment_y
+        )
+
+        screen_distance = math.hypot(
+            snap_screen_x - mouse_x,
+            snap_screen_y - mouse_y,
+        )
+
+        point = Point3D(
+            start.x
+            + parameter
+            * (
+                end.x - start.x
+            ),
+            start.y
+            + parameter
+            * (
+                end.y - start.y
+            ),
+            start.z
+            + parameter
+            * (
+                end.z - start.z
+            ),
+        )
+
+        return point, screen_distance
+
+    def find_line_snap_point(
+        self,
+        position,
+    ):
+        """Find the nearest exact point on an existing line segment."""
+
+        if position is None:
+            return None
+
+        nearest_point = None
+        nearest_distance = (
+            SNAP_DISTANCE_PIXELS
+        )
+
+        for start, end in self.layout_segments():
+            point, distance = (
+                self.point_on_screen_segment(
+                    position,
+                    start,
+                    end,
+                )
+            )
+
+            if (
+                point is None
+                or distance is None
+            ):
+                continue
+
+            if distance <= nearest_distance:
+                nearest_distance = distance
+                nearest_point = point
 
         return nearest_point
 
@@ -414,7 +582,10 @@ class InteractiveLayoutLineTool:
         return snapped_point, snapped_angle
 
     def resolved_point(self, position):
-        """Resolve endpoint snap, angle inference, or free position."""
+        """
+        Resolve endpoint snap, line snap, angle inference,
+        or free position.
+        """
 
         snap_point = self.find_snap_point(
             position
@@ -424,6 +595,19 @@ class InteractiveLayoutLineTool:
             return (
                 snap_point,
                 "ENDPOINT",
+                None,
+            )
+
+        line_snap_point = (
+            self.find_line_snap_point(
+                position
+            )
+        )
+
+        if line_snap_point is not None:
+            return (
+                line_snap_point,
+                "LINE",
                 None,
             )
 
@@ -481,7 +665,7 @@ class InteractiveLayoutLineTool:
         document.recompute()
 
     def update_snap_marker(self, point):
-        """Show or remove endpoint snap marker."""
+        """Show or remove the active snap marker."""
 
         document = FreeCAD.ActiveDocument
 
@@ -509,7 +693,7 @@ class InteractiveLayoutLineTool:
             )
 
             self.snap_marker.Label = (
-                "Endpoint Snap"
+                "Geometry Snap"
             )
 
         self.snap_marker.Shape = (
@@ -610,6 +794,9 @@ class InteractiveLayoutLineTool:
 
         if snap_type == "ENDPOINT":
             return "ENDPOINT"
+
+        if snap_type == "LINE":
+            return "ON LINE"
 
         if snap_type != "ANGLE":
             return ""
@@ -857,7 +1044,10 @@ class InteractiveLayoutLineTool:
 
         self.last_resolved_point = point
 
-        if snap_type == "ENDPOINT":
+        if snap_type in (
+            "ENDPOINT",
+            "LINE",
+        ):
             self.update_snap_marker(
                 point
             )
@@ -996,4 +1186,3 @@ def register_command() -> None:
         COMMAND_NAME,
         DrawLayoutLineInteractiveCommand(),
     )
-    

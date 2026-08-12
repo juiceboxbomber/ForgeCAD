@@ -13,6 +13,7 @@ from forgecad.fabrication.joint_treatment import (
 )
 from forgecad.services.joint_geometry import (
     angle_between_members,
+    member_contains_node_interior,
 )
 
 
@@ -152,6 +153,10 @@ def member_through_extensions(
 
     Only the selected through tube receives a real physical
     extension. Coped members retain their design endpoints.
+
+    When the selected through member already passes through the
+    joint as one continuous physical member, no end extension is
+    required.
     """
 
     joint = treatment.joint
@@ -161,6 +166,12 @@ def member_through_extensions(
             0
         ]
     )
+
+    if member_contains_node_interior(
+        through_member,
+        joint.node,
+    ):
+        return ()
 
     other_members = [
         member

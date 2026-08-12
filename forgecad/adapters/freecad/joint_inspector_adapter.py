@@ -2,13 +2,15 @@
 
 from forgecad.fabrication import (
     Joint,
-    Material,
     Member,
     Node,
 )
 from forgecad.services import (
     create_default_material,
     create_default_tube_library,
+)
+from forgecad.services.joint_service import (
+    member_touches_node,
 )
 
 
@@ -98,6 +100,7 @@ def profile_from_member_object(
         return library.get(
             profile_name
         )
+
     except KeyError as error:
         raise ValueError(
             f"Unknown ForgeCAD tube profile: "
@@ -153,53 +156,6 @@ def member_from_freecad_object(
     )
 
 
-def member_touches_node(
-    member,
-    node,
-    precision=6,
-):
-    """Return True when a domain member touches a node."""
-
-    node_key = (
-        round(
-            float(node.x),
-            precision,
-        ),
-        round(
-            float(node.y),
-            precision,
-        ),
-        round(
-            float(node.z),
-            precision,
-        ),
-    )
-
-    for endpoint in (
-        member.start,
-        member.end,
-    ):
-        endpoint_key = (
-            round(
-                float(endpoint.x),
-                precision,
-            ),
-            round(
-                float(endpoint.y),
-                precision,
-            ),
-            round(
-                float(endpoint.z),
-                precision,
-            ),
-        )
-
-        if endpoint_key == node_key:
-            return True
-
-    return False
-
-
 def frame_member_objects(
     document,
 ):
@@ -231,8 +187,9 @@ def joint_from_node_object(
     """
     Rebuild the domain Joint represented by a FreeCAD node.
 
-    Only generated frame members touching the selected node
-    are included.
+    Generated frame members are included when the node lies
+    anywhere on the member centerline segment, including the
+    interior of a continuous through member.
     """
 
     node = node_from_freecad_object(

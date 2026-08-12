@@ -11,6 +11,8 @@ from forgecad.adapters.freecad.joint_inspector_adapter import (
     frame_member_objects,
     is_forgecad_node,
     joint_from_node_object,
+    member_from_freecad_object,
+    node_from_freecad_object,
 )
 from forgecad.adapters.freecad.joint_treatment_options import (
     selected_option_index,
@@ -23,6 +25,10 @@ from forgecad.adapters.freecad.joint_treatment_store import (
 )
 from forgecad.services.joint_inspector import (
     inspect_joint,
+)
+
+from forgecad.services.joint_service import (
+    member_touches_node,
 )
 
 
@@ -223,17 +229,30 @@ def connected_member_objects(
     ):
         return []
 
-    return [
-        member_object
-        for member_object
-        in frame_member_objects(
-            document
+    node = node_from_freecad_object(
+        node_object
+    )
+
+    connected = []
+
+    for member_object in frame_member_objects(
+        document
+    ):
+        member = (
+            member_from_freecad_object(
+                member_object
+            )
         )
-        if member_object_touches_position(
-            member_object,
-            node_object.Position,
-        )
-    ]
+
+        if member_touches_node(
+            member,
+            node,
+        ):
+            connected.append(
+                member_object
+            )
+
+    return connected
 
 
 def member_display_name(
