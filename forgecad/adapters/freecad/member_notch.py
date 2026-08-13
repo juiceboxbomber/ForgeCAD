@@ -179,6 +179,78 @@ def ensure_notch_properties(
         obj.EndCopeThroughDiameter = 0.0
 
     # ---------------------------------------------------------
+    # Secondary start-end cylindrical cope
+    # ---------------------------------------------------------
+
+    if not hasattr(obj, "StartCope2Enabled"):
+        obj.addProperty(
+            "App::PropertyBool",
+            "StartCope2Enabled",
+            "ForgeCAD Start Cope",
+        )
+        obj.StartCope2Enabled = False
+
+    if not hasattr(obj, "StartCope2ThroughStart"):
+        obj.addProperty(
+            "App::PropertyVector",
+            "StartCope2ThroughStart",
+            "ForgeCAD Start Cope",
+        )
+        obj.StartCope2ThroughStart = zero_vector()
+
+    if not hasattr(obj, "StartCope2ThroughEnd"):
+        obj.addProperty(
+            "App::PropertyVector",
+            "StartCope2ThroughEnd",
+            "ForgeCAD Start Cope",
+        )
+        obj.StartCope2ThroughEnd = zero_vector()
+
+    if not hasattr(obj, "StartCope2ThroughDiameter"):
+        obj.addProperty(
+            "App::PropertyLength",
+            "StartCope2ThroughDiameter",
+            "ForgeCAD Start Cope",
+        )
+        obj.StartCope2ThroughDiameter = 0.0
+
+    # ---------------------------------------------------------
+    # Secondary end-end cylindrical cope
+    # ---------------------------------------------------------
+
+    if not hasattr(obj, "EndCope2Enabled"):
+        obj.addProperty(
+            "App::PropertyBool",
+            "EndCope2Enabled",
+            "ForgeCAD End Cope",
+        )
+        obj.EndCope2Enabled = False
+
+    if not hasattr(obj, "EndCope2ThroughStart"):
+        obj.addProperty(
+            "App::PropertyVector",
+            "EndCope2ThroughStart",
+            "ForgeCAD End Cope",
+        )
+        obj.EndCope2ThroughStart = zero_vector()
+
+    if not hasattr(obj, "EndCope2ThroughEnd"):
+        obj.addProperty(
+            "App::PropertyVector",
+            "EndCope2ThroughEnd",
+            "ForgeCAD End Cope",
+        )
+        obj.EndCope2ThroughEnd = zero_vector()
+
+    if not hasattr(obj, "EndCope2ThroughDiameter"):
+        obj.addProperty(
+            "App::PropertyLength",
+            "EndCope2ThroughDiameter",
+            "ForgeCAD End Cope",
+        )
+        obj.EndCope2ThroughDiameter = 0.0
+
+    # ---------------------------------------------------------
     # Physical fabrication extension
     # ---------------------------------------------------------
 
@@ -358,6 +430,12 @@ def ensure_notch_properties(
         "EndCopeThroughStart",
         "EndCopeThroughEnd",
         "EndCopeThroughDiameter",
+        "StartCope2ThroughStart",
+        "StartCope2ThroughEnd",
+        "StartCope2ThroughDiameter",
+        "EndCope2ThroughStart",
+        "EndCope2ThroughEnd",
+        "EndCope2ThroughDiameter",
         "StartExtension",
         "EndExtension",
         "StartMiterPlanePoint",
@@ -394,6 +472,10 @@ def clear_start_cope(
     obj.StartCopeThroughStart = zero_vector()
     obj.StartCopeThroughEnd = zero_vector()
     obj.StartCopeThroughDiameter = 0.0
+    obj.StartCope2Enabled = False
+    obj.StartCope2ThroughStart = zero_vector()
+    obj.StartCope2ThroughEnd = zero_vector()
+    obj.StartCope2ThroughDiameter = 0.0
 
 
 def clear_end_cope(
@@ -409,6 +491,10 @@ def clear_end_cope(
     obj.EndCopeThroughStart = zero_vector()
     obj.EndCopeThroughEnd = zero_vector()
     obj.EndCopeThroughDiameter = 0.0
+    obj.EndCope2Enabled = False
+    obj.EndCope2ThroughStart = zero_vector()
+    obj.EndCope2ThroughEnd = zero_vector()
+    obj.EndCope2ThroughDiameter = 0.0
 
 
 def clear_notch(
@@ -618,6 +704,56 @@ def configure_end_cope(
     )
     obj.EndCopeThroughDiameter = diameter
     obj.EndCopeEnabled = True
+
+
+def configure_start_cope_secondary(
+    obj,
+    through_start,
+    through_end,
+    through_outside_diameter,
+):
+    """Configure a second cylindrical cope at the member start."""
+
+    ensure_notch_properties(obj)
+    diameter = validate_cope_diameter(through_outside_diameter)
+
+    obj.StartCope2ThroughStart = FreeCAD.Vector(
+        through_start.x,
+        through_start.y,
+        through_start.z,
+    )
+    obj.StartCope2ThroughEnd = FreeCAD.Vector(
+        through_end.x,
+        through_end.y,
+        through_end.z,
+    )
+    obj.StartCope2ThroughDiameter = diameter
+    obj.StartCope2Enabled = True
+
+
+def configure_end_cope_secondary(
+    obj,
+    through_start,
+    through_end,
+    through_outside_diameter,
+):
+    """Configure a second cylindrical cope at the member end."""
+
+    ensure_notch_properties(obj)
+    diameter = validate_cope_diameter(through_outside_diameter)
+
+    obj.EndCope2ThroughStart = FreeCAD.Vector(
+        through_start.x,
+        through_start.y,
+        through_start.z,
+    )
+    obj.EndCope2ThroughEnd = FreeCAD.Vector(
+        through_end.x,
+        through_end.y,
+        through_end.z,
+    )
+    obj.EndCope2ThroughDiameter = diameter
+    obj.EndCope2Enabled = True
 
 
 def configure_notch(
@@ -891,6 +1027,19 @@ def extended_for_dual_copes(
             ),
         )
 
+    if bool(obj.StartCope2Enabled):
+        start_extra = max(
+            start_extra,
+            temporary_cope_extension(
+                physical_start,
+                physical_end,
+                profile,
+                obj.StartCope2ThroughStart,
+                obj.StartCope2ThroughEnd,
+                float(obj.StartCope2ThroughDiameter),
+            ),
+        )
+
     if bool(
         obj.EndCopeEnabled
     ):
@@ -902,6 +1051,19 @@ def extended_for_dual_copes(
             obj.EndCopeThroughEnd,
             float(
                 obj.EndCopeThroughDiameter
+            ),
+        )
+
+    if bool(obj.EndCope2Enabled):
+        end_extra = max(
+            end_extra,
+            temporary_cope_extension(
+                physical_start,
+                physical_end,
+                profile,
+                obj.EndCope2ThroughStart,
+                obj.EndCope2ThroughEnd,
+                float(obj.EndCope2ThroughDiameter),
             ),
         )
 
@@ -976,7 +1138,7 @@ def build_member_shape(
         -> start miter
         -> end miter
 
-    A tube may therefore have one cylindrical cope at each end.
+    A tube may therefore have up to two sequential cylindrical copes at each end.
     """
 
     ensure_notch_properties(
@@ -998,6 +1160,12 @@ def build_member_shape(
         )
         or bool(
             obj.EndCopeEnabled
+        )
+        or bool(
+            obj.StartCope2Enabled
+        )
+        or bool(
+            obj.EndCope2Enabled
         )
     )
 
@@ -1028,6 +1196,15 @@ def build_member_shape(
                 physical_end,
             )
 
+        if bool(obj.StartCope2Enabled):
+            shape = apply_cope_to_existing_shape(
+                shape,
+                obj.StartCope2ThroughStart,
+                obj.StartCope2ThroughEnd,
+                obj.StartCope2ThroughDiameter,
+                physical_end,
+            )
+
         if bool(
             obj.EndCopeEnabled
         ):
@@ -1036,6 +1213,15 @@ def build_member_shape(
                 obj.EndCopeThroughStart,
                 obj.EndCopeThroughEnd,
                 obj.EndCopeThroughDiameter,
+                physical_start,
+            )
+
+        if bool(obj.EndCope2Enabled):
+            shape = apply_cope_to_existing_shape(
+                shape,
+                obj.EndCope2ThroughStart,
+                obj.EndCope2ThroughEnd,
+                obj.EndCope2ThroughDiameter,
                 physical_start,
             )
 

@@ -3,8 +3,6 @@
 import sys
 import types
 
-import pytest
-
 
 class FakeVector:
     """Minimal FreeCAD-like vector."""
@@ -138,7 +136,19 @@ def test_same_member_can_have_start_and_end_copes(
         "configure_start_cope",
         lambda obj, start, end, diameter: calls.append(
             (
-                "start",
+                "start-primary",
+                obj,
+                diameter,
+            )
+        ),
+    )
+
+    monkeypatch.setattr(
+        renderer,
+        "configure_start_cope_secondary",
+        lambda obj, start, end, diameter: calls.append(
+            (
+                "start-secondary",
                 obj,
                 diameter,
             )
@@ -150,7 +160,19 @@ def test_same_member_can_have_start_and_end_copes(
         "configure_end_cope",
         lambda obj, start, end, diameter: calls.append(
             (
-                "end",
+                "end-primary",
+                obj,
+                diameter,
+            )
+        ),
+    )
+
+    monkeypatch.setattr(
+        renderer,
+        "configure_end_cope_secondary",
+        lambda obj, start, end, diameter: calls.append(
+            (
+                "end-secondary",
                 obj,
                 diameter,
             )
@@ -178,19 +200,19 @@ def test_same_member_can_have_start_and_end_copes(
 
     assert calls == [
         (
-            "start",
+            "start-primary",
             rendered,
             44.45,
         ),
         (
-            "end",
+            "end-primary",
             rendered,
             44.45,
         ),
     ]
 
 
-def test_duplicate_start_cope_is_rejected(
+def test_two_start_copes_use_primary_and_secondary_slots(
     monkeypatch,
 ):
     member = FakeMember()
@@ -202,6 +224,8 @@ def test_duplicate_start_cope_is_rejected(
     )
 
     rendered = FakeRenderedObject()
+
+    calls = []
 
     monkeypatch.setattr(
         renderer,
@@ -212,7 +236,25 @@ def test_duplicate_start_cope_is_rejected(
     monkeypatch.setattr(
         renderer,
         "configure_start_cope",
-        lambda obj, start, end, diameter: None,
+        lambda obj, start, end, diameter: calls.append(
+            (
+                "primary",
+                obj,
+                diameter,
+            )
+        ),
+    )
+
+    monkeypatch.setattr(
+        renderer,
+        "configure_start_cope_secondary",
+        lambda obj, start, end, diameter: calls.append(
+            (
+                "secondary",
+                obj,
+                diameter,
+            )
+        ),
     )
 
     specifications = (
@@ -226,20 +268,29 @@ def test_duplicate_start_cope_is_rejected(
         ),
     )
 
-    with pytest.raises(
-        ValueError,
-        match="same member end",
-    ):
-        renderer.configure_cope_specifications(
-            frame,
-            [
-                rendered,
-            ],
-            specifications,
-        )
+    renderer.configure_cope_specifications(
+        frame,
+        [
+            rendered,
+        ],
+        specifications,
+    )
+
+    assert calls == [
+        (
+            "primary",
+            rendered,
+            44.45,
+        ),
+        (
+            "secondary",
+            rendered,
+            44.45,
+        ),
+    ]
 
 
-def test_duplicate_end_cope_is_rejected(
+def test_two_end_copes_use_primary_and_secondary_slots(
     monkeypatch,
 ):
     member = FakeMember()
@@ -252,6 +303,8 @@ def test_duplicate_end_cope_is_rejected(
 
     rendered = FakeRenderedObject()
 
+    calls = []
+
     monkeypatch.setattr(
         renderer,
         "clear_notch",
@@ -261,7 +314,25 @@ def test_duplicate_end_cope_is_rejected(
     monkeypatch.setattr(
         renderer,
         "configure_end_cope",
-        lambda obj, start, end, diameter: None,
+        lambda obj, start, end, diameter: calls.append(
+            (
+                "primary",
+                obj,
+                diameter,
+            )
+        ),
+    )
+
+    monkeypatch.setattr(
+        renderer,
+        "configure_end_cope_secondary",
+        lambda obj, start, end, diameter: calls.append(
+            (
+                "secondary",
+                obj,
+                diameter,
+            )
+        ),
     )
 
     specifications = (
@@ -275,14 +346,23 @@ def test_duplicate_end_cope_is_rejected(
         ),
     )
 
-    with pytest.raises(
-        ValueError,
-        match="same member end",
-    ):
-        renderer.configure_cope_specifications(
-            frame,
-            [
-                rendered,
-            ],
-            specifications,
-        )
+    renderer.configure_cope_specifications(
+        frame,
+        [
+            rendered,
+        ],
+        specifications,
+    )
+
+    assert calls == [
+        (
+            "primary",
+            rendered,
+            44.45,
+        ),
+        (
+            "secondary",
+            rendered,
+            44.45,
+        ),
+    ]

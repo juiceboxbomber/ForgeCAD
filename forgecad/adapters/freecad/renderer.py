@@ -44,9 +44,11 @@ from forgecad.adapters.freecad.member_notch import (
     clear_miter,
     clear_notch,
     configure_end_cope,
+    configure_end_cope_secondary,
     configure_end_extension,
     configure_end_miter,
     configure_start_cope,
+    configure_start_cope_secondary,
     configure_start_extension,
     configure_start_miter,
 )
@@ -612,9 +614,10 @@ def configure_cope_specifications(
     """
     Apply cylindrical cope specifications by member end.
 
-    A member may have one cope at its start and one cope at its
-    end. Conflicting cope specifications for the same physical
-    member end are rejected.
+    A member may have up to two sequential cylindrical copes at
+    its start and up to two at its end. The first specification
+    uses the primary cope slot and the second uses the secondary
+    cope slot.
     """
 
     if (
@@ -640,7 +643,7 @@ def configure_cope_specifications(
                 obj
             )
 
-    configured_member_ends = set()
+    configured_member_end_counts = {}
 
     for specification in specifications:
         coped_key = id(
@@ -665,13 +668,17 @@ def configure_cope_specifications(
             coped_end,
         )
 
-        if (
-            configuration_key
-            in configured_member_ends
-        ):
+        cope_index = (
+            configured_member_end_counts.get(
+                configuration_key,
+                0,
+            )
+        )
+
+        if cope_index >= 2:
             raise ValueError(
                 "Cope generation received more than "
-                "one treatment for the same member end."
+                "two treatments for the same member end."
             )
 
         target_start, target_end = (
@@ -684,31 +691,51 @@ def configure_cope_specifications(
             coped_end
             == BRANCH_END_START
         ):
-            configure_start_cope(
-                coped_object,
-                target_start,
-                target_end,
-                specification.target_outside_diameter,
-            )
+            if cope_index == 0:
+                configure_start_cope(
+                    coped_object,
+                    target_start,
+                    target_end,
+                    specification.target_outside_diameter,
+                )
+
+            else:
+                configure_start_cope_secondary(
+                    coped_object,
+                    target_start,
+                    target_end,
+                    specification.target_outside_diameter,
+                )
 
         elif (
             coped_end
             == BRANCH_END_END
         ):
-            configure_end_cope(
-                coped_object,
-                target_start,
-                target_end,
-                specification.target_outside_diameter,
-            )
+            if cope_index == 0:
+                configure_end_cope(
+                    coped_object,
+                    target_start,
+                    target_end,
+                    specification.target_outside_diameter,
+                )
+
+            else:
+                configure_end_cope_secondary(
+                    coped_object,
+                    target_start,
+                    target_end,
+                    specification.target_outside_diameter,
+                )
 
         else:
             raise ValueError(
                 "Unknown cope member end."
             )
 
-        configured_member_ends.add(
+        configured_member_end_counts[
             configuration_key
+        ] = (
+            cope_index + 1
         )
 
     return rendered_objects
