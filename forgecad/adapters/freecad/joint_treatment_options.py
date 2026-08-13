@@ -241,6 +241,46 @@ def continuous_member_for_two_member_joint(
     return None
 
 
+def continuous_members_for_multi_member_joint(
+    member_objects,
+):
+    """
+    Return members whose interior contains an endpoint of another member.
+
+    This identifies the natural continuous tube in a branch joint without
+    guessing when the topology is ambiguous.
+    """
+
+    members = list(member_objects)
+    continuous = []
+
+    for candidate in members:
+        found_branch_endpoint = False
+
+        for other_member in members:
+            if other_member is candidate:
+                continue
+
+            for point in (
+                other_member.StartPoint,
+                other_member.EndPoint,
+            ):
+                if point_on_member_interior(
+                    point,
+                    candidate,
+                ):
+                    found_branch_endpoint = True
+                    break
+
+            if found_branch_endpoint:
+                break
+
+        if found_branch_endpoint:
+            continuous.append(candidate)
+
+    return tuple(continuous)
+
+
 def common_member_point(
     first_member,
     second_member,
@@ -560,11 +600,14 @@ def treatment_options_for_members(
         Automatic
         Both Mitered
 
-    Three-or-more-member joints receive:
+    Three-or-more-member joints with exactly one geometrically
+    continuous member receive:
 
         Automatic
-        each individual member through
-        every possible two-member through pair
+        Continuous Member Through
+
+    Ambiguous three-or-more-member joints retain the complete
+    member-through and through-pair option set as a safe fallback.
 
     Cylindrical coping is therefore reserved for square
     two-member corners and genuine branch/through joints.
@@ -659,6 +702,36 @@ def treatment_options_for_members(
     # Three-or-more-member branch joint
     # ---------------------------------------------------------
 
+    continuous_members = (
+        continuous_members_for_multi_member_joint(
+            members
+        )
+    )
+
+    if len(
+        continuous_members
+    ) == 1:
+        continuous_member = (
+            continuous_members[
+                0
+            ]
+        )
+
+        if member_has_persistent_identity(
+            continuous_member
+        ):
+            options.append(
+                member_through_option(
+                    continuous_member
+                )
+            )
+
+            return tuple(
+                options
+            )
+
+    # Ambiguous topology: preserve the complete option set rather
+    # than hiding potentially valid fabrication choices.
     for member in persistent_members:
         options.append(
             member_through_option(
