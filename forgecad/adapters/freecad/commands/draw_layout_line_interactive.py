@@ -290,6 +290,17 @@ class InteractiveLayoutLineTool:
         if workspace is None:
             return None
 
+        if (
+            hasattr(
+                workspace,
+                "SnapEnabled",
+            )
+            and not bool(
+                workspace.SnapEnabled
+            )
+        ):
+            return None
+
         if not hasattr(
             workspace,
             "MinorGridSpacing",

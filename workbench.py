@@ -24,6 +24,11 @@ class ForgeCADWorkbench(
             register_command as register_new_project_command,
         )
 
+        from forgecad.adapters.freecad.commands.workspace_settings import (
+            COMMAND_NAME as WORKSPACE_SETTINGS_COMMAND,
+            register_command as register_workspace_settings_command,
+        )
+
         from forgecad.adapters.freecad.commands.draw_layout_line import (
             COMMAND_NAME as DRAW_LAYOUT_LINE_COMMAND,
             register_command as register_draw_layout_line_command,
@@ -105,41 +110,27 @@ class ForgeCADWorkbench(
         )
 
         register_new_project_command()
-
+        register_workspace_settings_command()
         register_draw_layout_line_command()
-
         register_define_layout_lines_command()
-
         register_draw_layout_line_interactive_command()
-
         register_generate_nodes_command()
-
         register_create_offset_node_command()
-
         register_create_node_from_geometry_command()
-
         register_draw_member_interactive_command()
-
         register_create_member_between_nodes_command()
-
         register_generate_from_selection_command()
-
         register_member_properties_command()
-
         register_select_members_command()
-
         register_inspect_joint_command()
-
         register_next_joint_command()
-
         register_joint_review_summary_command()
-
         register_fabrication_readiness_command()
-
         register_cut_list_command()
 
         commands = [
             NEW_PROJECT_COMMAND,
+            WORKSPACE_SETTINGS_COMMAND,
             DRAW_LAYOUT_LINE_COMMAND,
             DEFINE_LAYOUT_LINES_COMMAND,
             DRAW_LAYOUT_LINE_INTERACTIVE_COMMAND,
@@ -182,4 +173,3 @@ class ForgeCADWorkbench(
         self,
     ):
         return "Gui::PythonWorkbench"
-    

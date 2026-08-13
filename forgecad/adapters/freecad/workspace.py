@@ -8,6 +8,9 @@ from forgecad import (
     ProjectType,
     project_module_for_type,
 )
+from forgecad.workspace_settings import (
+    WorkspaceSettings,
+)
 from forgecad.adapters.freecad.document_tree import (
     initialize_project_tree,
 )
@@ -146,7 +149,6 @@ def build_workspace_grid_shape(
 
     edges = []
 
-    # Workspace boundary.
     edges.extend(
         [
             _line(
@@ -176,7 +178,6 @@ def build_workspace_grid_shape(
         ]
     )
 
-    # Major grid.
     for x in _grid_positions(
         minimum_x,
         maximum_x,
@@ -280,6 +281,14 @@ def _ensure_workspace_properties(
             "App::PropertyLength",
             "MinorGridSpacing",
         ),
+        (
+            "App::PropertyBool",
+            "GridVisible",
+        ),
+        (
+            "App::PropertyBool",
+            "SnapEnabled",
+        ),
     )
 
     for (
@@ -304,6 +313,8 @@ def _ensure_workspace_properties(
         "WorkspaceHeight",
         "MajorGridSpacing",
         "MinorGridSpacing",
+        "GridVisible",
+        "SnapEnabled",
     ):
         try:
             obj.setEditorMode(
@@ -316,16 +327,103 @@ def _ensure_workspace_properties(
     return obj
 
 
+def workspace_settings_from_object(
+    workspace_object,
+) -> WorkspaceSettings:
+    """Read persistent workspace settings from a FreeCAD object."""
+
+    if workspace_object is None:
+        raise ValueError(
+            "A ForgeCAD workspace object is required."
+        )
+
+    return WorkspaceSettings(
+        width_mm=float(
+            workspace_object.WorkspaceWidth
+        ),
+        height_mm=float(
+            workspace_object.WorkspaceHeight
+        ),
+        major_grid_mm=float(
+            workspace_object.MajorGridSpacing
+        ),
+        minor_grid_mm=float(
+            workspace_object.MinorGridSpacing
+        ),
+        grid_visible=bool(
+            workspace_object.GridVisible
+        ),
+        snap_enabled=bool(
+            workspace_object.SnapEnabled
+        ),
+    )
+
+
+def project_type_for_document(
+    document,
+) -> ProjectType:
+    """Return the project type stored in a ForgeCAD document."""
+
+    if document is None:
+        raise ValueError(
+            "A FreeCAD document is required."
+        )
+
+    workspace = document.getObject(
+        WORKSPACE_OBJECT_NAME
+    )
+
+    if (
+        workspace is not None
+        and hasattr(
+            workspace,
+            "ProjectType",
+        )
+        and str(
+            workspace.ProjectType
+        ).strip()
+    ):
+        return ProjectType(
+            str(
+                workspace.ProjectType
+            ).strip()
+        )
+
+    root = document.getObject(
+        "ForgeCADProject"
+    )
+
+    if (
+        root is not None
+        and hasattr(
+            root,
+            "ProjectType",
+        )
+        and str(
+            root.ProjectType
+        ).strip()
+    ):
+        return ProjectType(
+            str(
+                root.ProjectType
+            ).strip()
+        )
+
+    return (
+        ProjectType.GENERAL_FABRICATION
+    )
+
+
 def create_or_update_workspace(
     document,
     project_type,
+    settings=None,
 ):
     """
-    Create the visible ForgeCAD workspace for a project type.
+    Create or update the visible ForgeCAD workspace.
 
-    The workspace consists of one boundary/major-grid compound plus
-    one centered X/Y axis object. Both live in the Settings group so
-    they remain separate from actual fabrication layout geometry.
+    Module defaults are used when explicit per-project settings are
+    not supplied.
     """
 
     if document is None:
@@ -339,9 +437,20 @@ def create_or_update_workspace(
         )
     )
 
-    workspace = (
-        module.workspace
-    )
+    if settings is None:
+        settings = (
+            WorkspaceSettings.from_defaults(
+                module.workspace
+            )
+        )
+
+    if not isinstance(
+        settings,
+        WorkspaceSettings,
+    ):
+        raise TypeError(
+            "Workspace settings must be a WorkspaceSettings instance."
+        )
 
     groups = initialize_project_tree(
         document
@@ -364,32 +473,38 @@ def create_or_update_workspace(
             "Workspace Grid"
         )
 
-    grid_object.Shape = (
-        build_workspace_grid_shape(
-            workspace.width_mm,
-            workspace.height_mm,
-            workspace.major_grid_mm,
-        )
-    )
-
     _ensure_workspace_properties(
         grid_object
+    )
+
+    grid_object.Shape = (
+        build_workspace_grid_shape(
+            settings.width_mm,
+            settings.height_mm,
+            settings.major_grid_mm,
+        )
     )
 
     grid_object.ProjectType = (
         module.project_type.value
     )
     grid_object.WorkspaceWidth = (
-        workspace.width_mm
+        settings.width_mm
     )
     grid_object.WorkspaceHeight = (
-        workspace.height_mm
+        settings.height_mm
     )
     grid_object.MajorGridSpacing = (
-        workspace.major_grid_mm
+        settings.major_grid_mm
     )
     grid_object.MinorGridSpacing = (
-        workspace.minor_grid_mm
+        settings.minor_grid_mm
+    )
+    grid_object.GridVisible = (
+        settings.grid_visible
+    )
+    grid_object.SnapEnabled = (
+        settings.snap_enabled
     )
 
     axes_object = document.getObject(
@@ -407,8 +522,8 @@ def create_or_update_workspace(
 
     axes_object.Shape = (
         build_workspace_axes_shape(
-            workspace.width_mm,
-            workspace.height_mm,
+            settings.width_mm,
+            settings.height_mm,
         )
     )
 
@@ -428,6 +543,13 @@ def create_or_update_workspace(
         pass
 
     try:
+        grid_object.ViewObject.Visibility = (
+            settings.grid_visible
+        )
+    except Exception:
+        pass
+
+    try:
         axes_object.ViewObject.LineWidth = 2.0
     except Exception:
         pass
@@ -437,6 +559,23 @@ def create_or_update_workspace(
     return (
         grid_object,
         axes_object,
+    )
+
+
+def update_workspace_settings(
+    document,
+    settings,
+):
+    """Persist settings and rebuild the existing workspace geometry."""
+
+    project_type = project_type_for_document(
+        document
+    )
+
+    return create_or_update_workspace(
+        document,
+        project_type,
+        settings=settings,
     )
 
 
