@@ -49,6 +49,59 @@ class JointTreatmentResolution:
         )
 
 
+def member_through_cope_instructions(
+    joint: Joint,
+    through_member: Member,
+    branch_members,
+) -> tuple[CopeInstruction, ...]:
+    """
+    Return deterministic cope instructions for one through member.
+
+    Every branch is coped against the selected through member.
+
+    When exactly two branches share the joint, the second branch
+    also receives a secondary cope against the first branch.
+    """
+
+    branch_members = tuple(
+        branch_members
+    )
+
+    instructions = [
+        CopeInstruction(
+            joint=joint,
+            coped_member=member,
+            target_member=through_member,
+        )
+        for member in branch_members
+    ]
+
+    if len(branch_members) == 2:
+        first_branch = (
+            branch_members[
+                0
+            ]
+        )
+
+        second_branch = (
+            branch_members[
+                1
+            ]
+        )
+
+        instructions.append(
+            CopeInstruction(
+                joint=joint,
+                coped_member=second_branch,
+                target_member=first_branch,
+            )
+        )
+
+    return tuple(
+        instructions
+    )
+
+
 def resolve_automatic_treatment(
     treatment: JointTreatment,
     straight_tolerance_degrees: float = 3.0,
@@ -63,6 +116,42 @@ def resolve_automatic_treatment(
             straight_tolerance_degrees
         ),
     )
+
+    # ---------------------------------------------------------
+    # One continuous physical through member
+    # ---------------------------------------------------------
+
+    if (
+        len(
+            roles.through_members
+        )
+        == 1
+    ):
+        through_member = (
+            roles.through_members[
+                0
+            ]
+        )
+
+        instructions = (
+            member_through_cope_instructions(
+                joint,
+                through_member,
+                roles.branch_members,
+            )
+        )
+
+        return JointTreatmentResolution(
+            treatment=treatment,
+            through_members=(
+                through_member,
+            ),
+            cope_instructions=instructions,
+        )
+
+    # ---------------------------------------------------------
+    # Traditional split straight-through pair
+    # ---------------------------------------------------------
 
     if not roles.has_through_pair:
         return JointTreatmentResolution(
@@ -99,19 +188,7 @@ def resolve_automatic_treatment(
 def resolve_member_through(
     treatment: JointTreatment,
 ) -> JointTreatmentResolution:
-    """
-    Resolve a single selected through member.
-
-    Every branch is first coped against the selected through member.
-
-    When exactly two branches share the joint, the second branch is
-    then given a secondary cope against the first branch. This makes
-    the branch-to-branch fit deterministic while keeping the selected
-    through member untouched.
-
-    If the two branch solids do not actually intersect, the secondary
-    cylindrical subtraction is geometrically a no-op.
-    """
+    """Resolve a single selected through member."""
 
     joint = treatment.joint
 
@@ -127,44 +204,20 @@ def resolve_member_through(
         if member is not through_member
     )
 
-    instructions = [
-        CopeInstruction(
-            joint=joint,
-            coped_member=member,
-            target_member=through_member,
+    instructions = (
+        member_through_cope_instructions(
+            joint,
+            through_member,
+            branch_members,
         )
-        for member in branch_members
-    ]
-
-    if len(branch_members) == 2:
-        first_branch = (
-            branch_members[
-                0
-            ]
-        )
-
-        second_branch = (
-            branch_members[
-                1
-            ]
-        )
-
-        instructions.append(
-            CopeInstruction(
-                joint=joint,
-                coped_member=second_branch,
-                target_member=first_branch,
-            )
-        )
+    )
 
     return JointTreatmentResolution(
         treatment=treatment,
         through_members=(
             through_member,
         ),
-        cope_instructions=tuple(
-            instructions
-        ),
+        cope_instructions=instructions,
     )
 
 
