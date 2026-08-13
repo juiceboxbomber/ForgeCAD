@@ -1,7 +1,16 @@
 """Project creation services for ForgeCAD."""
 
-from forgecad import ApplicationType, DisplayUnits, Project
-from forgecad.fabrication import Material, TubeLibrary, TubeProfile
+from forgecad import (
+    ApplicationType,
+    DisplayUnits,
+    Project,
+    ProjectType,
+)
+from forgecad.fabrication import (
+    Material,
+    TubeLibrary,
+    TubeProfile,
+)
 
 
 DEFAULT_PROFILE_NAME = "1.750 x .120 DOM"
@@ -46,24 +55,34 @@ def create_default_tube_library() -> TubeLibrary:
         ),
     )
 
-    library.set_active(DEFAULT_PROFILE_NAME)
+    library.set_active(
+        DEFAULT_PROFILE_NAME
+    )
 
     return library
 
 
 def create_project(
     name: str,
+    project_type: ProjectType = (
+        ProjectType.GENERAL_FABRICATION
+    ),
     application: ApplicationType = ApplicationType.GENERAL,
     display_units: DisplayUnits = DisplayUnits.MILLIMETERS,
     active_profile_name: str = DEFAULT_PROFILE_NAME,
 ) -> Project:
     """Create a configured ForgeCAD project."""
 
-    tube_library = create_default_tube_library()
-    tube_library.set_active(active_profile_name)
+    tube_library = (
+        create_default_tube_library()
+    )
+    tube_library.set_active(
+        active_profile_name
+    )
 
     return Project(
         name=name,
+        project_type=project_type,
         application=application,
         display_units=display_units,
         tube_library=tube_library,

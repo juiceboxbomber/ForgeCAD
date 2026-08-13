@@ -9,6 +9,9 @@ from PySide import QtCore, QtGui
 
 from forgecad import LayoutLine
 from forgecad.geometry import Point3D
+from forgecad.services.grid_snap import (
+    snap_xy_coordinates,
+)
 from forgecad.adapters.freecad.commands.draw_layout_line import (
     create_layout_line_object,
 )
@@ -22,6 +25,7 @@ COMMAND_NAME = "ForgeCAD_DrawLayoutLineInteractive"
 SNAP_DISTANCE_PIXELS = 15
 ANGLE_INCREMENT_DEGREES = 15.0
 ANGLE_SNAP_TOLERANCE_DEGREES = 3.0
+LAYOUT_PLANE_Z = 0.0
 
 _active_tool = None
 
@@ -94,7 +98,9 @@ class InteractiveLayoutLineTool:
         )
 
         self.show_status(
-            "ForgeCAD: Click first point. Esc: Finish."
+            "ForgeCAD: Click first point. "
+            "Grid, endpoint, and line snapping active. "
+            "Esc: Finish."
         )
 
     def create_length_input(self):
@@ -247,7 +253,13 @@ class InteractiveLayoutLineTool:
         document.recompute()
 
     def screen_to_point(self, position):
-        """Convert screen position to a ForgeCAD point."""
+        """
+        Convert screen position to the ForgeCAD XY layout plane.
+
+        FreeCAD's viewport projection may return small Z offsets
+        depending on camera state or visible geometry. Layout-line
+        creation is intentionally constrained to Z=0.
+        """
 
         if position is None:
             return None
@@ -260,7 +272,73 @@ class InteractiveLayoutLineTool:
         return Point3D(
             float(point.x),
             float(point.y),
-            float(point.z),
+            LAYOUT_PLANE_Z,
+        )
+
+    def workspace_minor_grid_spacing(self):
+        """Return the active project's stored minor-grid spacing."""
+
+        document = FreeCAD.ActiveDocument
+
+        if document is None:
+            return None
+
+        workspace = document.getObject(
+            "ForgeCADWorkspace"
+        )
+
+        if workspace is None:
+            return None
+
+        if not hasattr(
+            workspace,
+            "MinorGridSpacing",
+        ):
+            return None
+
+        try:
+            spacing = float(
+                workspace.MinorGridSpacing
+            )
+        except (
+            TypeError,
+            ValueError,
+        ):
+            return None
+
+        if spacing <= 0.0:
+            return None
+
+        return spacing
+
+    def snap_point_to_grid(
+        self,
+        point,
+    ):
+        """Snap a free XY point to the active project's minor grid."""
+
+        if point is None:
+            return None
+
+        spacing = (
+            self.workspace_minor_grid_spacing()
+        )
+
+        if spacing is None:
+            return None
+
+        snapped_x, snapped_y = (
+            snap_xy_coordinates(
+                point.x,
+                point.y,
+                spacing,
+            )
+        )
+
+        return Point3D(
+            snapped_x,
+            snapped_y,
+            LAYOUT_PLANE_Z,
         )
 
     def layout_segments(self):
@@ -583,8 +661,16 @@ class InteractiveLayoutLineTool:
 
     def resolved_point(self, position):
         """
-        Resolve endpoint snap, line snap, angle inference,
+        Resolve endpoint snap, line snap, grid snap, angle inference,
         or free position.
+
+        Snap priority is:
+
+            endpoint
+            existing line
+            project grid
+            angle inference
+            free position
         """
 
         snap_point = self.find_snap_point(
@@ -618,12 +704,33 @@ class InteractiveLayoutLineTool:
         if free_point is None:
             return None, None, None
 
+        grid_point = self.snap_point_to_grid(
+            free_point
+        )
+
+        candidate_point = (
+            grid_point
+            if grid_point is not None
+            else free_point
+        )
+
         if self.start_point is None:
-            return free_point, None, None
+            if grid_point is not None:
+                return (
+                    grid_point,
+                    "GRID",
+                    None,
+                )
+
+            return (
+                free_point,
+                None,
+                None,
+            )
 
         inferred_point, snapped_angle = (
             self.infer_angle(
-                free_point
+                candidate_point
             )
         )
 
@@ -634,7 +741,18 @@ class InteractiveLayoutLineTool:
                 snapped_angle,
             )
 
-        return free_point, None, None
+        if grid_point is not None:
+            return (
+                grid_point,
+                "GRID",
+                None,
+            )
+
+        return (
+            free_point,
+            None,
+            None,
+        )
 
     def create_start_marker(self, point):
         """Show the current segment start point."""
@@ -797,6 +915,9 @@ class InteractiveLayoutLineTool:
 
         if snap_type == "LINE":
             return "ON LINE"
+
+        if snap_type == "GRID":
+            return "GRID"
 
         if snap_type != "ANGLE":
             return ""
@@ -1047,6 +1168,7 @@ class InteractiveLayoutLineTool:
         if snap_type in (
             "ENDPOINT",
             "LINE",
+            "GRID",
         ):
             self.update_snap_marker(
                 point
