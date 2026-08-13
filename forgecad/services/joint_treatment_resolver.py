@@ -99,7 +99,19 @@ def resolve_automatic_treatment(
 def resolve_member_through(
     treatment: JointTreatment,
 ) -> JointTreatmentResolution:
-    """Resolve a single selected through member."""
+    """
+    Resolve a single selected through member.
+
+    Every branch is first coped against the selected through member.
+
+    When exactly two branches share the joint, the second branch is
+    then given a secondary cope against the first branch. This makes
+    the branch-to-branch fit deterministic while keeping the selected
+    through member untouched.
+
+    If the two branch solids do not actually intersect, the secondary
+    cylindrical subtraction is geometrically a no-op.
+    """
 
     joint = treatment.joint
 
@@ -109,22 +121,50 @@ def resolve_member_through(
         ]
     )
 
-    instructions = tuple(
+    branch_members = tuple(
+        member
+        for member in joint.members
+        if member is not through_member
+    )
+
+    instructions = [
         CopeInstruction(
             joint=joint,
             coped_member=member,
             target_member=through_member,
         )
-        for member in joint.members
-        if member is not through_member
-    )
+        for member in branch_members
+    ]
+
+    if len(branch_members) == 2:
+        first_branch = (
+            branch_members[
+                0
+            ]
+        )
+
+        second_branch = (
+            branch_members[
+                1
+            ]
+        )
+
+        instructions.append(
+            CopeInstruction(
+                joint=joint,
+                coped_member=second_branch,
+                target_member=first_branch,
+            )
+        )
 
     return JointTreatmentResolution(
         treatment=treatment,
         through_members=(
             through_member,
         ),
-        cope_instructions=instructions,
+        cope_instructions=tuple(
+            instructions
+        ),
     )
 
 
