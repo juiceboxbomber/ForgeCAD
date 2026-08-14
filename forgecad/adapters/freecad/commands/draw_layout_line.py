@@ -12,6 +12,10 @@ from forgecad.geometry import Point3D
 from forgecad.adapters.freecad.document_tree import (
     initialize_project_tree,
 )
+from forgecad.adapters.freecad.display import (
+    apply_layout_line_style,
+    display_settings_for_document,
+)
 
 
 COMMAND_NAME = "ForgeCAD_DrawLayoutLine"
@@ -232,6 +236,17 @@ def create_layout_line_object(
         obj
     )
 
+    display_settings = (
+        display_settings_for_document(
+            document
+        )
+    )
+
+    apply_layout_line_style(
+        obj,
+        display_settings,
+    )
+
     document.recompute()
 
     return obj
@@ -315,4 +330,3 @@ def register_command() -> None:
         COMMAND_NAME,
         DrawLayoutLineCommand(),
     )
-    

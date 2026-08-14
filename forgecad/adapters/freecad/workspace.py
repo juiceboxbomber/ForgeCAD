@@ -14,6 +14,10 @@ from forgecad.workspace_settings import (
 from forgecad.adapters.freecad.document_tree import (
     initialize_project_tree,
 )
+from forgecad.adapters.freecad.display import (
+    apply_display_settings,
+    display_settings_for_document,
+)
 
 
 WORKSPACE_OBJECT_NAME = "ForgeCADWorkspace"
@@ -549,10 +553,17 @@ def create_or_update_workspace(
     except Exception:
         pass
 
-    try:
-        axes_object.ViewObject.LineWidth = 2.0
-    except Exception:
-        pass
+    display_settings = (
+        display_settings_for_document(
+            document
+        )
+    )
+
+    apply_display_settings(
+        document,
+        display_settings,
+        persist=True,
+    )
 
     document.recompute()
 
