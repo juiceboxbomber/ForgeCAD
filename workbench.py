@@ -29,6 +29,11 @@ class ForgeCADWorkbench(
             register_command as register_workspace_settings_command,
         )
 
+        from forgecad.adapters.freecad.commands.display_settings import (
+            COMMAND_NAME as DISPLAY_SETTINGS_COMMAND,
+            register_command as register_display_settings_command,
+        )
+
         from forgecad.adapters.freecad.commands.draw_layout_line import (
             COMMAND_NAME as DRAW_LAYOUT_LINE_COMMAND,
             register_command as register_draw_layout_line_command,
@@ -111,6 +116,7 @@ class ForgeCADWorkbench(
 
         register_new_project_command()
         register_workspace_settings_command()
+        register_display_settings_command()
         register_draw_layout_line_command()
         register_define_layout_lines_command()
         register_draw_layout_line_interactive_command()
@@ -131,6 +137,7 @@ class ForgeCADWorkbench(
         commands = [
             NEW_PROJECT_COMMAND,
             WORKSPACE_SETTINGS_COMMAND,
+            DISPLAY_SETTINGS_COMMAND,
             DRAW_LAYOUT_LINE_COMMAND,
             DEFINE_LAYOUT_LINES_COMMAND,
             DRAW_LAYOUT_LINE_INTERACTIVE_COMMAND,
