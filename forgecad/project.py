@@ -4,6 +4,7 @@ from dataclasses import dataclass, field
 from enum import Enum
 
 from forgecad.fabrication import (
+    BenderLibrary,
     Frame,
     Material,
     TubeLibrary,
@@ -41,12 +42,11 @@ class Project:
     """Owns the configuration and structural model for one project."""
 
     name: str
-    project_type: ProjectType = (
-        ProjectType.GENERAL_FABRICATION
-    )
+    project_type: ProjectType = ProjectType.GENERAL_FABRICATION
     application: ApplicationType = ApplicationType.GENERAL
     display_units: DisplayUnits = DisplayUnits.MILLIMETERS
     tube_library: TubeLibrary = field(default_factory=TubeLibrary)
+    bender_library: BenderLibrary = field(default_factory=BenderLibrary)
     default_material: Material | None = None
     frame: Frame = field(default_factory=Frame)
 
@@ -73,3 +73,9 @@ class Project:
         """Return the active tube-profile name, if one exists."""
 
         return self.tube_library.active_name
+
+    @property
+    def active_bender_tooling_name(self) -> str | None:
+        """Return the active bender-tooling name, if one exists."""
+
+        return self.bender_library.active_name

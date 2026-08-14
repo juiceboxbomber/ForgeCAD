@@ -7,6 +7,7 @@ from forgecad import (
     ProjectType,
 )
 from forgecad.fabrication import (
+    BenderLibrary,
     Material,
     TubeLibrary,
     TubeProfile,
@@ -62,20 +63,27 @@ def create_default_tube_library() -> TubeLibrary:
     return library
 
 
+def create_default_bender_library() -> BenderLibrary:
+    """
+    Create an empty project bender library.
+
+    ForgeCAD does not assume a die CLR or calibration because those
+    values depend on the fabricator's actual bender and tooling.
+    """
+
+    return BenderLibrary()
+
+
 def create_project(
     name: str,
-    project_type: ProjectType = (
-        ProjectType.GENERAL_FABRICATION
-    ),
+    project_type: ProjectType = ProjectType.GENERAL_FABRICATION,
     application: ApplicationType = ApplicationType.GENERAL,
     display_units: DisplayUnits = DisplayUnits.MILLIMETERS,
     active_profile_name: str = DEFAULT_PROFILE_NAME,
 ) -> Project:
     """Create a configured ForgeCAD project."""
 
-    tube_library = (
-        create_default_tube_library()
-    )
+    tube_library = create_default_tube_library()
     tube_library.set_active(
         active_profile_name
     )
@@ -86,5 +94,6 @@ def create_project(
         application=application,
         display_units=display_units,
         tube_library=tube_library,
+        bender_library=create_default_bender_library(),
         default_material=create_default_material(),
     )

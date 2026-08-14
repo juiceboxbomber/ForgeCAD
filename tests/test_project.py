@@ -1,7 +1,15 @@
 import pytest
 
-from forgecad import ApplicationType, DisplayUnits, Project
-from forgecad.fabrication import Material, TubeProfile
+from forgecad import (
+    ApplicationType,
+    DisplayUnits,
+    Project,
+)
+from forgecad.fabrication import (
+    BenderTooling,
+    Material,
+    TubeProfile,
+)
 
 
 def test_project_defaults():
@@ -42,6 +50,22 @@ def test_project_owns_tube_library():
     assert project.tube_library.active_profile is profile
 
 
+def test_project_owns_independent_bender_library():
+    first = Project("First")
+    second = Project("Second")
+
+    tooling = BenderTooling(
+        name="My Die",
+        centerline_radius_mm=100.0,
+    )
+
+    first.bender_library.add(tooling)
+
+    assert first.active_bender_tooling_name == "My Die"
+    assert second.active_bender_tooling_name is None
+    assert second.bender_library.names == ()
+
+
 def test_project_accepts_default_material():
     steel = Material(
         name="A513 Type 5 DOM",
@@ -62,6 +86,7 @@ def test_project_name_cannot_be_empty(name):
     with pytest.raises(ValueError):
         Project(name)
 
+
 def test_project_converts_string_values_to_enums():
     project = Project(
         name="Qt Project",
@@ -71,4 +96,3 @@ def test_project_converts_string_values_to_enums():
 
     assert project.application is ApplicationType.GENERAL
     assert project.display_units is DisplayUnits.MILLIMETERS
-            
