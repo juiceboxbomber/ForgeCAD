@@ -12,6 +12,10 @@ GROUP_DEFINITIONS = {
         "ForgeCADFrame",
         "Frame",
     ),
+    "Bent Tubes": (
+        "ForgeCADBentTubes",
+        "Bent Tubes",
+    ),
     "Nodes": (
         "ForgeCADNodes",
         "Nodes",
@@ -112,6 +116,7 @@ def initialize_project_tree(
     for key in (
         "Layout",
         "Frame",
+        "Bent Tubes",
         "Nodes",
         "Joints",
         "Joint Treatments",
