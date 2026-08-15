@@ -4,9 +4,14 @@ from dataclasses import dataclass
 from math import acos, degrees, sqrt
 
 from forgecad.fabrication import (
+    BentMember,
     Joint,
-    Member,
     Node,
+    StructuralMember,
+)
+from forgecad.geometry import Point3D
+from forgecad.services.bent_tube_path import (
+    build_bent_tube_centerline,
 )
 
 
@@ -21,10 +26,10 @@ POINT_TOLERANCE = 1e-6
 
 @dataclass(frozen=True, slots=True)
 class JointAngle:
-    """Angle between two members at a joint."""
+    """Angle between two structural members at a joint."""
 
-    first_member: Member
-    second_member: Member
+    first_member: StructuralMember
+    second_member: StructuralMember
     angle_degrees: float
 
 
@@ -37,8 +42,25 @@ class JointGeometryAnalysis:
     angles: tuple[JointAngle, ...]
 
 
+def _bent_member_centerline(
+    member: BentMember,
+):
+    """Build the true 3D centerline for one bent structural member."""
+
+    return build_bent_tube_centerline(
+        member.tube,
+        start_point=Point3D(
+            member.start.x,
+            member.start.y,
+            member.start.z,
+        ),
+        initial_direction=member.initial_direction,
+        initial_bend_normal=member.initial_bend_normal,
+    )
+
+
 def member_other_node(
-    member: Member,
+    member: StructuralMember,
     joint_node: Node,
 ) -> Node:
     """Return the member endpoint opposite an endpoint joint node."""
@@ -55,18 +77,30 @@ def member_other_node(
 
 
 def member_point_parameter(
-    member: Member,
+    member: StructuralMember,
     node: Node,
     tolerance: float = POINT_TOLERANCE,
 ) -> float | None:
     """
-    Return the node position along a finite member.
+    Return the node position along a finite structural member.
 
-    0.0 is the member start.
-    1.0 is the member end.
+    Straight members use a normalized 0.0-to-1.0 line parameter.
 
-    None is returned when the node is not on the member centerline.
+    Bent members currently expose only their structural endpoints:
+    0.0 for start, 1.0 for end, and None for any other node.
     """
+
+    if isinstance(
+        member,
+        BentMember,
+    ):
+        if member.start == node:
+            return 0.0
+
+        if member.end == node:
+            return 1.0
+
+        return None
 
     ax = float(
         member.start.x
@@ -133,7 +167,7 @@ def member_point_parameter(
             1.0,
             parameter,
         ),
-)
+    )
 
     nearest_x = (
         ax
@@ -170,11 +204,19 @@ def member_point_parameter(
 
 
 def member_contains_node_interior(
-    member: Member,
+    member: StructuralMember,
     node: Node,
     tolerance: float = POINT_TOLERANCE,
 ) -> bool:
     """Return True when a node lies inside a member, not at either end."""
+
+    if isinstance(
+        member,
+        BentMember,
+    ):
+        # Interior curved-member joints need curve/node proximity logic.
+        # For now bent members participate through endpoints only.
+        return False
 
     parameter = (
         member_point_parameter(
@@ -196,7 +238,7 @@ def member_contains_node_interior(
 
 
 def member_direction_from_node(
-    member: Member,
+    member: StructuralMember,
     joint_node: Node,
 ) -> tuple[
     float,
@@ -206,17 +248,55 @@ def member_direction_from_node(
     """
     Return a unit vector along a member from a joint location.
 
-    Endpoint joints point toward the opposite endpoint.
+    Straight-member endpoint joints point toward the opposite endpoint.
+    Interior straight-member joints use the deterministic direction
+    toward member.end.
 
-    When the joint lies inside a continuous member, a deterministic
-    direction toward member.end is returned. The physical member
-    remains one continuous member.
+    Bent-member endpoint joints use the true local centerline tangent.
+    At the end node, the solved outgoing tangent is reversed so the
+    returned vector points from the joint back into the member.
     """
 
-    if member.start == joint_node:
-        other_node = (
-            member.end
+    if isinstance(
+        member,
+        BentMember,
+    ):
+        if member.start == joint_node:
+            direction = (
+                member.initial_direction
+                .normalized()
+            )
+
+            return (
+                direction.x,
+                direction.y,
+                direction.z,
+            )
+
+        if member.end == joint_node:
+            centerline = (
+                _bent_member_centerline(
+                    member
+                )
+            )
+
+            direction = (
+                centerline.end_direction
+                .normalized()
+            )
+
+            return (
+                -direction.x,
+                -direction.y,
+                -direction.z,
+            )
+
+        raise ValueError(
+            "The bent member does not touch the supplied joint node."
         )
+
+    if member.start == joint_node:
+        other_node = member.end
 
         dx = (
             other_node.x
@@ -234,9 +314,7 @@ def member_direction_from_node(
         )
 
     elif member.end == joint_node:
-        other_node = (
-            member.start
-        )
+        other_node = member.start
 
         dx = (
             other_node.x
@@ -300,12 +378,12 @@ def member_direction_from_node(
 
 
 def angle_between_members(
-    first_member: Member,
-    second_member: Member,
+    first_member: StructuralMember,
+    second_member: StructuralMember,
     joint_node: Node,
 ) -> float:
     """
-    Return the included angle between two members at a joint.
+    Return the included angle between two structural members at a joint.
 
     The result is between 0 and 180 degrees.
     """
@@ -359,9 +437,7 @@ def joint_angles(
 
     angles = []
 
-    members = (
-        joint.members
-    )
+    members = joint.members
 
     for first_index in range(
         len(
@@ -374,17 +450,13 @@ def joint_angles(
                 members
             ),
         ):
-            first_member = (
-                members[
-                    first_index
-                ]
-            )
+            first_member = members[
+                first_index
+            ]
 
-            second_member = (
-                members[
-                    second_index
-                ]
-            )
+            second_member = members[
+                second_index
+            ]
 
             angle = (
                 angle_between_members(
@@ -396,15 +468,9 @@ def joint_angles(
 
             angles.append(
                 JointAngle(
-                    first_member=(
-                        first_member
-                    ),
-                    second_member=(
-                        second_member
-                    ),
-                    angle_degrees=(
-                        angle
-                    ),
+                    first_member=first_member,
+                    second_member=second_member,
+                    angle_degrees=angle,
                 )
             )
 
@@ -438,15 +504,13 @@ def classify_joint(
 ) -> str:
     """Classify a joint from its member geometry."""
 
-    member_count = (
-        joint.member_count
-    )
+    member_count = joint.member_count
 
     if member_count < 2:
         return JOINT_INVALID
 
     # -------------------------------------------------
-    # Continuous member with branch connection
+    # Continuous straight member with branch connection
     # -------------------------------------------------
 
     interior_members = [

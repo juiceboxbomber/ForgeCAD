@@ -1,10 +1,11 @@
 """Joint detection services for ForgeCAD."""
 
 from forgecad.fabrication import (
+    BentMember,
     Frame,
     Joint,
-    Member,
     Node,
+    StructuralMember,
 )
 
 
@@ -12,11 +13,25 @@ POINT_TOLERANCE = 1e-6
 
 
 def node_on_member(
-    member: Member,
+    member: StructuralMember,
     node: Node,
     tolerance: float = POINT_TOLERANCE,
 ) -> bool:
-    """Return True when a node lies on a member centerline segment."""
+    """Return True when a node lies on a structural member."""
+
+    # Bent members are currently considered connected only
+    # at their explicit structural endpoints.
+    #
+    # We intentionally do not use the straight chord between
+    # start and end because that chord is not the bent tube path.
+    if isinstance(
+        member,
+        BentMember,
+    ):
+        return (
+            member.start == node
+            or member.end == node
+        )
 
     if (
         member.start == node
@@ -89,7 +104,7 @@ def node_on_member(
             1.0,
             parameter,
         ),
-)
+    )
 
     nearest_x = (
         ax
@@ -131,10 +146,10 @@ def node_on_member(
 
 
 def member_touches_node(
-    member: Member,
+    member: StructuralMember,
     node: Node,
 ) -> bool:
-    """Return True when a member passes through a node."""
+    """Return True when a structural member touches a node."""
 
     return node_on_member(
         member,
@@ -145,8 +160,8 @@ def member_touches_node(
 def connected_members(
     frame: Frame,
     node: Node,
-) -> list[Member]:
-    """Return frame members connected to a node."""
+) -> list[StructuralMember]:
+    """Return structural members connected to a node."""
 
     return [
         member
@@ -188,8 +203,11 @@ def detect_joints(
     """
     Detect nodes where two or more frame members meet.
 
-    A continuous member may pass through a joint without being
+    A continuous straight member may pass through a joint without being
     physically split into two separate members.
+
+    Bent members currently participate through their explicit start and
+    end nodes only.
     """
 
     joints = []

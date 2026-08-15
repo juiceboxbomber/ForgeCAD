@@ -18,7 +18,7 @@ from forgecad.services.joint_status import (
 )
 from forgecad.adapters.freecad.joint_inspector_adapter import (
     frame_member_objects,
-    member_from_freecad_object,
+    structural_member_from_freecad_object,
 )
 from forgecad.adapters.freecad.joint_treatment_store import (
     load_joint_treatment,
@@ -74,10 +74,10 @@ class DocumentJointReview:
 def frame_from_document(
     document,
 ) -> Frame:
-    """Rebuild a domain Frame from generated FreeCAD members."""
+    """Rebuild a domain Frame from generated FreeCAD structural members."""
 
     members = [
-        member_from_freecad_object(
+        structural_member_from_freecad_object(
             obj
         )
         for obj in frame_member_objects(

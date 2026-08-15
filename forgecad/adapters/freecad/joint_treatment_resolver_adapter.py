@@ -12,8 +12,8 @@ from forgecad.services.joint_treatment_resolver import (
 )
 from forgecad.adapters.freecad.joint_inspector_adapter import (
     frame_member_objects,
-    member_from_freecad_object,
     member_touches_node,
+    structural_member_from_freecad_object,
 )
 from forgecad.adapters.freecad.joint_treatment_store import (
     load_joint_treatment,
@@ -39,7 +39,7 @@ def domain_member_records(
         records.append(
             (
                 member_object,
-                member_from_freecad_object(
+                structural_member_from_freecad_object(
                     member_object
                 ),
             )
@@ -120,8 +120,7 @@ def treatment_for_joint(
     Rebuild the persisted JointTreatment for a domain joint.
 
     The reconstructed joint and its selected through members use
-    the same Member instances. This is required because fabrication
-    treatment resolution uses member identity.
+    the same structural-member instances.
 
     None is returned when the joint has no saved treatment.
     """
