@@ -128,6 +128,10 @@ class ForgeCADWorkbench(
             COMMAND_NAME as EXPORT_BEND_SCHEDULE_COMMAND,
             register_command as register_export_bend_schedule_command,
         )
+        from forgecad.adapters.freecad.commands.export_bend_fabrication_sheet import (
+            COMMAND_NAME as EXPORT_BEND_FABRICATION_SHEET_COMMAND,
+            register_command as register_export_bend_fabrication_sheet_command,
+        )
 
         from forgecad.adapters.freecad.commands.bender_tooling_settings import (
             COMMAND_NAME as BENDER_TOOLING_SETTINGS_COMMAND,
@@ -157,6 +161,7 @@ class ForgeCADWorkbench(
         register_bender_tooling_settings_command()
         register_bend_schedule_command()
         register_export_bend_schedule_command()
+        register_export_bend_fabrication_sheet_command()
 
         commands = [
             NEW_PROJECT_COMMAND,
@@ -180,6 +185,7 @@ class ForgeCADWorkbench(
             JOINT_REVIEW_SUMMARY_COMMAND,
             BEND_SCHEDULE_COMMAND,
             EXPORT_BEND_SCHEDULE_COMMAND,
+            EXPORT_BEND_FABRICATION_SHEET_COMMAND,
             FABRICATION_READINESS_COMMAND,
             CUT_LIST_COMMAND,
             FABRICATION_READINESS_COMMAND,
