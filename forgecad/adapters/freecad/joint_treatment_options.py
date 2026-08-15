@@ -588,29 +588,12 @@ def treatment_options_for_members(
     """
     Return treatment choices appropriate for connected members.
 
-    Two-member approximately 90-degree corners receive:
+    Bent structural members currently participate in frame/joint
+    analysis, but fabrication treatment generation for bent-member
+    ends is intentionally deferred.
 
-        Automatic
-        Member A Through
-        Member B Through
-        Both Mitered
-
-    Two-member angled corners receive:
-
-        Automatic
-        Both Mitered
-
-    Three-or-more-member joints with exactly one geometrically
-    continuous member receive:
-
-        Automatic
-        Continuous Member Through
-
-    Ambiguous three-or-more-member joints retain the complete
-    member-through and through-pair option set as a safe fallback.
-
-    Cylindrical coping is therefore reserved for square
-    two-member corners and genuine branch/through joints.
+    When any connected member is a bent-tube FreeCAD object, return
+    only the safe Automatic option for now.
     """
 
     members = list(
@@ -624,6 +607,38 @@ def treatment_options_for_members(
     if len(
         members
     ) < 2:
+        return tuple(
+            options
+        )
+
+    # ---------------------------------------------------------
+    # Bent-member protection
+    # ---------------------------------------------------------
+    #
+    # Straight-member treatment logic below assumes every
+    # FreeCAD member object has both StartPoint and EndPoint.
+    #
+    # Parametric bent tubes have StartPoint plus solved curved
+    # geometry, so they must not enter the straight miter/cope
+    # treatment path yet.
+    #
+    # Bent members can still:
+    #   - participate in joint detection
+    #   - participate in angle analysis
+    #   - participate in joint classification
+    #
+    # Their fabrication treatments will be implemented later.
+    # ---------------------------------------------------------
+
+    has_bent_member = any(
+        not hasattr(
+            member,
+            "EndPoint",
+        )
+        for member in members
+    )
+
+    if has_bent_member:
         return tuple(
             options
         )

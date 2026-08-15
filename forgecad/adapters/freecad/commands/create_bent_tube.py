@@ -10,11 +10,21 @@ from forgecad.adapters.freecad.bender_library_store import (
 from forgecad.adapters.freecad.bent_tube_object import (
     create_bent_tube_object,
 )
+from forgecad.adapters.freecad.commands.generate_nodes import (
+    SOURCE_MANUAL,
+    create_node_object,
+    next_node_id,
+    node_by_point,
+)
 from forgecad.adapters.freecad.dialogs.create_bent_tube import (
     CreateBentTubeDialog,
 )
 from forgecad.adapters.freecad.document_tree import (
     initialize_project_tree,
+)
+from forgecad.geometry import (
+    Point3D,
+    Vector3D,
 )
 from forgecad.services import (
     create_default_material,
@@ -22,6 +32,9 @@ from forgecad.services import (
 )
 from forgecad.services.bent_tube_creation import (
     create_bent_tube,
+)
+from forgecad.services.bent_tube_path import (
+    build_bent_tube_centerline,
 )
 from forgecad.services.bent_tube_tooling import (
     attach_tooling,
@@ -147,6 +160,177 @@ def store_tooling_result(
     )
 
 
+def _point3d_from_vector(
+    vector,
+) -> Point3D:
+    """Convert a FreeCAD vector-like value to Point3D."""
+
+    return Point3D(
+        float(
+            vector.x
+        ),
+        float(
+            vector.y
+        ),
+        float(
+            vector.z
+        ),
+    )
+
+
+def _vector3d_from_vector(
+    vector,
+) -> Vector3D:
+    """Convert a FreeCAD vector-like value to Vector3D."""
+
+    return Vector3D(
+        float(
+            vector.x
+        ),
+        float(
+            vector.y
+        ),
+        float(
+            vector.z
+        ),
+    )
+
+
+def solved_bent_tube_endpoints(
+    obj,
+):
+    """Return the true solved start and end points for a bent-tube object."""
+
+    proxy = getattr(
+        obj,
+        "Proxy",
+        None,
+    )
+
+    if (
+        proxy is None
+        or not hasattr(
+            proxy,
+            "_tube_from_properties",
+        )
+    ):
+        raise ValueError(
+            "Object is not a ForgeCAD bent tube."
+        )
+
+    tube = proxy._tube_from_properties(
+        obj
+    )
+
+    centerline = build_bent_tube_centerline(
+        tube,
+        start_point=_point3d_from_vector(
+            obj.StartPoint
+        ),
+        initial_direction=_vector3d_from_vector(
+            obj.InitialDirection
+        ),
+        initial_bend_normal=_vector3d_from_vector(
+            obj.InitialBendNormal
+        ),
+    )
+
+    start = FreeCAD.Vector(
+        centerline.start_point.x,
+        centerline.start_point.y,
+        centerline.start_point.z,
+    )
+
+    end = FreeCAD.Vector(
+        centerline.end_point.x,
+        centerline.end_point.y,
+        centerline.end_point.z,
+    )
+
+    return (
+        start,
+        end,
+    )
+
+
+def ensure_node_at_point(
+    document,
+    nodes_group,
+    point,
+):
+    """Return an existing ForgeCAD node at point or create one."""
+
+    existing = node_by_point(
+        nodes_group,
+        point,
+    )
+
+    if existing is not None:
+        return existing
+
+    node_id = next_node_id(
+        nodes_group
+    )
+
+    node_object = create_node_object(
+        document,
+        point,
+        node_id,
+        source_type=SOURCE_MANUAL,
+    )
+
+    nodes_group.addObject(
+        node_object
+    )
+
+    return node_object
+
+
+def ensure_bent_tube_endpoint_nodes(
+    document,
+    obj,
+):
+    """
+    Create or reuse structural nodes at the true bent-tube endpoints.
+
+    The node positions are taken from the solved centerline rather than
+    from a straight chord between the tube ends.
+    """
+
+    tree = initialize_project_tree(
+        document
+    )
+
+    nodes_group = tree[
+        "Nodes"
+    ]
+
+    start_point, end_point = (
+        solved_bent_tube_endpoints(
+            obj
+        )
+    )
+
+    start_node = ensure_node_at_point(
+        document,
+        nodes_group,
+        start_point,
+    )
+
+    end_node = ensure_node_at_point(
+        document,
+        nodes_group,
+        end_point,
+    )
+
+    document.recompute()
+
+    return (
+        start_node,
+        end_node,
+    )
+
+
 class CreateBentTubeCommand:
     """Create one editable physical bent tube."""
 
@@ -235,6 +419,11 @@ class CreateBentTubeCommand:
                 "Bent Tubes"
             ].addObject(
                 obj
+            )
+
+            ensure_bent_tube_endpoint_nodes(
+                document,
+                obj,
             )
 
             document.recompute()

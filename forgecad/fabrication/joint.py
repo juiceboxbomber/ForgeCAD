@@ -2,8 +2,8 @@
 
 from dataclasses import dataclass, field
 
-from .member import Member
 from .node import Node
+from .structural_member import StructuralMember
 
 
 @dataclass(slots=True)
@@ -11,15 +11,18 @@ class Joint:
     """Represents multiple frame members meeting at one node."""
 
     node: Node
-    members: list[Member] = field(
+
+    members: list[
+        StructuralMember
+    ] = field(
         default_factory=list
     )
 
     def add_member(
         self,
-        member: Member,
+        member: StructuralMember,
     ) -> None:
-        """Add a connected member to the joint."""
+        """Add a connected structural member to the joint."""
 
         if member not in self.members:
             self.members.append(
@@ -27,7 +30,9 @@ class Joint:
             )
 
     @property
-    def member_count(self) -> int:
+    def member_count(
+        self,
+    ) -> int:
         """Return the number of members meeting at this joint."""
 
         return len(
@@ -35,18 +40,24 @@ class Joint:
         )
 
     @property
-    def is_simple(self) -> bool:
+    def is_simple(
+        self,
+    ) -> bool:
         """Return True for a two-member joint."""
 
         return (
-            self.member_count == 2
+            self.member_count
+            == 2
         )
 
     @property
-    def is_multi_member(self) -> bool:
+    def is_multi_member(
+        self,
+    ) -> bool:
         """Return True when three or more members meet."""
 
         return (
-            self.member_count >= 3
+            self.member_count
+            >= 3
         )
     

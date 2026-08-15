@@ -11,8 +11,8 @@ from forgecad.adapters.freecad.joint_inspector_adapter import (
     frame_member_objects,
     is_forgecad_node,
     joint_from_node_object,
-    member_from_freecad_object,
     node_from_freecad_object,
+    structural_member_from_freecad_object,
 )
 from forgecad.adapters.freecad.joint_treatment_options import (
     selected_option_index,
@@ -219,7 +219,7 @@ def connected_member_objects(
     document,
     node_object,
 ):
-    """Return generated FreeCAD members connected to a node."""
+    """Return generated FreeCAD structural members connected to a node."""
 
     if document is None:
         return []
@@ -239,7 +239,7 @@ def connected_member_objects(
         document
     ):
         member = (
-            member_from_freecad_object(
+            structural_member_from_freecad_object(
                 member_object
             )
         )

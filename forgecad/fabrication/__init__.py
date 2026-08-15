@@ -11,6 +11,8 @@ from .node import Node
 from .tube_path import BentTube, StraightRun
 from .tube_profile import TubeProfile
 from .tube_library import TubeLibrary
+from .bent_member import BentMember
+from .structural_member import StructuralMember
 
 
 __all__ = [
@@ -27,4 +29,6 @@ __all__ = [
     "StraightRun",
     "TubeLibrary",
     "TubeProfile",
+    "BentMember",
+    "StructuralMember",
 ]
