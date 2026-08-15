@@ -13,6 +13,9 @@ from forgecad.adapters.freecad.workspace import (
 from forgecad.services import (
     create_project,
 )
+from forgecad.adapters.freecad.bender_library_store import (
+    save_bender_library,
+)
 
 
 COMMAND_NAME = "ForgeCAD_NewProject"
@@ -121,6 +124,11 @@ class NewProjectCommand:
         initialize_project_workspace(
             document,
             project.project_type,
+        )
+
+        save_bender_library(
+            document,
+            project.bender_library,
         )
 
 

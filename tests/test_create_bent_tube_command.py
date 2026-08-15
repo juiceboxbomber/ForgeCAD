@@ -3,8 +3,12 @@
 import sys
 import types
 
+from forgecad.fabrication import (
+    BenderLibrary,
+    BenderTooling,
+)
 
-# Adapter-package imports require FreeCAD / Part / PySide stubs.
+
 fake_freecad = types.ModuleType(
     "FreeCAD"
 )
@@ -46,11 +50,13 @@ sys.modules[
 
 from forgecad.adapters.freecad.commands.create_bent_tube import (
     create_tube_from_dialog,
+    resolve_dialog_tooling,
 )
 
 
 class FakeDialog:
     profile_name = "1.750 x .120 DOM"
+    tooling_name = None
 
     @property
     def definition(
@@ -107,3 +113,35 @@ def test_create_tube_from_dialog_resolves_profile_and_path():
         ].rotation_degrees
         == 90.0
     )
+
+
+def test_resolve_dialog_tooling_returns_none_for_no_selection():
+    dialog = FakeDialog()
+
+    library = BenderLibrary()
+
+    assert resolve_dialog_tooling(
+        dialog,
+        library,
+    ) is None
+
+
+def test_resolve_dialog_tooling_returns_named_project_tooling():
+    class ToolingDialog:
+        tooling_name = "100 mm CLR"
+
+    library = BenderLibrary()
+
+    tooling = BenderTooling(
+        name="100 mm CLR",
+        centerline_radius_mm=100.0,
+    )
+
+    library.add(
+        tooling
+    )
+
+    assert resolve_dialog_tooling(
+        ToolingDialog(),
+        library,
+    ) is tooling

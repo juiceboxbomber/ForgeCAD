@@ -11,6 +11,9 @@ from forgecad.services.bent_tube_creation import (
 )
 
 
+NO_TOOLING_LABEL = "No tooling"
+
+
 class BendRow:
     """Widgets for one bend plus the following straight run."""
 
@@ -115,6 +118,8 @@ class CreateBentTubeDialog(
 
     def __init__(
         self,
+        tooling_names=(),
+        active_tooling_name=None,
         parent=None,
     ):
         super().__init__(
@@ -148,6 +153,33 @@ class CreateBentTubeDialog(
             library.active_name
         )
 
+        self.tooling_combo = QtGui.QComboBox()
+        self.tooling_combo.addItem(
+            NO_TOOLING_LABEL
+        )
+
+        for name in tooling_names:
+            self.tooling_combo.addItem(
+                str(
+                    name
+                )
+            )
+
+        if (
+            active_tooling_name
+            and active_tooling_name
+            in tuple(
+                tooling_names
+            )
+        ):
+            self.tooling_combo.setCurrentText(
+                active_tooling_name
+            )
+        else:
+            self.tooling_combo.setCurrentText(
+                NO_TOOLING_LABEL
+            )
+
         self.first_run_box = QtGui.QDoubleSpinBox()
         self.first_run_box.setRange(
             0.001,
@@ -168,6 +200,10 @@ class CreateBentTubeDialog(
         header_form.addRow(
             "Tube profile:",
             self.profile_combo,
+        )
+        header_form.addRow(
+            "Tooling:",
+            self.tooling_combo,
         )
         header_form.addRow(
             "Run 1 (mm):",
@@ -247,6 +283,17 @@ class CreateBentTubeDialog(
         """Return the selected profile name."""
 
         return self.profile_combo.currentText()
+
+    @property
+    def tooling_name(self) -> str | None:
+        """Return selected tooling name or None."""
+
+        name = self.tooling_combo.currentText()
+
+        if name == NO_TOOLING_LABEL:
+            return None
+
+        return name
 
     @property
     def definition(self) -> BentTubeInput:

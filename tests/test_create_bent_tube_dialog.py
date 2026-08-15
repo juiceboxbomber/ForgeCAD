@@ -242,17 +242,16 @@ sys.modules[
 ] = fake_pyside
 
 
-# Ensure this test imports the dialog against the Qt stubs
-# defined above, regardless of modules imported by earlier tests.
 sys.modules.pop(
     "forgecad.adapters.freecad.dialogs.create_bent_tube",
     None,
 )
 
-sys.modules.pop(
-    "forgecad.adapters.freecad.dialogs",
-    None,
+
+from forgecad.adapters.freecad.dialogs.create_bent_tube import (
+    CreateBentTubeDialog,
 )
+
 
 from forgecad.adapters.freecad.dialogs.create_bent_tube import (
     CreateBentTubeDialog,
@@ -351,3 +350,27 @@ def test_dialog_definition_builds_dynamic_path():
         ].rotation_degrees
         == 90.0
     )
+
+def test_dialog_tooling_defaults_to_none():
+    dialog = CreateBentTubeDialog(
+        tooling_names=(
+            "100 mm CLR",
+            "150 mm CLR",
+        ),
+    )
+
+    assert dialog.tooling_name is None
+
+
+def test_dialog_can_select_project_tooling():
+    dialog = CreateBentTubeDialog(
+        tooling_names=(
+            "100 mm CLR",
+            "150 mm CLR",
+        ),
+        active_tooling_name=(
+            "150 mm CLR"
+        ),
+    )
+
+    assert dialog.tooling_name == "150 mm CLR"
