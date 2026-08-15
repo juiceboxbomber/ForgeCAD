@@ -20,7 +20,7 @@ jobs:
       - name: Install project and test dependencies
         run: |
           python -m pip install --upgrade pip
-          python -m pip install pytest .
+          python -m pip install pytest reportlab .
       
       - name: Run tests
         run: |
