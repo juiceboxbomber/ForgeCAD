@@ -2,8 +2,6 @@
 
 from pathlib import Path
 
-
-
 from forgecad.services.bend_fabrication_sheet import (
     BendFabricationSheet,
 )
@@ -22,6 +20,11 @@ SECTION_SIZE = 10
 BODY_SIZE = 9
 
 ROW_HEIGHT = 20.0
+
+DIAGRAM_HEIGHT = 190.0
+DIAGRAM_PADDING = 18.0
+BEND_MARKER_RADIUS = 8.0
+BEND_MARKER_OFFSET = 14.0
 
 COLUMN_WIDTHS = (
     44.0,
@@ -107,6 +110,303 @@ def _draw_table_row(
     return y - ROW_HEIGHT
 
 
+def _diagram_transform(
+    diagram,
+    x,
+    y,
+    width,
+    height,
+):
+    """Return a point-mapping function that fits a diagram into a box."""
+
+    usable_width = max(
+        1.0,
+        width - 2.0 * DIAGRAM_PADDING,
+    )
+
+    usable_height = max(
+        1.0,
+        height - 2.0 * DIAGRAM_PADDING,
+    )
+
+    source_width = max(
+        diagram.width,
+        1e-9,
+    )
+
+    source_height = max(
+        diagram.height,
+        1e-9,
+    )
+
+    scale = min(
+        usable_width / source_width,
+        usable_height / source_height,
+    )
+
+    drawn_width = (
+        diagram.width
+        * scale
+    )
+
+    drawn_height = (
+        diagram.height
+        * scale
+    )
+
+    x_offset = (
+        x
+        + DIAGRAM_PADDING
+        + (
+            usable_width
+            - drawn_width
+        )
+        / 2.0
+    )
+
+    y_offset = (
+        y
+        + DIAGRAM_PADDING
+        + (
+            usable_height
+            - drawn_height
+        )
+        / 2.0
+    )
+
+    def map_point(
+        point,
+    ):
+        return (
+            x_offset
+            + point.x
+            * scale,
+            y_offset
+            + point.y
+            * scale,
+        )
+
+    return map_point
+
+
+def _bend_marker_position(
+    points,
+    map_point,
+):
+    """
+    Return an offset marker position near the middle of a bend.
+
+    The marker is moved perpendicular to the local bend direction so
+    the centerline does not pass directly through the bend number.
+    """
+
+    mid_index = (
+        len(
+            points
+        )
+        // 2
+    )
+
+    marker_point = points[
+        mid_index
+    ]
+
+    previous_point = points[
+        max(
+            0,
+            mid_index - 1,
+        )
+    ]
+
+    next_point = points[
+        min(
+            len(
+                points
+            )
+            - 1,
+            mid_index + 1,
+        )
+    ]
+
+    marker_x, marker_y = (
+        map_point(
+            marker_point
+        )
+    )
+
+    previous_x, previous_y = (
+        map_point(
+            previous_point
+        )
+    )
+
+    next_x, next_y = (
+        map_point(
+            next_point
+        )
+    )
+
+    direction_x = (
+        next_x
+        - previous_x
+    )
+
+    direction_y = (
+        next_y
+        - previous_y
+    )
+
+    direction_length = (
+        direction_x ** 2
+        + direction_y ** 2
+    ) ** 0.5
+
+    if (
+        direction_length
+        <= 1e-9
+    ):
+        return (
+            marker_x,
+            marker_y
+            + BEND_MARKER_OFFSET,
+        )
+
+    normal_x = (
+        -direction_y
+        / direction_length
+    )
+
+    normal_y = (
+        direction_x
+        / direction_length
+    )
+
+    return (
+        marker_x
+        + normal_x
+        * BEND_MARKER_OFFSET,
+        marker_y
+        + normal_y
+        * BEND_MARKER_OFFSET,
+    )
+
+
+def _draw_bend_path_diagram(
+    pdf,
+    diagram,
+    x,
+    y,
+    width,
+    height,
+):
+    """Draw a fitted bend-path centerline with bend-number markers."""
+
+    pdf.rect(
+        x,
+        y,
+        width,
+        height,
+        stroke=1,
+        fill=0,
+    )
+
+    if diagram is None:
+        _draw_text(
+            pdf,
+            x + 8.0,
+            y + height / 2.0,
+            "No bend-path diagram available.",
+            size=8,
+        )
+        return
+
+    map_point = _diagram_transform(
+        diagram,
+        x,
+        y,
+        width,
+        height,
+    )
+
+    pdf.setLineWidth(
+        1.5
+    )
+
+    bend_number = 0
+
+    for segment in diagram.segments:
+        points = segment.points
+
+        for first, second in zip(
+            points,
+            points[
+                1:
+            ],
+        ):
+            x1, y1 = map_point(
+                first
+            )
+
+            x2, y2 = map_point(
+                second
+            )
+
+            pdf.line(
+                x1,
+                y1,
+                x2,
+                y2,
+            )
+
+        if (
+            segment.kind
+            == "arc"
+        ):
+            bend_number += 1
+
+            marker_x, marker_y = (
+                _bend_marker_position(
+                    points,
+                    map_point,
+                )
+            )
+
+            pdf.circle(
+                marker_x,
+                marker_y,
+                BEND_MARKER_RADIUS,
+                stroke=1,
+                fill=0,
+            )
+
+            pdf.setFont(
+                "Helvetica-Bold",
+                7,
+            )
+
+            pdf.drawCentredString(
+                marker_x,
+                marker_y - 2.5,
+                str(
+                    bend_number
+                ),
+            )
+
+    axes_text = (
+        f"Projection: "
+        f"{diagram.axes[0].upper()}"
+        f"{diagram.axes[1].upper()}"
+    )
+
+    _draw_text(
+        pdf,
+        x + 6.0,
+        y + 6.0,
+        axes_text,
+        size=7,
+    )
+
+
 def render_bend_fabrication_sheet_pdf(
     sheet: BendFabricationSheet,
     output_path,
@@ -124,6 +424,7 @@ def render_bend_fabrication_sheet_pdf(
     try:
         from reportlab.lib.pagesizes import letter
         from reportlab.pdfgen import canvas
+
     except ImportError as error:
         raise RuntimeError(
             "PDF export requires the ReportLab Python package."
@@ -139,13 +440,15 @@ def render_bend_fabrication_sheet_pdf(
         ),
         pagesize=letter,
     )
-    
 
     pdf.setTitle(
         f"ForgeCAD Bend Fabrication Sheet - {sheet.tube_name}"
     )
 
-    y = PAGE_HEIGHT - TOP_MARGIN
+    y = (
+        PAGE_HEIGHT
+        - TOP_MARGIN
+    )
 
     _draw_text(
         pdf,
@@ -203,15 +506,44 @@ def render_bend_fabrication_sheet_pdf(
             f"{label}:",
             bold=True,
         )
+
         _draw_text(
             pdf,
             LEFT_MARGIN + 125.0,
             y,
             value,
         )
+
         y -= 15.0
 
-    y -= 12.0
+    y -= 10.0
+
+    _draw_text(
+        pdf,
+        LEFT_MARGIN,
+        y,
+        "Bend Path",
+        size=SECTION_SIZE,
+        bold=True,
+    )
+
+    y -= (
+        DIAGRAM_HEIGHT
+        + 8.0
+    )
+
+    _draw_bend_path_diagram(
+        pdf,
+        sheet.diagram,
+        LEFT_MARGIN,
+        y,
+        PAGE_WIDTH
+        - LEFT_MARGIN
+        - RIGHT_MARGIN,
+        DIAGRAM_HEIGHT,
+    )
+
+    y -= 18.0
 
     _draw_text(
         pdf,
@@ -237,6 +569,7 @@ def render_bend_fabrication_sheet_pdf(
             < BOTTOM_MARGIN
         ):
             pdf.showPage()
+
             y = (
                 PAGE_HEIGHT
                 - TOP_MARGIN
@@ -281,9 +614,10 @@ def render_bend_fabrication_sheet_pdf(
 
     if (
         y
-        < BOTTOM_MARGIN + 50.0
+        < BOTTOM_MARGIN + 70.0
     ):
         pdf.showPage()
+
         y = (
             PAGE_HEIGHT
             - TOP_MARGIN
@@ -301,13 +635,21 @@ def render_bend_fabrication_sheet_pdf(
     y -= 16.0
 
     notes = (
-        "Mark positions are measured from the tube start along the "
-        "developed centerline.",
-        "Bend angles and mark positions include tooling compensation "
-        "when tooling is assigned.",
-        "Rotation is the clocking angle for the bend relative to the "
-        "current tube direction.",
-        "Verify machine setup and calibration before fabrication.",
+        (
+            "Mark positions are measured from the tube start along the "
+            "developed centerline."
+        ),
+        (
+            "Bend angles and mark positions include tooling compensation "
+            "when tooling is assigned."
+        ),
+        (
+            "Rotation is the clocking angle for the bend relative to the "
+            "current tube direction."
+        ),
+        (
+            "Verify machine setup and calibration before fabrication."
+        ),
     )
 
     for note in notes:
@@ -318,6 +660,7 @@ def render_bend_fabrication_sheet_pdf(
             f"- {note}",
             size=8,
         )
+
         y -= 13.0
 
     pdf.save()

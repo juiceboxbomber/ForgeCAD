@@ -6,9 +6,16 @@ from forgecad.fabrication import (
     BenderTooling,
     BentTube,
 )
+from forgecad.services.bend_path_diagram import (
+    BendPathDiagram,
+    build_bend_path_diagram,
+)
 from forgecad.services.bend_report import (
     BendReportRow,
     build_bend_report,
+)
+from forgecad.services.bent_tube_path import (
+    build_bent_tube_centerline,
 )
 
 
@@ -23,18 +30,13 @@ class BendFabricationSheet:
     inside_diameter_mm: float
     tooling_name: str | None
     cut_length_mm: float
-    rows: tuple[
-        BendReportRow,
-        ...,
-    ]
+    rows: tuple[BendReportRow, ...]
+    diagram: BendPathDiagram | None = None
 
     @property
     def bend_count(self) -> int:
         """Return number of bends on the fabrication sheet."""
-
-        return len(
-            self.rows
-        )
+        return len(self.rows)
 
 
 def build_bend_fabrication_sheet(
@@ -44,47 +46,25 @@ def build_bend_fabrication_sheet(
 ) -> BendFabricationSheet:
     """Build printable fabrication-sheet data from one bent tube."""
 
-    if not isinstance(
-        tube,
-        BentTube,
-    ):
-        raise TypeError(
-            "tube must be a BentTube instance."
-        )
+    if not isinstance(tube, BentTube):
+        raise TypeError("tube must be a BentTube instance.")
 
-    name = str(
-        tube_name
-    ).strip()
-
+    name = str(tube_name).strip()
     if not name:
-        raise ValueError(
-            "Tube name cannot be empty."
-        )
+        raise ValueError("Tube name cannot be empty.")
 
-    report = build_bend_report(
-        tube,
-        tooling,
-    )
+    report = build_bend_report(tube, tooling)
+    centerline = build_bent_tube_centerline(tube)
+    diagram = build_bend_path_diagram(centerline)
 
     return BendFabricationSheet(
         tube_name=name,
         material_name=tube.material.name,
-        outside_diameter_mm=(
-            tube.profile.outside_diameter
-        ),
-        wall_thickness_mm=(
-            tube.profile.wall_thickness
-        ),
-        inside_diameter_mm=(
-            tube.profile.inside_diameter
-        ),
-        tooling_name=(
-            report.tooling_name
-        ),
-        cut_length_mm=(
-            report.cut_length_mm
-        ),
-        rows=(
-            report.rows
-        ),
+        outside_diameter_mm=tube.profile.outside_diameter,
+        wall_thickness_mm=tube.profile.wall_thickness,
+        inside_diameter_mm=tube.profile.inside_diameter,
+        tooling_name=report.tooling_name,
+        cut_length_mm=report.cut_length_mm,
+        rows=report.rows,
+        diagram=diagram,
     )
