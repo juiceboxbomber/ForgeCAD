@@ -7,45 +7,100 @@ from PySide import QtGui
 from forgecad.services import (
     create_default_tube_library,
 )
+from forgecad.adapters.freecad.commands.member_properties import (
+    is_forgecad_member,
+    member_display_length,
+    member_display_name,
+)
 
 
 COMMAND_NAME = "ForgeCAD_SelectMembers"
 
 
 def frame_members(document):
-    """Return generated ForgeCAD members from the Frame group."""
+    """Return all ForgeCAD structural members in the project."""
 
     if document is None:
         return []
+
+    members = []
 
     frame_group = document.getObject(
         "ForgeCADFrame"
     )
 
-    if frame_group is None:
-        return []
-
-    members = []
-
-    for obj in frame_group.Group:
-        if not hasattr(
-            obj,
-            "MemberID",
-        ):
-            continue
-
-        if not hasattr(
-            obj,
-            "TubeProfile",
-        ):
-            continue
-
-        members.append(
+    if frame_group is not None:
+        members.extend(
             obj
+            for obj in frame_group.Group
+            if (
+                is_forgecad_member(
+                    obj
+                )
+                or (
+                    hasattr(
+                        obj,
+                        "MemberID",
+                    )
+                    and hasattr(
+                        obj,
+                        "TubeProfile",
+                    )
+                )
+            )
+        )
+
+    bent_group = document.getObject(
+        "ForgeCADBentTubes"
+    )
+
+    if bent_group is not None:
+        members.extend(
+            obj
+            for obj in bent_group.Group
+            if is_forgecad_member(
+                obj
+            )
         )
 
     return members
 
+def member_name(
+    member,
+):
+    """Return the user-facing name of a structural member."""
+
+    legacy_name = str(
+        getattr(
+            member,
+            "MemberName",
+            "",
+        )
+    ).strip()
+
+    if legacy_name:
+        return legacy_name
+
+    return member_display_name(
+        member
+    )
+
+def member_length(
+    member,
+):
+    """Return the centerline/developed length of a structural member."""
+
+    if hasattr(
+        member,
+        "MemberLength",
+    ):
+        return float(
+            member.MemberLength
+        )
+
+    return member_display_length(
+        member
+    )
 
 def members_with_profile(
     members,
@@ -66,7 +121,7 @@ def members_with_name_prefix(
     members,
     prefix,
 ):
-    """Return members whose names start with the requested prefix."""
+    """Return structural members whose names start with the prefix."""
 
     cleaned_prefix = (
         str(prefix).strip()
@@ -82,15 +137,13 @@ def members_with_name_prefix(
     matches = []
 
     for member in members:
-        member_name = str(
-            getattr(
-                member,
-                "MemberName",
-                "",
+        current_name = (
+            member_name(
+                member
             )
-        ).strip()
+        )
 
-        if member_name.lower().startswith(
+        if current_name.lower().startswith(
             normalized_prefix
         ):
             matches.append(
@@ -144,7 +197,7 @@ def members_with_length_range(
     minimum_length,
     maximum_length,
 ):
-    """Return members whose lengths fall inside the range."""
+    """Return structural members whose lengths fall inside the range."""
 
     minimum = float(
         minimum_length
@@ -163,15 +216,12 @@ def members_with_length_range(
     matches = []
 
     for member in members:
-        if not hasattr(
-            member,
-            "MemberLength",
-        ):
+        try:
+            length = member_length(
+                member
+            )
+        except ValueError:
             continue
-
-        length = float(
-            member.MemberLength
-        )
 
         if (
             minimum
@@ -367,12 +417,8 @@ class SelectMembersDialog(QtGui.QDialog):
 
         longest_member = max(
             (
-                float(
-                    getattr(
-                        member,
-                        "MemberLength",
-                        0.0,
-                    )
+                member_length(
+                    member
                 )
                 for member in self.members
             ),
