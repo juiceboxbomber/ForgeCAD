@@ -168,6 +168,20 @@ sys.modules.pop(
 
 class FakeViewObject:
     PointSize = 0.0
+    Proxy = None
+    Visibility = True
+    Selectable = True
+
+
+class FakePlacement:
+    def __init__(
+        self,
+    ):
+        self.Base = FakeVector(
+            0.0,
+            0.0,
+            0.0,
+        )
 
 
 class FakeNodeObject:
@@ -178,6 +192,8 @@ class FakeNodeObject:
         self.Name = name
         self.Label = name
         self.ViewObject = FakeViewObject()
+        self.Placement = FakePlacement()
+        self.Proxy = None
 
     def addProperty(
         self,
@@ -414,7 +430,7 @@ def test_ensure_node_at_point_creates_manual_node():
     command.create_node_object.__globals__[
         "Part"
     ].makeSphere = (
-        lambda radius, point: (
+        lambda radius, point=None: (
             radius,
             point,
         )
@@ -469,7 +485,7 @@ def test_endpoint_node_creation_reuses_start_and_creates_end(
     command.create_node_object.__globals__[
         "Part"
     ].makeSphere = (
-        lambda radius, point: (
+        lambda radius, point=None: (
             radius,
             point,
         )
@@ -508,4 +524,3 @@ def test_endpoint_node_creation_reuses_start_and_creates_end(
     assert len(
         nodes_group.Group
     ) == 2
-    

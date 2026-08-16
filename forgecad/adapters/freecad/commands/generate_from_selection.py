@@ -18,6 +18,9 @@ from forgecad.adapters.freecad.document_tree import (
     clear_group,
     initialize_project_tree,
 )
+from forgecad.adapters.freecad.member_object import (
+    ensure_member_node_links,
+)
 from forgecad.services import (
     build_frame_from_layout,
     create_project,
@@ -302,6 +305,120 @@ def apply_profile_overrides(
         )
 
 
+def _point_key(
+    point,
+    precision=6,
+):
+    """Return a stable coordinate key for a FreeCAD-like point."""
+
+    return (
+        round(
+            float(point.x),
+            precision,
+        ),
+        round(
+            float(point.y),
+            precision,
+        ),
+        round(
+            float(point.z),
+            precision,
+        ),
+    )
+
+
+def _node_lookup(
+    document,
+):
+    """Return ForgeCAD nodes indexed by their stored Position."""
+
+    groups = initialize_project_tree(
+        document
+    )
+
+    nodes = {}
+
+    for obj in groups[
+        "Nodes"
+    ].Group:
+        if (
+            not hasattr(
+                obj,
+                "NodeID",
+            )
+            or not hasattr(
+                obj,
+                "Position",
+            )
+        ):
+            continue
+
+        nodes[
+            _point_key(
+                obj.Position
+            )
+        ] = obj
+
+    return nodes
+
+
+def restore_rendered_member_node_links(
+    document,
+    rendered_objects,
+):
+    """
+    Restore persistent endpoint-node links on regenerated straight members.
+
+    Bent tubes are intentionally ignored because their topology is represented
+    by their solved curved centerline rather than StartPoint/EndPoint.
+    """
+
+    nodes = _node_lookup(
+        document
+    )
+
+    for obj in rendered_objects:
+        if (
+            not hasattr(
+                obj,
+                "MemberID",
+            )
+            or not hasattr(
+                obj,
+                "StartPoint",
+            )
+            or not hasattr(
+                obj,
+                "EndPoint",
+            )
+        ):
+            continue
+
+        start_node = nodes.get(
+            _point_key(
+                obj.StartPoint
+            )
+        )
+
+        end_node = nodes.get(
+            _point_key(
+                obj.EndPoint
+            )
+        )
+
+        if (
+            start_node is None
+            or end_node is None
+        ):
+            continue
+
+        ensure_member_node_links(
+            obj,
+            start_node,
+            end_node,
+        )
+
+
 def document_object_names(
     document,
 ):
@@ -435,8 +552,6 @@ def regenerate_frame(
         document
     )
 
-    # Snapshot after all required project groups exist. New objects
-    # created by FrameRenderer can then be identified reliably.
     existing_names = (
         document_object_names(
             document
@@ -461,16 +576,18 @@ def regenerate_frame(
             profile_overrides,
         )
 
+        restore_rendered_member_node_links(
+            document,
+            rendered_objects,
+        )
+
     except Exception:
-        # The old Frame group has not been touched yet. Remove only
-        # the partial replacement objects and propagate the error.
         remove_objects_created_after(
             document,
             existing_names,
         )
         raise
 
-    # Rendering succeeded completely. Only now replace the old frame.
     clear_group(
         document,
         groups[
