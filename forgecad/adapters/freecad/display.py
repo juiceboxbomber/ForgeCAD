@@ -13,36 +13,22 @@ LAYOUT_OBJECT_PREFIX = "ForgeCADLayoutLine"
 def _color_tuple(
     color,
 ):
-    """
-    Return an RGB tuple from a FreeCAD color value.
-
-    FreeCAD App::PropertyColor values may be exposed as RGBA
-    instead of RGB. ForgeCAD stores display colors as RGB only,
-    so ignore any alpha component returned by FreeCAD.
-    """
+    """Return an RGB tuple from a FreeCAD color value."""
 
     values = tuple(
         float(component)
         for component in color
     )
 
-    if len(
-        values
-    ) < 3:
+    if len(values) < 3:
         raise ValueError(
             "FreeCAD color must contain at least three components."
         )
 
     return (
-        values[
-            0
-        ],
-        values[
-            1
-        ],
-        values[
-            2
-        ],
+        values[0],
+        values[1],
+        values[2],
     )
 
 
@@ -57,30 +43,12 @@ def ensure_display_properties(
         )
 
     property_definitions = (
-        (
-            "App::PropertyColor",
-            "GridColor",
-        ),
-        (
-            "App::PropertyFloat",
-            "GridLineWidth",
-        ),
-        (
-            "App::PropertyColor",
-            "AxisColor",
-        ),
-        (
-            "App::PropertyFloat",
-            "AxisLineWidth",
-        ),
-        (
-            "App::PropertyColor",
-            "LayoutLineColor",
-        ),
-        (
-            "App::PropertyFloat",
-            "LayoutLineWidth",
-        ),
+        ("App::PropertyColor", "GridColor"),
+        ("App::PropertyFloat", "GridLineWidth"),
+        ("App::PropertyColor", "AxisColor"),
+        ("App::PropertyFloat", "AxisLineWidth"),
+        ("App::PropertyColor", "LayoutLineColor"),
+        ("App::PropertyFloat", "LayoutLineWidth"),
     )
 
     defaults = DisplaySettings()
@@ -94,10 +62,7 @@ def ensure_display_properties(
         "LayoutLineWidth": defaults.layout_line_width,
     }
 
-    for (
-        property_type,
-        property_name,
-    ) in property_definitions:
+    for property_type, property_name in property_definitions:
         if not hasattr(
             workspace_object,
             property_name,
@@ -111,9 +76,7 @@ def ensure_display_properties(
             setattr(
                 workspace_object,
                 property_name,
-                default_values[
-                    property_name
-                ],
+                default_values[property_name],
             )
 
         try:
@@ -218,6 +181,22 @@ def persist_display_settings(
     return workspace_object
 
 
+def make_reference_object_nonselectable(
+    obj,
+):
+    """Keep workspace reference geometry visible but non-selectable."""
+
+    if obj is None:
+        return None
+
+    try:
+        obj.ViewObject.Selectable = False
+    except Exception:
+        pass
+
+    return obj
+
+
 def apply_layout_line_style(
     layout_object,
     settings,
@@ -233,6 +212,11 @@ def apply_layout_line_style(
     layout_object.ViewObject.LineWidth = (
         settings.layout_line_width
     )
+
+    try:
+        layout_object.ViewObject.Selectable = True
+    except Exception:
+        pass
 
     return layout_object
 
@@ -320,12 +304,20 @@ def apply_display_settings(
         settings.grid_line_width
     )
 
+    make_reference_object_nonselectable(
+        workspace_object
+    )
+
     if axes_object is not None:
         axes_object.ViewObject.LineColor = (
             settings.axis_color
         )
         axes_object.ViewObject.LineWidth = (
             settings.axis_line_width
+        )
+
+        make_reference_object_nonselectable(
+            axes_object
         )
 
     for layout_object in layout_line_objects(
