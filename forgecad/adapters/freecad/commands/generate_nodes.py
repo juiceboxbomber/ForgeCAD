@@ -12,6 +12,10 @@ from forgecad.adapters.freecad.commands.generate_from_selection import (
     selected_or_project_layout_lines,
 )
 from forgecad.geometry import point
+from forgecad.adapters.freecad.node_object import (
+    create_node_object as create_parametric_node_object,
+    ensure_node_proxy,
+)
 
 
 COMMAND_NAME = "ForgeCAD_GenerateNodes"
@@ -323,95 +327,19 @@ def create_node_object(
     node_id,
     source_type=SOURCE_MANUAL,
 ):
-    """Create one visible selectable ForgeCAD node object."""
+    """
+    Create one parametric ForgeCAD node object.
 
-    obj = document.addObject(
-        "Part::Feature",
-        "ForgeCADNode",
-    )
+    This wrapper preserves the existing public import location used by
+    other ForgeCAD commands while node behavior lives in node_object.py.
+    """
 
-    obj.Label = node_id
-
-    obj.addProperty(
-        "App::PropertyString",
-        "NodeID",
-        "ForgeCAD Node",
-    )
-    obj.NodeID = node_id
-
-    obj.addProperty(
-        "App::PropertyVector",
-        "Position",
-        "ForgeCAD Node",
-    )
-    obj.Position = point
-
-    obj.addProperty(
-        "App::PropertyFloat",
-        "X",
-        "ForgeCAD Node",
-    )
-    obj.X = float(
-        point.x
-    )
-
-    obj.addProperty(
-        "App::PropertyFloat",
-        "Y",
-        "ForgeCAD Node",
-    )
-    obj.Y = float(
-        point.y
-    )
-
-    obj.addProperty(
-        "App::PropertyFloat",
-        "Z",
-        "ForgeCAD Node",
-    )
-    obj.Z = float(
-        point.z
-    )
-
-    obj.addProperty(
-        "App::PropertyString",
-        "SourceType",
-        "ForgeCAD Node",
-    )
-    obj.SourceType = str(
-        source_type
-    )
-
-    # Small sphere used as a visible/selectable node marker.
-    obj.Shape = Part.makeSphere(
-        6.0,
+    return create_parametric_node_object(
+        document,
         point,
+        node_id,
+        source_type=source_type,
     )
-
-    try:
-        obj.ViewObject.PointSize = (
-            8.0
-        )
-    except Exception:
-        pass
-
-    for property_name in (
-        "NodeID",
-        "Position",
-        "X",
-        "Y",
-        "Z",
-        "SourceType",
-    ):
-        try:
-            obj.setEditorMode(
-                property_name,
-                1,
-            )
-        except Exception:
-            pass
-
-    return obj
 
 
 def node_objects(
@@ -636,6 +564,17 @@ def generate_nodes_from_layout(
     nodes_group = groups[
         "Nodes"
     ]
+
+    # -----------------------------------------------------
+    # Migrate existing nodes to parametric node behavior
+    # -----------------------------------------------------
+
+    for existing_node in node_objects(
+        nodes_group
+    ):
+        ensure_node_proxy(
+            existing_node
+        )
 
     # -----------------------------------------------------
     # Migrate nodes created before SourceType existed

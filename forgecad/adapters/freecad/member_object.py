@@ -151,6 +151,122 @@ def ensure_member_name_property(
     return layout_object
 
 
+def ensure_member_node_links(
+    obj,
+    start_node,
+    end_node,
+):
+    """Ensure a straight member stores persistent endpoint-node links."""
+
+    if not hasattr(
+        obj,
+        "StartNode",
+    ):
+        obj.addProperty(
+            "App::PropertyLink",
+            "StartNode",
+            "ForgeCAD Topology",
+        )
+
+    if not hasattr(
+        obj,
+        "EndNode",
+    ):
+        obj.addProperty(
+            "App::PropertyLink",
+            "EndNode",
+            "ForgeCAD Topology",
+        )
+
+    obj.StartNode = (
+        start_node
+    )
+
+    obj.EndNode = (
+        end_node
+    )
+
+    return obj
+
+
+def sync_member_points_from_nodes(
+    obj,
+):
+    """Synchronize member endpoint coordinates from linked nodes."""
+
+    start_node = getattr(
+        obj,
+        "StartNode",
+        None,
+    )
+
+    end_node = getattr(
+        obj,
+        "EndNode",
+        None,
+    )
+
+    if (
+        start_node is None
+        or end_node is None
+    ):
+        return False
+
+    if (
+        not hasattr(
+            start_node,
+            "Position",
+        )
+        or not hasattr(
+            end_node,
+            "Position",
+        )
+    ):
+        return False
+
+    start_position = (
+        start_node.Position
+    )
+
+    end_position = (
+        end_node.Position
+    )
+
+    start_vector_type = type(
+        obj.StartPoint
+    )
+
+    end_vector_type = type(
+        obj.EndPoint
+    )
+
+    obj.StartPoint = start_vector_type(
+        float(
+            start_position.x
+        ),
+        float(
+            start_position.y
+        ),
+        float(
+            start_position.z
+        ),
+    )
+
+    obj.EndPoint = end_vector_type(
+        float(
+            end_position.x
+        ),
+        float(
+            end_position.y
+        ),
+        float(
+            end_position.z
+        ),
+    )
+
+    return True
+
+
 class TubeMemberProxy:
     """Keep a ForgeCAD tube synchronized with editable properties."""
 
@@ -285,8 +401,6 @@ class TubeMemberProxy:
             member.profile,
         )
 
-        # Every ForgeCAD member now knows whether it should
-        # regenerate as a plain tube or as a coped tube.
         ensure_notch_properties(
             obj
         )
@@ -478,6 +592,10 @@ class TubeMemberProxy:
         self._updating = True
 
         try:
+            sync_member_points_from_nodes(
+                obj
+            )
+
             profile = (
                 self._selected_profile(
                     obj
@@ -548,4 +666,3 @@ class TubeMemberProxy:
             self._update_label(
                 obj
             )
-            

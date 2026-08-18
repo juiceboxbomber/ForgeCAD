@@ -18,9 +18,14 @@ from forgecad.adapters.freecad.commands.generate_from_selection import (
 from forgecad.adapters.freecad.document_tree import (
     initialize_project_tree,
 )
+from forgecad.adapters.freecad.member_object import (
+    ensure_member_node_links,
+)
 
 
 COMMAND_NAME = "ForgeCAD_CreateMemberBetweenNodes"
+
+POINT_PRECISION = 6
 
 
 def is_forgecad_node(obj):
@@ -81,6 +86,182 @@ def node_from_object(obj):
     )
 
 
+def point_key(
+    point,
+    precision=POINT_PRECISION,
+):
+    """Return a stable coordinate key for a FreeCAD-like point."""
+
+    return (
+        round(
+            float(
+                point.x
+            ),
+            precision,
+        ),
+        round(
+            float(
+                point.y
+            ),
+            precision,
+        ),
+        round(
+            float(
+                point.z
+            ),
+            precision,
+        ),
+    )
+
+
+def layout_object_matches_points(
+    layout_object,
+    start_point,
+    end_point,
+):
+    """
+    Return True when a layout object connects the requested points.
+
+    Connection direction is intentionally ignored so A-B and B-A
+    identify the same physical layout member.
+    """
+
+    if (
+        not hasattr(
+            layout_object,
+            "StartPoint",
+        )
+        or not hasattr(
+            layout_object,
+            "EndPoint",
+        )
+    ):
+        return False
+
+    requested_start = point_key(
+        start_point
+    )
+    requested_end = point_key(
+        end_point
+    )
+
+    existing_start = point_key(
+        layout_object.StartPoint
+    )
+    existing_end = point_key(
+        layout_object.EndPoint
+    )
+
+    return (
+        (
+            existing_start
+            == requested_start
+            and existing_end
+            == requested_end
+        )
+        or (
+            existing_start
+            == requested_end
+            and existing_end
+            == requested_start
+        )
+    )
+
+
+def existing_layout_object(
+    layout_group,
+    start_point,
+    end_point,
+):
+    """Return an existing layout object joining the two points."""
+
+    if layout_group is None:
+        return None
+
+    for obj in getattr(
+        layout_group,
+        "Group",
+        [],
+    ):
+        if layout_object_matches_points(
+            obj,
+            start_point,
+            end_point,
+        ):
+            return obj
+
+    return None
+
+
+def ensure_layout_object_between_nodes(
+    document,
+    layout_group,
+    start_node,
+    end_node,
+):
+    """
+    Return a persistent layout object joining two domain nodes.
+
+    Existing geometry is reused instead of creating a duplicate line.
+    """
+
+    start_point = FreeCAD.Vector(
+        start_node.x,
+        start_node.y,
+        start_node.z,
+    )
+
+    end_point = FreeCAD.Vector(
+        end_node.x,
+        end_node.y,
+        end_node.z,
+    )
+
+    layout_object = (
+        existing_layout_object(
+            layout_group,
+            start_point,
+            end_point,
+        )
+    )
+
+    if layout_object is not None:
+        ensure_layout_id(
+            layout_object
+        )
+        return layout_object
+
+    layout_line = LayoutLine(
+        start=Point3D(
+            start_node.x,
+            start_node.y,
+            start_node.z,
+        ),
+        end=Point3D(
+            end_node.x,
+            end_node.y,
+            end_node.z,
+        ),
+    )
+
+    layout_object = (
+        create_layout_line_object(
+            document,
+            layout_line,
+        )
+    )
+
+    layout_group.addObject(
+        layout_object
+    )
+
+    ensure_layout_id(
+        layout_object
+    )
+
+    return layout_object
+
+
 def next_member_id(frame_group):
     """Return the next available ForgeCAD member ID."""
 
@@ -124,8 +305,10 @@ def create_member_between_nodes(
     end_node_object,
 ):
     """
-    Create a persistent layout line and rendered tube
-    between two ForgeCAD node objects.
+    Create a rendered tube between two ForgeCAD node objects.
+
+    Existing matching layout geometry is reused so the command cannot
+    create duplicate layout lines for the same physical connection.
     """
 
     start_node = node_from_object(
@@ -162,36 +345,23 @@ def create_member_between_nodes(
             "ForgeCAD project has no default material."
         )
 
-    # -----------------------------------------------------
-    # Persistent layout geometry
-    # -----------------------------------------------------
-
-    layout_line = LayoutLine(
-        start=Point3D(
-            start_node.x,
-            start_node.y,
-            start_node.z,
-        ),
-        end=Point3D(
-            end_node.x,
-            end_node.y,
-            end_node.z,
-        ),
-    )
-
     groups = initialize_project_tree(
         document
     )
 
-    layout_object = (
-        create_layout_line_object(
-            document,
-            layout_line,
-        )
-    )
+    # -----------------------------------------------------
+    # Persistent layout geometry
+    # -----------------------------------------------------
 
-    groups["Layout"].addObject(
-        layout_object
+    layout_object = (
+        ensure_layout_object_between_nodes(
+            document,
+            groups[
+                "Layout"
+            ],
+            start_node,
+            end_node,
+        )
     )
 
     source_layout_id = (
@@ -216,7 +386,9 @@ def create_member_between_nodes(
     # -----------------------------------------------------
 
     member_id = next_member_id(
-        groups["Frame"]
+        groups[
+            "Frame"
+        ]
     )
 
     renderer = FrameRenderer()
@@ -230,7 +402,15 @@ def create_member_between_nodes(
         )
     )
 
-    groups["Frame"].addObject(
+    ensure_member_node_links(
+        rendered_object,
+        start_node_object,
+        end_node_object,
+    )
+
+    groups[
+        "Frame"
+    ].addObject(
         rendered_object
     )
 
@@ -341,4 +521,3 @@ def register_command() -> None:
         COMMAND_NAME,
         CreateMemberBetweenNodesCommand(),
     )
-    
