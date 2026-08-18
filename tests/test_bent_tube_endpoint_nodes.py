@@ -113,6 +113,24 @@ fake_bent_tube_object.create_bent_tube_object = (
     _unused_create_bent_tube_object
 )
 
+
+def _unused_ensure_bent_tube_node_links(
+    obj,
+    start_node,
+    end_node,
+):
+    """Minimal topology-link stub required by create_bent_tube import."""
+
+    obj.StartNode = start_node
+    obj.EndNode = end_node
+
+    return obj
+
+
+fake_bent_tube_object.ensure_bent_tube_node_links = (
+    _unused_ensure_bent_tube_node_links
+)
+
 sys.modules[
     "forgecad.adapters.freecad.bent_tube_object"
 ] = (

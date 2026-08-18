@@ -63,6 +63,8 @@ sys.modules[
 ] = fake_part
 
 
+import forgecad.adapters.freecad.node_object as node_object
+
 from forgecad.adapters.freecad.node_object import (
     ForgeCADNodeProxy,
     connected_member_objects,
@@ -368,10 +370,23 @@ def test_node_proxy_propagates_placement_change():
         30,
     )
 
-    proxy.onChanged(
-        node,
-        "Placement",
+    original_rebuild = (
+        node_object.rebuild_joint_status_after_topology_change
     )
+
+    node_object.rebuild_joint_status_after_topology_change = (
+        lambda document: ()
+    )
+
+    try:
+        proxy.onChanged(
+            node,
+            "Placement",
+        )
+    finally:
+        node_object.rebuild_joint_status_after_topology_change = (
+            original_rebuild
+        )
 
     assert (
         node.X,

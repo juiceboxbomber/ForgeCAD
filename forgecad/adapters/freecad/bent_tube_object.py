@@ -52,6 +52,120 @@ def _vector_to_direction(vector) -> Vector3D:
     )
 
 
+def ensure_bent_tube_node_links(
+    obj,
+    start_node,
+    end_node,
+):
+    """Ensure a bent tube stores persistent endpoint-node links."""
+
+    if not hasattr(
+        obj,
+        "StartNode",
+    ):
+        obj.addProperty(
+            "App::PropertyLink",
+            "StartNode",
+            "ForgeCAD Topology",
+        )
+
+    if not hasattr(
+        obj,
+        "EndNode",
+    ):
+        obj.addProperty(
+            "App::PropertyLink",
+            "EndNode",
+            "ForgeCAD Topology",
+        )
+
+    obj.StartNode = start_node
+    obj.EndNode = end_node
+
+    return obj
+
+
+def sync_bent_tube_start_from_node(
+    obj,
+):
+    """Synchronize bent-tube StartPoint from its linked StartNode."""
+
+    start_node = getattr(
+        obj,
+        "StartNode",
+        None,
+    )
+
+    if (
+        start_node is None
+        or not hasattr(
+            start_node,
+            "Position",
+        )
+    ):
+        return False
+
+    position = start_node.Position
+
+    obj.StartPoint = FreeCAD.Vector(
+        float(position.x),
+        float(position.y),
+        float(position.z),
+    )
+
+    return True
+
+
+def sync_bent_tube_end_node(
+    obj,
+    centerline,
+):
+    """Move the linked EndNode to the solved bent-tube endpoint."""
+
+    end_node = getattr(
+        obj,
+        "EndNode",
+        None,
+    )
+
+    if (
+        end_node is None
+        or centerline is None
+    ):
+        return False
+
+    end_point = centerline.end_point
+
+    new_position = FreeCAD.Vector(
+        float(end_point.x),
+        float(end_point.y),
+        float(end_point.z),
+    )
+
+    if hasattr(
+        end_node,
+        "Placement",
+    ):
+        try:
+            end_node.Placement.Base = (
+                new_position
+            )
+            return True
+        except Exception:
+            pass
+
+    if hasattr(
+        end_node,
+        "Position",
+    ):
+        end_node.Position = (
+            new_position
+        )
+        return True
+
+    return False
+
+
 class BentTubeProxy:
     """Keep one ForgeCAD bent tube synchronized with editable properties."""
 
@@ -62,6 +176,7 @@ class BentTubeProxy:
     ):
         self._updating = False
         self._ready = False
+        self._geometry_dirty = True
 
         obj.Proxy = self
 
@@ -378,6 +493,62 @@ class BentTubeProxy:
                 "Bent Tube"
             )
 
+    def _linked_start_node_changed(
+        self,
+        obj,
+    ) -> bool:
+        """Return True when the linked StartNode no longer matches StartPoint."""
+
+        start_node = getattr(
+            obj,
+            "StartNode",
+            None,
+        )
+
+        if (
+            start_node is None
+            or not hasattr(
+                start_node,
+                "Position",
+            )
+        ):
+            return False
+
+        node_position = (
+            start_node.Position
+        )
+
+        start_point = (
+            obj.StartPoint
+        )
+
+        tolerance = 1e-7
+
+        return (
+            abs(
+                float(node_position.x)
+                - float(start_point.x)
+            )
+            > tolerance
+            or abs(
+                float(node_position.y)
+                - float(start_point.y)
+            )
+            > tolerance
+            or abs(
+                float(node_position.z)
+                - float(start_point.z)
+            )
+            > tolerance
+        )
+
+    def mark_geometry_dirty(
+        self,
+    ):
+        """Mark the bent-tube solid for rebuilding on recompute."""
+
+        self._geometry_dirty = True
+
     def update_shape(
         self,
         obj,
@@ -390,11 +561,15 @@ class BentTubeProxy:
         self._updating = True
 
         try:
+            sync_bent_tube_start_from_node(
+                obj
+            )
+
             tube = self._tube_from_properties(
                 obj
             )
 
-            shape, _centerline = (
+            shape, centerline = (
                 build_bent_tube_shape(
                     tube,
                     start_point=_vector_to_point(
@@ -415,6 +590,13 @@ class BentTubeProxy:
                 obj,
                 tube,
             )
+
+            sync_bent_tube_end_node(
+                obj,
+                centerline,
+            )
+
+            self._geometry_dirty = False
 
         finally:
             self._updating = False
@@ -463,6 +645,8 @@ class BentTubeProxy:
             )
 
         if property_name in editable_geometry:
+            self.mark_geometry_dirty()
+
             self.update_shape(
                 obj
             )
@@ -473,13 +657,22 @@ class BentTubeProxy:
     ):
         """Regenerate geometry during document recompute."""
 
-        if self._ready:
+        if not self._ready:
+            return
+
+        if (
+            self._geometry_dirty
+            or self._linked_start_node_changed(
+                obj
+            )
+        ):
             self.update_shape(
                 obj
             )
-            self._update_label(
-                obj
-            )
+
+        self._update_label(
+            obj
+        )
 
 
 def create_bent_tube_object(

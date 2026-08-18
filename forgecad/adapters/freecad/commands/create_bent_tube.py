@@ -9,6 +9,7 @@ from forgecad.adapters.freecad.bender_library_store import (
 )
 from forgecad.adapters.freecad.bent_tube_object import (
     create_bent_tube_object,
+    ensure_bent_tube_node_links,
 )
 from forgecad.adapters.freecad.commands.generate_nodes import (
     SOURCE_MANUAL,
@@ -421,9 +422,21 @@ class CreateBentTubeCommand:
                 obj
             )
 
-            ensure_bent_tube_endpoint_nodes(
-                document,
+            start_node, end_node = (
+                ensure_bent_tube_endpoint_nodes(
+                    document,
+                    obj,
+                )
+            )
+
+            ensure_bent_tube_node_links(
                 obj,
+                start_node,
+                end_node,
+            )
+
+            obj.Proxy.update_shape(
+                obj
             )
 
             document.recompute()

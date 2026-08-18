@@ -73,6 +73,9 @@ class InteractiveLayoutLineTool:
         self.length_label = None
         self.length_input = None
 
+        self.cached_layout_segments = ()
+        self.cached_layout_endpoints = ()
+
     def start(self):
         """Start the interactive drawing tool."""
 
@@ -81,6 +84,7 @@ class InteractiveLayoutLineTool:
         self.status_bar = FreeCADGui.getMainWindow().statusBar()
 
         self.create_length_input()
+        self.refresh_snap_cache()
 
         self.mouse_callback = self.view.addEventCallback(
             "SoMouseButtonEvent",
@@ -180,27 +184,47 @@ class InteractiveLayoutLineTool:
         if self.status_bar is not None:
             self.status_bar.showMessage(message)
 
+    def _remove_view_callback(
+        self,
+        event_name,
+        callback,
+    ):
+        """Safely remove one viewport callback if the view still exists."""
+
+        if (
+            self.view is None
+            or callback is None
+        ):
+            return
+
+        try:
+            self.view.removeEventCallback(
+                event_name,
+                callback,
+            )
+        except Exception:
+            # FreeCAD may already have destroyed the underlying
+            # Quarter/Coin view object during workbench or document
+            # changes. Cleanup must remain idempotent in that case.
+            pass
+
     def stop(self):
         """Stop drawing and clean up temporary objects."""
 
-        if self.view is not None:
-            if self.mouse_callback is not None:
-                self.view.removeEventCallback(
-                    "SoMouseButtonEvent",
-                    self.mouse_callback,
-                )
+        self._remove_view_callback(
+            "SoMouseButtonEvent",
+            self.mouse_callback,
+        )
 
-            if self.move_callback is not None:
-                self.view.removeEventCallback(
-                    "SoLocation2Event",
-                    self.move_callback,
-                )
+        self._remove_view_callback(
+            "SoLocation2Event",
+            self.move_callback,
+        )
 
-            if self.keyboard_callback is not None:
-                self.view.removeEventCallback(
-                    "SoKeyboardEvent",
-                    self.keyboard_callback,
-                )
+        self._remove_view_callback(
+            "SoKeyboardEvent",
+            self.keyboard_callback,
+        )
 
         self.mouse_callback = None
         self.move_callback = None
@@ -213,7 +237,10 @@ class InteractiveLayoutLineTool:
         self.remove_length_input()
 
         if self.status_bar is not None:
-            self.status_bar.clearMessage()
+            try:
+                self.status_bar.clearMessage()
+            except Exception:
+                pass
 
         self.status_bar = None
         self.view = None
@@ -352,13 +379,15 @@ class InteractiveLayoutLineTool:
             LAYOUT_PLANE_Z,
         )
 
-    def layout_segments(self):
-        """Return existing ForgeCAD line segments."""
+    def refresh_snap_cache(self):
+        """Cache layout geometry used by interactive snapping."""
 
         document = FreeCAD.ActiveDocument
 
         if document is None:
-            return []
+            self.cached_layout_segments = ()
+            self.cached_layout_endpoints = ()
+            return
 
         segments = []
 
@@ -394,23 +423,29 @@ class InteractiveLayoutLineTool:
                 )
             )
 
-        return segments
+        self.cached_layout_segments = tuple(
+            segments
+        )
+
+        self.cached_layout_endpoints = tuple(
+            point
+            for segment in self.cached_layout_segments
+            for point in segment
+        )
+
+    def layout_segments(self):
+        """Return cached existing ForgeCAD line segments."""
+
+        return list(
+            self.cached_layout_segments
+        )
 
     def layout_endpoints(self):
-        """Return existing ForgeCAD layout endpoints."""
+        """Return cached existing ForgeCAD layout endpoints."""
 
-        endpoints = []
-
-        for start, end in self.layout_segments():
-            endpoints.append(
-                start
-            )
-
-            endpoints.append(
-                end
-            )
-
-        return endpoints
+        return list(
+            self.cached_layout_endpoints
+        )
 
     def point_to_screen(self, point):
         """Convert a ForgeCAD point to screen coordinates."""
@@ -809,8 +844,6 @@ class InteractiveLayoutLineTool:
 
                 self.snap_marker = None
 
-                document.recompute()
-
             return
 
         if self.snap_marker is None:
@@ -835,8 +868,6 @@ class InteractiveLayoutLineTool:
                 ),
             )
         )
-
-        document.recompute()
 
     def update_preview_line(
         self,
@@ -883,8 +914,6 @@ class InteractiveLayoutLineTool:
                 end_vector,
             )
         )
-
-        document.recompute()
 
     def line_measurements(
         self,
@@ -1078,6 +1107,7 @@ class InteractiveLayoutLineTool:
         )
 
         document.recompute()
+        self.refresh_snap_cache()
 
         self.start_point = point
         self.last_resolved_point = None
@@ -1111,7 +1141,7 @@ class InteractiveLayoutLineTool:
             "Esc: Finish."
         )
 
-        document.recompute()
+
 
     def accept_numeric_length(self):
         """Commit an exact line length from the length box."""

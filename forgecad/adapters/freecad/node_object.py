@@ -248,6 +248,23 @@ def refresh_connected_members(
     return members
 
 
+def rebuild_joint_status_after_topology_change(
+    document,
+):
+    """Rebuild disposable joint markers after structural topology moves."""
+
+    if document is None:
+        return ()
+
+    from forgecad.adapters.freecad.joint_status_objects import (
+        rebuild_joint_status_objects,
+    )
+
+    return rebuild_joint_status_objects(
+        document
+    )
+
+
 class ForgeCADNodeProxy:
     """Keep a ForgeCAD node and its connected topology synchronized."""
 
@@ -374,6 +391,10 @@ class ForgeCADNodeProxy:
             refresh_connected_members(
                 document,
                 obj,
+            )
+
+            rebuild_joint_status_after_topology_change(
+                document
             )
 
             self._last_position = (

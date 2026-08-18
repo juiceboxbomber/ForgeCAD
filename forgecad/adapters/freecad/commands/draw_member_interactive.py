@@ -165,6 +165,52 @@ def node_point(
     )
 
 
+def is_bent_tube_object(
+    obj,
+):
+    """Return True for a ForgeCAD parametric bent-tube object."""
+
+    if obj is None:
+        return False
+
+    required_properties = (
+        "TubeName",
+        "BendCount",
+        "InitialDirection",
+        "InitialBendNormal",
+    )
+
+    return all(
+        hasattr(
+            obj,
+            property_name,
+        )
+        for property_name
+        in required_properties
+    )
+
+
+def bent_tube_objects(
+    document,
+):
+    """Return ForgeCAD bent-tube objects in a document."""
+
+    if document is None:
+        return []
+
+    return [
+        obj
+        for obj in getattr(
+            document,
+            "Objects",
+            (),
+        )
+        if is_bent_tube_object(
+            obj
+        )
+    ]
+
+
 class InteractiveMemberTool(
     InteractiveLayoutLineTool
 ):
@@ -176,10 +222,95 @@ class InteractiveMemberTool(
         self.snapped_node = None
         self.current_snap_type = None
 
+        self._bent_tube_selectability = []
+        self._cached_forgecad_nodes = ()
+
+    def suppress_bent_tube_selection(
+        self,
+    ):
+        """
+        Temporarily prevent bent-tube solids from receiving viewport picks.
+
+        Interactive member placement snaps to ForgeCAD endpoint nodes, so
+        selecting the complex bent-tube Part shape is unnecessary and can
+        trigger expensive face/edge preselection in FreeCAD.
+        """
+
+        document = FreeCAD.ActiveDocument
+
+        self._bent_tube_selectability = []
+
+        for obj in bent_tube_objects(
+            document
+        ):
+            view_object = getattr(
+                obj,
+                "ViewObject",
+                None,
+            )
+
+            if view_object is None:
+                continue
+
+            try:
+                original = bool(
+                    view_object.Selectable
+                )
+            except Exception:
+                continue
+
+            self._bent_tube_selectability.append(
+                (
+                    obj,
+                    original,
+                )
+            )
+
+            try:
+                view_object.Selectable = False
+            except Exception:
+                pass
+
+    def restore_bent_tube_selection(
+        self,
+    ):
+        """Restore bent-tube selectability after the member tool stops."""
+
+        for obj, selectable in (
+            self._bent_tube_selectability
+        ):
+            view_object = getattr(
+                obj,
+                "ViewObject",
+                None,
+            )
+
+            if view_object is None:
+                continue
+
+            try:
+                view_object.Selectable = (
+                    selectable
+                )
+            except Exception:
+                pass
+
+        self._bent_tube_selectability = []
+
     def start(self):
         """Start interactive member creation."""
 
-        super().start()
+        self.suppress_bent_tube_selection()
+
+        try:
+            super().start()
+        except Exception:
+            self.restore_bent_tube_selection()
+            raise
+
+        self._cached_forgecad_nodes = tuple(
+            self.forgecad_nodes()
+        )
 
         self.show_status(
             "ForgeCAD Member: Click first point. "
@@ -192,8 +323,12 @@ class InteractiveMemberTool(
 
         self.snapped_node = None
         self.current_snap_type = None
+        self._cached_forgecad_nodes = ()
 
-        super().stop()
+        try:
+            super().stop()
+        finally:
+            self.restore_bent_tube_selection()
 
     def forgecad_nodes(self):
         """Return existing generated ForgeCAD node objects."""
@@ -252,7 +387,15 @@ class InteractiveMemberTool(
             SNAP_DISTANCE_PIXELS
         )
 
-        for node in self.forgecad_nodes():
+        nodes = (
+            self._cached_forgecad_nodes
+            if self._cached_forgecad_nodes
+            else tuple(
+                self.forgecad_nodes()
+            )
+        )
+
+        for node in nodes:
             try:
                 point = node_point(
                     node
@@ -617,6 +760,12 @@ class InteractiveMemberTool(
             "Enter exact length if needed. "
             "Esc: Finish."
         )
+
+        self._cached_forgecad_nodes = tuple(
+            self.forgecad_nodes()
+        )
+
+        self.refresh_snap_cache()
 
         document.recompute()
 
