@@ -408,7 +408,7 @@ def restore_rendered_member_node_links(
 
         if (
             start_node is None
-            or end_node is None
+            and end_node is None
         ):
             continue
 

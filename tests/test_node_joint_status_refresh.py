@@ -1,4 +1,4 @@
-"""Tests for joint-marker refresh after node topology movement."""
+"""Tests that node placement callbacks do not rebuild joint-status objects."""
 
 import sys
 import types
@@ -108,7 +108,7 @@ class FakeDocument:
         return None
 
 
-def test_node_move_rebuilds_joint_status_objects():
+def test_node_move_does_not_rebuild_joint_status_objects():
     document = FakeDocument()
 
     node = FakeNode(
@@ -151,9 +151,7 @@ def test_node_move_rebuilds_joint_status_objects():
             original
         )
 
-    assert calls == [
-        document
-    ]
+    assert calls == []
 
 
 def test_unchanged_node_does_not_rebuild_joint_status_objects():

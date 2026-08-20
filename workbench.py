@@ -19,6 +19,10 @@ class ForgeCADWorkbench(
     def Initialize(
         self,
     ):
+        from forgecad.adapters.freecad.undo_redo_observer import (
+            register_undo_redo_observer,
+        )
+
         from forgecad.adapters.freecad.commands.new_project import (
             COMMAND_NAME as NEW_PROJECT_COMMAND,
             register_command as register_new_project_command,
@@ -128,6 +132,7 @@ class ForgeCADWorkbench(
             COMMAND_NAME as EXPORT_BEND_SCHEDULE_COMMAND,
             register_command as register_export_bend_schedule_command,
         )
+
         from forgecad.adapters.freecad.commands.export_bend_fabrication_sheet import (
             COMMAND_NAME as EXPORT_BEND_FABRICATION_SHEET_COMMAND,
             register_command as register_export_bend_fabrication_sheet_command,
@@ -137,6 +142,8 @@ class ForgeCADWorkbench(
             COMMAND_NAME as BENDER_TOOLING_SETTINGS_COMMAND,
             register_command as register_bender_tooling_settings_command,
         )
+
+        register_undo_redo_observer()
 
         register_new_project_command()
         register_workspace_settings_command()
@@ -188,9 +195,6 @@ class ForgeCADWorkbench(
             EXPORT_BEND_FABRICATION_SHEET_COMMAND,
             FABRICATION_READINESS_COMMAND,
             CUT_LIST_COMMAND,
-            FABRICATION_READINESS_COMMAND,
-            CUT_LIST_COMMAND,
-            
         ]
 
         self.appendToolbar(

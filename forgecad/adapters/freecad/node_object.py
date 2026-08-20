@@ -248,6 +248,32 @@ def refresh_connected_members(
     return members
 
 
+
+def touch_connected_members(
+    document,
+    node_object,
+):
+    """
+    Mark members linked to a moved node for normal FreeCAD recompute.
+
+    This deliberately does not rebuild Shape here. Each TubeMember owns
+    its geometry and will synchronize from StartNode/EndNode in execute().
+    """
+
+    members = connected_member_objects(
+        document,
+        node_object,
+    )
+
+    for member_object in members:
+        try:
+            member_object.touch()
+        except Exception:
+            pass
+
+    return members
+
+
 def rebuild_joint_status_after_topology_change(
     document,
 ):
@@ -337,7 +363,7 @@ class ForgeCADNodeProxy:
         obj,
         property_name,
     ):
-        """Propagate Placement changes into layout and linked members."""
+        """Propagate Placement changes into node mirrors and layout state only."""
 
         if (
             not self._ready
@@ -388,13 +414,9 @@ class ForgeCADNodeProxy:
                 new_position,
             )
 
-            refresh_connected_members(
+            touch_connected_members(
                 document,
                 obj,
-            )
-
-            rebuild_joint_status_after_topology_change(
-                document
             )
 
             self._last_position = (
