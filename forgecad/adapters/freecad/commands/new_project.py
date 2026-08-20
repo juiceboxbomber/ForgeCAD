@@ -4,8 +4,18 @@ import FreeCAD
 import FreeCADGui
 from PySide import QtGui
 
-from forgecad.adapters.freecad.dialogs import NewProjectDialog
-from forgecad.services import create_project
+from forgecad.adapters.freecad.dialogs import (
+    NewProjectDialog,
+)
+from forgecad.adapters.freecad.workspace import (
+    initialize_project_workspace,
+)
+from forgecad.services import (
+    create_project,
+)
+from forgecad.adapters.freecad.bender_library_store import (
+    save_bender_library,
+)
 
 
 COMMAND_NAME = "ForgeCAD_NewProject"
@@ -17,7 +27,10 @@ class NewProjectCommand:
     def GetResources(self):
         return {
             "MenuText": "New ForgeCAD Project",
-            "ToolTip": "Create a new configured ForgeCAD project",
+            "ToolTip": (
+                "Create a new configured "
+                "ForgeCAD project"
+            ),
         }
 
     def Activated(self):
@@ -25,45 +38,74 @@ class NewProjectCommand:
             FreeCADGui.getMainWindow(),
         )
 
-        if dialog.exec_() != QtGui.QDialog.Accepted:
+        if (
+            dialog.exec_()
+            != QtGui.QDialog.Accepted
+        ):
             return
 
         project = create_project(
             name=dialog.project_name,
+            project_type=dialog.project_type,
             application=dialog.application,
             display_units=dialog.display_units,
-            active_profile_name=dialog.active_profile_name,
+            active_profile_name=(
+                dialog.active_profile_name
+            ),
         )
 
-        document_name = project.name.replace(" ", "_")
-        document = FreeCAD.newDocument(document_name)
+        document_name = (
+            project.name.replace(
+                " ",
+                "_",
+            )
+        )
+        document = FreeCAD.newDocument(
+            document_name
+        )
 
         root = document.addObject(
-            "App::FeaturePython",
+            "App::DocumentObjectGroupPython",
             "ForgeCADProject",
         )
         root.Label = project.name
 
         root.addProperty(
             "App::PropertyString",
+            "ProjectType",
+            "ForgeCAD",
+        )
+        root.ProjectType = (
+            project.project_type.value
+        )
+
+        root.addProperty(
+            "App::PropertyString",
             "Application",
             "ForgeCAD",
         )
-        root.Application = project.application.value
+        root.Application = (
+            project.application.value
+        )
 
         root.addProperty(
             "App::PropertyString",
             "DisplayUnits",
             "ForgeCAD",
         )
-        root.DisplayUnits = project.display_units.value
+        root.DisplayUnits = (
+            project.display_units.value
+        )
 
         root.addProperty(
             "App::PropertyString",
             "ActiveTubeProfile",
             "ForgeCAD",
         )
-        root.ActiveTubeProfile = project.active_profile_name or ""
+        root.ActiveTubeProfile = (
+            project.active_profile_name
+            or ""
+        )
 
         root.addProperty(
             "App::PropertyString",
@@ -72,11 +114,22 @@ class NewProjectCommand:
         )
         root.DefaultMaterial = (
             project.default_material.name
-            if project.default_material is not None
+            if project.default_material
+            is not None
             else ""
         )
 
         document.recompute()
+
+        initialize_project_workspace(
+            document,
+            project.project_type,
+        )
+
+        save_bender_library(
+            document,
+            project.bender_library,
+        )
 
 
 def register_command() -> None:
@@ -86,4 +139,3 @@ def register_command() -> None:
         COMMAND_NAME,
         NewProjectCommand(),
     )
-    
