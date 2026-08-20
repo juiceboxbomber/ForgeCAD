@@ -291,10 +291,87 @@ def rebuild_joint_status_after_topology_change(
     )
 
 
+def load_persisted_node_constraint(
+    document,
+    node_object,
+):
+    """
+    Load a persisted movement constraint for a node, if available.
+
+    This helper is intended for safe lifecycle points such as proxy
+    initialization, not for repeated calls from Placement.onChanged().
+    """
+
+    if (
+        document is None
+        or node_object is None
+    ):
+        return None
+
+    position = getattr(
+        node_object,
+        "Position",
+        None,
+    )
+
+    if position is None:
+        return None
+
+    try:
+        from forgecad.adapters.freecad.joint_constraint_store import (
+            load_joint_constraint,
+            vector_key,
+        )
+
+        return load_joint_constraint(
+            document,
+            vector_key(
+                position
+            ),
+        )
+
+    except Exception:
+        return None
+
+
+def infer_node_constraint(
+    document,
+    node_object,
+):
+    """Infer the current collinear-through constraint from live topology."""
+
+    if (
+        document is None
+        or node_object is None
+    ):
+        return None
+
+    try:
+        from forgecad.adapters.freecad.joint_inspector_adapter import (
+            joint_from_node_object,
+        )
+        from forgecad.services.joint_constraints import (
+            collinear_through_constraint_for_joint,
+        )
+
+        joint = joint_from_node_object(
+            document,
+            node_object,
+        )
+
+        return collinear_through_constraint_for_joint(
+            joint
+        )
+
+    except Exception:
+        return None
+
+
 def solve_constrained_node_position(
     document,
     node_object,
     proposed_position,
+    constraint=None,
 ):
     """
     Return a solved node position using the current joint topology.
@@ -317,27 +394,18 @@ def solve_constrained_node_position(
         )
 
     try:
-        from forgecad.adapters.freecad.joint_inspector_adapter import (
-            joint_from_node_object,
-        )
         from forgecad.geometry.point import (
             Point3D,
         )
         from forgecad.services.joint_constraints import (
-            collinear_through_constraint_for_joint,
             solve_collinear_through_joint,
         )
 
-        joint = joint_from_node_object(
-            document,
-            node_object,
-        )
-
-        constraint = (
-            collinear_through_constraint_for_joint(
-                joint
+        if constraint is None:
+            constraint = infer_node_constraint(
+                document,
+                node_object,
             )
-        )
 
         if constraint is None:
             return vector_copy(
@@ -391,6 +459,17 @@ class ForgeCADNodeProxy:
 
         self._last_position = point_key(
             obj.Position
+        )
+
+        self._movement_constraint = (
+            load_persisted_node_constraint(
+                getattr(
+                    obj,
+                    "Document",
+                    None,
+                ),
+                obj,
+            )
         )
 
         self._ready = True
@@ -476,11 +555,22 @@ class ForgeCADNodeProxy:
             None,
         )
 
+        if self._movement_constraint is None:
+            self._movement_constraint = (
+                infer_node_constraint(
+                    document,
+                    obj,
+                )
+            )
+
         new_position = (
             solve_constrained_node_position(
                 document,
                 obj,
                 proposed_position,
+                constraint=(
+                    self._movement_constraint
+                ),
             )
         )
 

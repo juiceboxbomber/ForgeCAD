@@ -131,7 +131,8 @@ def test_node_drag_uses_solved_position_before_layout_and_member_touch():
     node_object.solve_constrained_node_position = (
         lambda document,
         node_object_value,
-        proposed_position: (
+        proposed_position,
+        constraint=None: (
             events.append(
                 (
                     "solve",
@@ -290,7 +291,8 @@ def test_node_drag_without_constraint_keeps_proposed_position():
     node_object.solve_constrained_node_position = (
         lambda document,
         node_object_value,
-        proposed_position: FakeVector(
+        proposed_position,
+        constraint=None: FakeVector(
             proposed_position.x,
             proposed_position.y,
             proposed_position.z,
