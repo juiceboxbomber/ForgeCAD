@@ -8,6 +8,7 @@ from forgecad.services import (
 )
 from forgecad.adapters.freecad.member_notch import (
     build_member_shape,
+    sync_cope_axes_from_target_members,
     ensure_notch_properties,
 )
 
@@ -192,7 +193,13 @@ def ensure_member_node_links(
 def sync_member_points_from_nodes(
     obj,
 ):
-    """Synchronize member endpoint coordinates from linked nodes."""
+    """
+    Synchronize each member endpoint from its linked node independently.
+
+    A straight member may be linked at only one end. This allows a
+    T-junction branch to follow the shared junction node while its
+    opposite endpoint remains at its stored coordinate.
+    """
 
     start_node = getattr(
         obj,
@@ -206,65 +213,59 @@ def sync_member_points_from_nodes(
         None,
     )
 
-    if (
-        start_node is None
-        or end_node is None
-    ):
-        return False
+    changed = False
 
     if (
-        not hasattr(
+        start_node is not None
+        and hasattr(
             start_node,
             "Position",
         )
-        or not hasattr(
+    ):
+        start_position = (
+            start_node.Position
+        )
+
+        obj.StartPoint = FreeCAD.Vector(
+            float(
+                start_position.x
+            ),
+            float(
+                start_position.y
+            ),
+            float(
+                start_position.z
+            ),
+        )
+
+        changed = True
+
+    if (
+        end_node is not None
+        and hasattr(
             end_node,
             "Position",
         )
     ):
-        return False
+        end_position = (
+            end_node.Position
+        )
 
-    start_position = (
-        start_node.Position
-    )
+        obj.EndPoint = FreeCAD.Vector(
+            float(
+                end_position.x
+            ),
+            float(
+                end_position.y
+            ),
+            float(
+                end_position.z
+            ),
+        )
 
-    end_position = (
-        end_node.Position
-    )
+        changed = True
 
-    start_vector_type = type(
-        obj.StartPoint
-    )
-
-    end_vector_type = type(
-        obj.EndPoint
-    )
-
-    obj.StartPoint = start_vector_type(
-        float(
-            start_position.x
-        ),
-        float(
-            start_position.y
-        ),
-        float(
-            start_position.z
-        ),
-    )
-
-    obj.EndPoint = end_vector_type(
-        float(
-            end_position.x
-        ),
-        float(
-            end_position.y
-        ),
-        float(
-            end_position.z
-        ),
-    )
-
-    return True
+    return changed
 
 
 class TubeMemberProxy:
@@ -596,6 +597,10 @@ class TubeMemberProxy:
                 obj
             )
 
+            sync_cope_axes_from_target_members(
+                obj
+            )
+
             profile = (
                 self._selected_profile(
                     obj
@@ -656,13 +661,19 @@ class TubeMemberProxy:
         self,
         obj,
     ):
-        """Regenerate geometry during document recompute."""
+        """Regenerate geometry from linked topology during document recompute."""
 
-        if self._ready:
-            self.update_shape(
-                obj
-            )
+        if not self._ready:
+            return
 
-            self._update_label(
-                obj
-            )
+        sync_member_points_from_nodes(
+            obj
+        )
+
+        self.update_shape(
+            obj
+        )
+
+        self._update_label(
+            obj
+        )

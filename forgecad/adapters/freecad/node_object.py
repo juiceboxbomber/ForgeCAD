@@ -248,6 +248,32 @@ def refresh_connected_members(
     return members
 
 
+
+def touch_connected_members(
+    document,
+    node_object,
+):
+    """
+    Mark members linked to a moved node for normal FreeCAD recompute.
+
+    This deliberately does not rebuild Shape here. Each TubeMember owns
+    its geometry and will synchronize from StartNode/EndNode in execute().
+    """
+
+    members = connected_member_objects(
+        document,
+        node_object,
+    )
+
+    for member_object in members:
+        try:
+            member_object.touch()
+        except Exception:
+            pass
+
+    return members
+
+
 def rebuild_joint_status_after_topology_change(
     document,
 ):
@@ -263,6 +289,92 @@ def rebuild_joint_status_after_topology_change(
     return rebuild_joint_status_objects(
         document
     )
+
+
+def solve_constrained_node_position(
+    document,
+    node_object,
+    proposed_position,
+):
+    """
+    Return a solved node position using the current joint topology.
+
+    The existing joint geometry is inspected before the node mirrors and
+    connected member endpoints are changed. When ForgeCAD identifies a
+    traditional two-member straight-through pair, the proposed node
+    position is projected onto the axis joining the two outer endpoints.
+
+    If no applicable constraint exists, the proposed position is returned
+    unchanged.
+    """
+
+    if (
+        document is None
+        or node_object is None
+    ):
+        return vector_copy(
+            proposed_position
+        )
+
+    try:
+        from forgecad.adapters.freecad.joint_inspector_adapter import (
+            joint_from_node_object,
+        )
+        from forgecad.geometry.point import (
+            Point3D,
+        )
+        from forgecad.services.joint_constraints import (
+            collinear_through_constraint_for_joint,
+            solve_collinear_through_joint,
+        )
+
+        joint = joint_from_node_object(
+            document,
+            node_object,
+        )
+
+        constraint = (
+            collinear_through_constraint_for_joint(
+                joint
+            )
+        )
+
+        if constraint is None:
+            return vector_copy(
+                proposed_position
+            )
+
+        solved = solve_collinear_through_joint(
+            proposed_position=Point3D(
+                float(
+                    proposed_position.x
+                ),
+                float(
+                    proposed_position.y
+                ),
+                float(
+                    proposed_position.z
+                ),
+            ),
+            constraint=constraint,
+        )
+
+        return FreeCAD.Vector(
+            float(
+                solved.x
+            ),
+            float(
+                solved.y
+            ),
+            float(
+                solved.z
+            ),
+        )
+
+    except Exception:
+        return vector_copy(
+            proposed_position
+        )
 
 
 class ForgeCADNodeProxy:
@@ -337,7 +449,7 @@ class ForgeCADNodeProxy:
         obj,
         property_name,
     ):
-        """Propagate Placement changes into layout and linked members."""
+        """Propagate Placement changes into node mirrors and layout state only."""
 
         if (
             not self._ready
@@ -346,9 +458,29 @@ class ForgeCADNodeProxy:
         ):
             return
 
-        new_position = (
+        proposed_position = (
             self._placement_position(
                 obj
+            )
+        )
+
+        old_position = (
+            self._position_from_key(
+                self._last_position
+            )
+        )
+
+        document = getattr(
+            obj,
+            "Document",
+            None,
+        )
+
+        new_position = (
+            solve_constrained_node_position(
+                document,
+                obj,
+                proposed_position,
             )
         )
 
@@ -360,26 +492,39 @@ class ForgeCADNodeProxy:
             new_key
             == self._last_position
         ):
-            return
+            if (
+                point_key(
+                    proposed_position
+                )
+                != new_key
+            ):
+                self._updating = True
 
-        old_position = (
-            self._position_from_key(
-                self._last_position
-            )
-        )
+                try:
+                    obj.Placement.Base = vector_copy(
+                        new_position
+                    )
+                finally:
+                    self._updating = False
+
+            return
 
         self._updating = True
 
         try:
+            if (
+                point_key(
+                    proposed_position
+                )
+                != new_key
+            ):
+                obj.Placement.Base = vector_copy(
+                    new_position
+                )
+
             self._refresh_coordinate_properties(
                 obj,
                 new_position,
-            )
-
-            document = getattr(
-                obj,
-                "Document",
-                None,
             )
 
             sync_layout_points_for_node(
@@ -388,13 +533,9 @@ class ForgeCADNodeProxy:
                 new_position,
             )
 
-            refresh_connected_members(
+            touch_connected_members(
                 document,
                 obj,
-            )
-
-            rebuild_joint_status_after_topology_change(
-                document
             )
 
             self._last_position = (
