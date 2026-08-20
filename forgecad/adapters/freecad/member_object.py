@@ -8,6 +8,7 @@ from forgecad.services import (
 )
 from forgecad.adapters.freecad.member_notch import (
     build_member_shape,
+    sync_cope_axes_from_target_members,
     ensure_notch_properties,
 )
 
@@ -593,6 +594,10 @@ class TubeMemberProxy:
 
         try:
             sync_member_points_from_nodes(
+                obj
+            )
+
+            sync_cope_axes_from_target_members(
                 obj
             )
 

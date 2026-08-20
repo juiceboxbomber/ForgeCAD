@@ -659,6 +659,14 @@ def configure_cope_specifications(
         if coped_object is None:
             continue
 
+        target_object = (
+            object_by_member_identity.get(
+                id(
+                    specification.target_member
+                )
+            )
+        )
+
         coped_end = (
             specification.coped_end
         )
@@ -699,6 +707,11 @@ def configure_cope_specifications(
                     specification.target_outside_diameter,
                 )
 
+                if target_object is not None:
+                    coped_object.StartCopeTargetMember = (
+                        target_object
+                    )
+
             else:
                 configure_start_cope_secondary(
                     coped_object,
@@ -706,6 +719,11 @@ def configure_cope_specifications(
                     target_end,
                     specification.target_outside_diameter,
                 )
+
+                if target_object is not None:
+                    coped_object.StartCope2TargetMember = (
+                        target_object
+                    )
 
         elif (
             coped_end
@@ -719,6 +737,11 @@ def configure_cope_specifications(
                     specification.target_outside_diameter,
                 )
 
+                if target_object is not None:
+                    coped_object.EndCopeTargetMember = (
+                        target_object
+                    )
+
             else:
                 configure_end_cope_secondary(
                     coped_object,
@@ -726,6 +749,11 @@ def configure_cope_specifications(
                     target_end,
                     specification.target_outside_diameter,
                 )
+
+                if target_object is not None:
+                    coped_object.EndCope2TargetMember = (
+                        target_object
+                    )
 
         else:
             raise ValueError(

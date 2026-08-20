@@ -130,6 +130,14 @@ def ensure_notch_properties(
         )
         obj.StartCopeThroughDiameter = 0.0
 
+    if not hasattr(obj, "StartCopeTargetMember"):
+        obj.addProperty(
+            "App::PropertyLink",
+            "StartCopeTargetMember",
+            "ForgeCAD Start Cope",
+        )
+        obj.StartCopeTargetMember = None
+
     # ---------------------------------------------------------
     # End-end cylindrical cope
     # ---------------------------------------------------------
@@ -178,6 +186,14 @@ def ensure_notch_properties(
         )
         obj.EndCopeThroughDiameter = 0.0
 
+    if not hasattr(obj, "EndCopeTargetMember"):
+        obj.addProperty(
+            "App::PropertyLink",
+            "EndCopeTargetMember",
+            "ForgeCAD End Cope",
+        )
+        obj.EndCopeTargetMember = None
+
     # ---------------------------------------------------------
     # Secondary start-end cylindrical cope
     # ---------------------------------------------------------
@@ -214,6 +230,14 @@ def ensure_notch_properties(
         )
         obj.StartCope2ThroughDiameter = 0.0
 
+    if not hasattr(obj, "StartCope2TargetMember"):
+        obj.addProperty(
+            "App::PropertyLink",
+            "StartCope2TargetMember",
+            "ForgeCAD Start Cope",
+        )
+        obj.StartCope2TargetMember = None
+
     # ---------------------------------------------------------
     # Secondary end-end cylindrical cope
     # ---------------------------------------------------------
@@ -249,6 +273,14 @@ def ensure_notch_properties(
             "ForgeCAD End Cope",
         )
         obj.EndCope2ThroughDiameter = 0.0
+
+    if not hasattr(obj, "EndCope2TargetMember"):
+        obj.addProperty(
+            "App::PropertyLink",
+            "EndCope2TargetMember",
+            "ForgeCAD End Cope",
+        )
+        obj.EndCope2TargetMember = None
 
     # ---------------------------------------------------------
     # Physical fabrication extension
@@ -476,6 +508,8 @@ def clear_start_cope(
     obj.StartCope2ThroughStart = zero_vector()
     obj.StartCope2ThroughEnd = zero_vector()
     obj.StartCope2ThroughDiameter = 0.0
+    obj.StartCopeTargetMember = None
+    obj.StartCope2TargetMember = None
 
 
 def clear_end_cope(
@@ -495,6 +529,8 @@ def clear_end_cope(
     obj.EndCope2ThroughStart = zero_vector()
     obj.EndCope2ThroughEnd = zero_vector()
     obj.EndCope2ThroughDiameter = 0.0
+    obj.EndCopeTargetMember = None
+    obj.EndCope2TargetMember = None
 
 
 def clear_notch(
@@ -754,6 +790,111 @@ def configure_end_cope_secondary(
     )
     obj.EndCope2ThroughDiameter = diameter
     obj.EndCope2Enabled = True
+
+
+def sync_cope_axes_from_target_members(
+    obj,
+):
+    """
+    Refresh enabled cope cutter axes from linked target members.
+
+    Each cope slot may retain an App::PropertyLink to the rendered
+    member whose current centerline defines the cylindrical cutter
+    axis. This keeps saved cope geometry parametric when the target
+    member moves.
+    """
+
+    ensure_notch_properties(
+        obj
+    )
+
+    cope_slots = (
+        (
+            "StartCopeEnabled",
+            "StartCopeTargetMember",
+            "StartCopeThroughStart",
+            "StartCopeThroughEnd",
+        ),
+        (
+            "EndCopeEnabled",
+            "EndCopeTargetMember",
+            "EndCopeThroughStart",
+            "EndCopeThroughEnd",
+        ),
+        (
+            "StartCope2Enabled",
+            "StartCope2TargetMember",
+            "StartCope2ThroughStart",
+            "StartCope2ThroughEnd",
+        ),
+        (
+            "EndCope2Enabled",
+            "EndCope2TargetMember",
+            "EndCope2ThroughStart",
+            "EndCope2ThroughEnd",
+        ),
+    )
+
+    refreshed = 0
+
+    for (
+        enabled_property,
+        target_property,
+        through_start_property,
+        through_end_property,
+    ) in cope_slots:
+        if not bool(
+            getattr(
+                obj,
+                enabled_property,
+            )
+        ):
+            continue
+
+        target_member = getattr(
+            obj,
+            target_property,
+            None,
+        )
+
+        if target_member is None:
+            continue
+
+        if not hasattr(
+            target_member,
+            "StartPoint",
+        ) or not hasattr(
+            target_member,
+            "EndPoint",
+        ):
+            continue
+
+        target_start = target_member.StartPoint
+        target_end = target_member.EndPoint
+
+        setattr(
+            obj,
+            through_start_property,
+            FreeCAD.Vector(
+                target_start.x,
+                target_start.y,
+                target_start.z,
+            ),
+        )
+
+        setattr(
+            obj,
+            through_end_property,
+            FreeCAD.Vector(
+                target_end.x,
+                target_end.y,
+                target_end.z,
+            ),
+        )
+
+        refreshed += 1
+
+    return refreshed
 
 
 def configure_notch(
