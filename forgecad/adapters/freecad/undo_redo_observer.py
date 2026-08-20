@@ -1,4 +1,4 @@
-"""Post-Undo/Redo recompute support for parametric ForgeCAD members."""
+"""Post-Undo/Redo refresh support for parametric ForgeCAD objects."""
 
 import FreeCAD
 
@@ -83,8 +83,56 @@ def refresh_parametric_members(
     )
 
 
+def rebuild_disposable_joint_markers(
+    document,
+):
+    """
+    Rebuild ForgeCAD joint-status marker objects from current frame state.
+
+    Joint markers are disposable Part::Feature objects. They are rebuilt
+    only after member geometry has finished its normal post-Undo/Redo
+    recompute.
+    """
+
+    if document is None:
+        return ()
+
+    try:
+        from forgecad.adapters.freecad.joint_status_objects import (
+            rebuild_joint_status_objects,
+        )
+
+        return rebuild_joint_status_objects(
+            document
+        )
+
+    except Exception:
+        return ()
+
+
+def refresh_after_undo_redo(
+    document,
+):
+    """
+    Restore parametric members first, then rebuild disposable joint markers.
+    """
+
+    touched = refresh_parametric_members(
+        document
+    )
+
+    markers = rebuild_disposable_joint_markers(
+        document
+    )
+
+    return (
+        touched,
+        markers,
+    )
+
+
 class ForgeCADUndoRedoObserver:
-    """Refresh parametric member dependencies after FreeCAD Undo or Redo."""
+    """Refresh ForgeCAD dependencies after FreeCAD Undo or Redo."""
 
     def __init__(
         self,
@@ -96,12 +144,15 @@ class ForgeCADUndoRedoObserver:
         document,
     ):
         if self._refreshing:
-            return ()
+            return (
+                (),
+                (),
+            )
 
         self._refreshing = True
 
         try:
-            return refresh_parametric_members(
+            return refresh_after_undo_redo(
                 document
             )
         finally:

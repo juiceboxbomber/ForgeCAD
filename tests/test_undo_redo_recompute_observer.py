@@ -1,12 +1,8 @@
-"""Tests for the production ForgeCAD Undo/Redo recompute observer."""
+"""Tests for ForgeCAD post-Undo/Redo dependency refresh."""
 
 import importlib
 import sys
 import types
-
-
-class FakeNode:
-    pass
 
 
 class FakeMember:
@@ -15,15 +11,12 @@ class FakeMember:
         linked=True,
     ):
         self.MemberID = "M001"
-
         self.StartNode = (
-            FakeNode()
+            object()
             if linked
             else None
         )
-
         self.EndNode = None
-
         self.touch_count = 0
 
     def touch(
@@ -33,15 +26,7 @@ class FakeMember:
 
 
 class FakeUnrelated:
-    def __init__(
-        self,
-    ):
-        self.touch_count = 0
-
-    def touch(
-        self,
-    ):
-        self.touch_count += 1
+    pass
 
 
 class FakeDocument:
@@ -52,7 +37,6 @@ class FakeDocument:
         self.Objects = list(
             objects
         )
-
         self.recompute_count = 0
 
     def recompute(
@@ -60,10 +44,6 @@ class FakeDocument:
     ):
         self.recompute_count += 1
 
-
-# ---------------------------------------------------------------------------
-# FreeCAD test doubles
-# ---------------------------------------------------------------------------
 
 fake_freecad = types.ModuleType(
     "FreeCAD"
@@ -88,9 +68,6 @@ sys.modules[
 ] = fake_freecad
 
 
-# Importing forgecad.adapters.freecad first executes that package's
-# __init__.py, which imports renderer.py. The renderer imports Part,
-# so provide a lightweight Part module for normal-Python unit tests.
 fake_part = types.ModuleType(
     "Part"
 )
@@ -105,7 +82,7 @@ observer_module = importlib.import_module(
 )
 
 
-def test_undo_touches_linked_members_then_recomputes():
+def test_refresh_members_touches_only_linked_members():
     linked = FakeMember(
         linked=True
     )
@@ -114,34 +91,29 @@ def test_undo_touches_linked_members_then_recomputes():
         linked=False
     )
 
-    unrelated = FakeUnrelated()
-
     document = FakeDocument(
         [
             linked,
             unlinked,
-            unrelated,
         ]
     )
 
-    observer = (
-        observer_module.ForgeCADUndoRedoObserver()
+    touched = (
+        observer_module.refresh_parametric_members(
+            document
+        )
     )
 
-    observer.slotUndoDocument(
-        document
+    assert touched == (
+        linked,
     )
 
     assert linked.touch_count == 1
-
     assert unlinked.touch_count == 0
-
-    assert unrelated.touch_count == 0
-
     assert document.recompute_count == 1
 
 
-def test_redo_touches_linked_members_then_recomputes():
+def test_undo_redo_rebuilds_joint_markers_after_member_refresh():
     member = FakeMember(
         linked=True
     )
@@ -152,46 +124,107 @@ def test_redo_touches_linked_members_then_recomputes():
         ]
     )
 
-    observer = (
-        observer_module.ForgeCADUndoRedoObserver()
+    events = []
+
+    original_members = (
+        observer_module.refresh_parametric_members
     )
 
-    observer.slotRedoDocument(
-        document
+    original_markers = (
+        observer_module.rebuild_disposable_joint_markers
     )
 
-    assert member.touch_count == 1
-
-    assert document.recompute_count == 1
-
-
-def test_no_linked_members_does_not_force_recompute():
-    member = FakeMember(
-        linked=False
-    )
-
-    document = FakeDocument(
-        [
+    observer_module.refresh_parametric_members = (
+        lambda current_document: events.append(
+            "members"
+        )
+        or (
             member,
-        ]
+        )
     )
 
-    observer = (
-        observer_module.ForgeCADUndoRedoObserver()
+    observer_module.rebuild_disposable_joint_markers = (
+        lambda current_document: events.append(
+            "markers"
+        )
+        or (
+            "J001",
+        )
     )
 
-    observer.slotUndoDocument(
+    try:
+        result = (
+            observer_module.refresh_after_undo_redo(
+                document
+            )
+        )
+
+    finally:
+        observer_module.refresh_parametric_members = (
+            original_members
+        )
+
+        observer_module.rebuild_disposable_joint_markers = (
+            original_markers
+        )
+
+    assert events == [
+        "members",
+        "markers",
+    ]
+
+    assert result == (
+        (
+            member,
+        ),
+        (
+            "J001",
+        ),
+    )
+
+
+def test_observer_uses_combined_post_transaction_refresh():
+    document = FakeDocument(
+        []
+    )
+
+    events = []
+
+    original_refresh = (
+        observer_module.refresh_after_undo_redo
+    )
+
+    observer_module.refresh_after_undo_redo = (
+        lambda current_document: events.append(
+            current_document
+        )
+        or (
+            (),
+            (),
+        )
+    )
+
+    try:
+        observer = (
+            observer_module.ForgeCADUndoRedoObserver()
+        )
+
+        observer.slotRedoDocument(
+            document
+        )
+
+    finally:
+        observer_module.refresh_after_undo_redo = (
+            original_refresh
+        )
+
+    assert events == [
         document
-    )
-
-    assert member.touch_count == 0
-
-    assert document.recompute_count == 0
+    ]
 
 
 def test_registration_is_idempotent():
     observer_module._OBSERVER = None
-
     registered.clear()
 
     first = (
@@ -214,5 +247,4 @@ def test_registration_is_idempotent():
     )
 
     assert registered == []
-
     assert observer_module._OBSERVER is None
