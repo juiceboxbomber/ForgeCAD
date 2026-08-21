@@ -28,6 +28,7 @@ from forgecad.fabrication.joint_treatment import (
     JointTreatmentMode,
 )
 from forgecad.adapters.freecad.joint_treatment_options import (
+    is_collinear_through_pair,
     is_right_angle_corner,
     member_display_name,
     member_layout_id,
@@ -557,7 +558,7 @@ def test_right_angle_tolerance_rejects_86_degree_corner():
     )
 
 
-def test_three_member_joint_has_single_and_pair_options():
+def test_three_member_joint_has_only_geometrically_valid_pair_option():
     center = FakeVector(
         0,
         0,
@@ -609,7 +610,7 @@ def test_three_member_joint_has_single_and_pair_options():
 
     assert len(
         options
-    ) == 7
+    ) == 5
 
     pair_options = [
         option
@@ -622,7 +623,17 @@ def test_three_member_joint_has_single_and_pair_options():
 
     assert len(
         pair_options
-    ) == 3
+    ) == 1
+
+    assert (
+        pair_options[
+            0
+        ].through_layout_ids
+        == (
+            "L001",
+            "L002",
+        )
+    )
 
 
 def test_three_member_pair_ids_are_persistent_layout_ids():
@@ -684,14 +695,6 @@ def test_three_member_pair_ids_are_persistent_layout_ids():
         (
             "L001",
             "L002",
-        ),
-        (
-            "L001",
-            "L003",
-        ),
-        (
-            "L002",
-            "L003",
         ),
     }
 
@@ -923,3 +926,138 @@ def test_stale_saved_treatment_selects_automatic():
         == 0
     )
     
+
+def test_collinear_opposite_members_are_valid_through_pair():
+    center = FakeVector(
+        0,
+        0,
+        0,
+    )
+
+    first = FakeMember(
+        "M001",
+        "L001",
+        start=center,
+        end=FakeVector(
+            -500,
+            0,
+            0,
+        ),
+    )
+
+    second = FakeMember(
+        "M002",
+        "L002",
+        start=center,
+        end=FakeVector(
+            500,
+            0,
+            0,
+        ),
+    )
+
+    assert is_collinear_through_pair(
+        first,
+        second,
+    )
+
+
+def test_non_collinear_members_are_not_valid_through_pair():
+    center = FakeVector(
+        0,
+        0,
+        0,
+    )
+
+    first = FakeMember(
+        "M001",
+        "L001",
+        start=center,
+        end=FakeVector(
+            500,
+            0,
+            0,
+        ),
+    )
+
+    second = FakeMember(
+        "M002",
+        "L002",
+        start=center,
+        end=FakeVector(
+            0,
+            500,
+            0,
+        ),
+    )
+
+    assert not is_collinear_through_pair(
+        first,
+        second,
+    )
+
+
+def test_ambiguous_three_direction_joint_has_no_through_pairs():
+    center = FakeVector(
+        0,
+        0,
+        0,
+    )
+
+    angle = math.radians(
+        45.0
+    )
+
+    members = [
+        FakeMember(
+            "M001",
+            "L001",
+            start=center,
+            end=FakeVector(
+                500,
+                0,
+                0,
+            ),
+        ),
+        FakeMember(
+            "M002",
+            "L002",
+            start=center,
+            end=FakeVector(
+                0,
+                500,
+                0,
+            ),
+        ),
+        FakeMember(
+            "M003",
+            "L003",
+            start=center,
+            end=FakeVector(
+                500
+                * math.cos(
+                    angle
+                ),
+                500
+                * math.sin(
+                    angle
+                ),
+                0,
+            ),
+        ),
+    ]
+
+    options = treatment_options_for_members(
+        members
+    )
+
+    pair_options = [
+        option
+        for option in options
+        if (
+            option.mode
+            == JointTreatmentMode.THROUGH_PAIR
+        )
+    ]
+
+    assert pair_options == []
