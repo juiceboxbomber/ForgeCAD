@@ -309,12 +309,19 @@ def create_member_between_nodes(
     document,
     start_node_object,
     end_node_object,
+    profile=None,
+    material=None,
 ):
     """
     Create a rendered tube between two ForgeCAD node objects.
 
     Existing matching layout geometry is reused so the command cannot
     create duplicate layout lines for the same physical connection.
+
+    Optional profile/material arguments allow callers such as Mirror
+    Members to preserve source-member properties. When omitted, the
+    project active profile and default material are used exactly as
+    before.
     """
 
     start_node = node_from_object(
@@ -338,13 +345,20 @@ def create_member_between_nodes(
         document
     )
 
-    profile = (
-        project.tube_library.active_profile
-    )
+    if profile is None:
+        profile = (
+            project.tube_library.active_profile
+        )
 
-    material = (
-        project.default_material
-    )
+    if material is None:
+        material = (
+            project.default_material
+        )
+
+    if profile is None:
+        raise ValueError(
+            "ForgeCAD project has no active tube profile."
+        )
 
     if material is None:
         raise ValueError(
