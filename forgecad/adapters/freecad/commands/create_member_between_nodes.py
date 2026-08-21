@@ -24,6 +24,9 @@ from forgecad.adapters.freecad.member_object import (
 from forgecad.adapters.freecad.topology_refresh import (
     refresh_joint_topology,
 )
+from forgecad.adapters.freecad.fabrication_refresh import (
+    refresh_fabrication_for_document,
+)
 
 
 COMMAND_NAME = "ForgeCAD_CreateMemberBetweenNodes"
@@ -420,6 +423,10 @@ def create_member_between_nodes(
     document.recompute()
 
     refresh_joint_topology(
+        document
+    )
+
+    refresh_fabrication_for_document(
         document
     )
 

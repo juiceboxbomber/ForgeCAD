@@ -5,6 +5,7 @@ from forgecad.services.joint_status import (
     BOTH_MITERED_STATUS,
     INVALID_STATUS,
     MEMBER_THROUGH_STATUS,
+    NEEDS_DECISION_STATUS,
     THROUGH_PAIR_STATUS,
     UNREVIEWED_STATUS,
 )
@@ -20,6 +21,15 @@ def test_unreviewed_visual():
     )
 
     assert visual.symbol == "[ ]"
+    assert visual.category == "attention"
+
+
+def test_needs_decision_visual():
+    visual = joint_status_visual(
+        NEEDS_DECISION_STATUS
+    )
+
+    assert visual.symbol == "[?]"
     assert visual.category == "attention"
 
 
@@ -80,6 +90,18 @@ def test_unreviewed_tree_label():
     )
 
 
+def test_needs_decision_tree_label():
+    label = joint_status_label(
+        "J005",
+        NEEDS_DECISION_STATUS,
+    )
+
+    assert (
+        label
+        == "[?] J005 - Needs Decision"
+    )
+
+
 def test_manual_tree_label():
     label = joint_status_label(
         "J014",
@@ -114,4 +136,3 @@ def test_invalid_tree_label():
         label
         == "[!] J003 - Invalid Treatment"
     )
-    

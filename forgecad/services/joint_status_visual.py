@@ -26,6 +26,12 @@ UNREVIEWED_VISUAL = JointStatusVisual(
     category="attention",
 )
 
+NEEDS_DECISION_VISUAL = JointStatusVisual(
+    code="needs_decision",
+    symbol="[?]",
+    category="attention",
+)
+
 AUTOMATIC_VISUAL = JointStatusVisual(
     code="automatic",
     symbol="[A]",
@@ -55,6 +61,12 @@ def joint_status_visual(
         == JointStatusCode.UNREVIEWED
     ):
         return UNREVIEWED_VISUAL
+
+    if (
+        status.code
+        == JointStatusCode.NEEDS_DECISION
+    ):
+        return NEEDS_DECISION_VISUAL
 
     if (
         status.code

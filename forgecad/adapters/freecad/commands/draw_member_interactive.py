@@ -431,8 +431,8 @@ class InteractiveMemberTool(
         position,
     ):
         """
-        Resolve node snap, layout endpoint snap,
-        angle inference, or free position.
+        Resolve node snap, existing centerline snap,
+        layout endpoint snap, angle inference, or free position.
         """
 
         # -------------------------------------------------
@@ -463,11 +463,32 @@ class InteractiveMemberTool(
         self.snapped_node = None
 
         # -------------------------------------------------
-        # Second priority: existing layout endpoint
+        # Second priority: existing member/layout centerline
+        # -------------------------------------------------
+
+        line_point = (
+            self.find_line_snap_point(
+                position
+            )
+        )
+
+        if line_point is not None:
+            self.current_snap_type = (
+                "LINE"
+            )
+
+            return (
+                line_point,
+                "LINE",
+                None,
+            )
+
+        # -------------------------------------------------
+        # Third priority: existing layout endpoint
         # -------------------------------------------------
 
         endpoint = (
-            super().find_snap_point(
+            self.find_snap_point(
                 position
             )
         )
@@ -556,6 +577,9 @@ class InteractiveMemberTool(
                 f"{self.snapped_node.NodeID}"
             )
 
+        if snap_type == "LINE":
+            return "ON CENTERLINE"
+
         return super().inference_name(
             snap_type,
             snapped_angle,
@@ -581,6 +605,14 @@ class InteractiveMemberTool(
             self.snap_marker.Label = (
                 "Node Snap "
                 f"{self.snapped_node.NodeID}"
+            )
+
+        elif (
+            self.current_snap_type
+            == "LINE"
+        ):
+            self.snap_marker.Label = (
+                "Centerline Snap"
             )
 
         elif (
@@ -619,6 +651,7 @@ class InteractiveMemberTool(
 
         if snap_type in (
             "NODE",
+            "LINE",
             "ENDPOINT",
         ):
             self.update_snap_marker(
@@ -638,6 +671,13 @@ class InteractiveMemberTool(
                 self.show_status(
                     "ForgeCAD Member | "
                     f"NODE {self.snapped_node.NodeID} | "
+                    "Click to start | Esc: Finish"
+                )
+
+            elif snap_type == "LINE":
+                self.show_status(
+                    "ForgeCAD Member | "
+                    "ON CENTERLINE | "
                     "Click to start | Esc: Finish"
                 )
 

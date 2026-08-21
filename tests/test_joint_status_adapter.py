@@ -235,7 +235,7 @@ def test_corner_document_detects_one_joint(
     ) == 1
 
 
-def test_missing_saved_treatment_is_unreviewed(
+def test_missing_saved_treatment_is_automatic_when_joint_is_obvious(
     monkeypatch,
 ):
     document = (
@@ -259,10 +259,10 @@ def test_missing_saved_treatment_is_unreviewed(
 
     assert (
         item.status.code
-        == JointStatusCode.UNREVIEWED
+        == JointStatusCode.AUTOMATIC
     )
 
-    assert not item.is_reviewed
+    assert item.is_reviewed
     assert not item.is_manual
 
 
@@ -429,20 +429,20 @@ def test_review_summary_counts_real_document_joints(
 
     assert (
         review.summary.reviewed_joints
-        == 1
+        == 2
     )
 
     assert (
         review.summary.unreviewed_joints
-        == 1
+        == 0
     )
 
     assert (
         review.summary.automatic_treatments
-        == 1
+        == 2
     )
 
-    assert not (
+    assert (
         review.summary.all_reviewed
     )
 
@@ -516,4 +516,3 @@ def test_complete_document_review_reports_all_reviewed(
     assert (
         review.summary.all_reviewed
     )
-    

@@ -10,6 +10,7 @@ from forgecad.fabrication.joint_treatment import (
 
 
 DEFAULT_RIGHT_ANGLE_TOLERANCE_DEGREES = 3.0
+DEFAULT_COLLINEAR_TOLERANCE_DEGREES = 3.0
 
 
 @dataclass(frozen=True, slots=True)
@@ -485,6 +486,38 @@ def is_right_angle_corner(
     )
 
 
+
+def is_collinear_through_pair(
+    first_member,
+    second_member,
+    tolerance_degrees=(
+        DEFAULT_COLLINEAR_TOLERANCE_DEGREES
+    ),
+):
+    """
+    Return True when two connected members form one straight through path.
+
+    Through-pair choices are useful only when the two members are
+    geometrically collinear at the joint. This prevents the Joint
+    Inspector from offering arbitrary member combinations that cannot
+    represent one continuous tube path.
+    """
+
+    angle = two_member_angle_degrees(
+        first_member,
+        second_member,
+    )
+
+    if angle is None:
+        return False
+
+    return (
+        angle
+        <= float(
+            tolerance_degrees
+        )
+    )
+
 def automatic_treatment_option():
     """Return the default automatic treatment option."""
 
@@ -761,6 +794,12 @@ def treatment_options_for_members(
         persistent_members,
         2,
     ):
+        if not is_collinear_through_pair(
+            first_member,
+            second_member,
+        ):
+            continue
+
         options.append(
             through_pair_option(
                 first_member,
