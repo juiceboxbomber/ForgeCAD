@@ -83,6 +83,11 @@ class ForgeCADWorkbench(
             register_command as register_create_member_between_nodes_command,
         )
 
+        from forgecad.adapters.freecad.commands.mirror_members import (
+            COMMAND_NAME as MIRROR_MEMBERS_COMMAND,
+            register_command as register_mirror_members_command,
+        )
+
         from forgecad.adapters.freecad.commands.generate_from_selection import (
             COMMAND_NAME as GENERATE_FROM_SELECTION_COMMAND,
             register_command as register_generate_from_selection_command,
@@ -157,6 +162,7 @@ class ForgeCADWorkbench(
         register_create_node_from_geometry_command()
         register_draw_member_interactive_command()
         register_create_member_between_nodes_command()
+        register_mirror_members_command()
         register_generate_from_selection_command()
         register_member_properties_command()
         register_select_members_command()
@@ -184,6 +190,7 @@ class ForgeCADWorkbench(
             CREATE_NODE_FROM_GEOMETRY_COMMAND,
             DRAW_MEMBER_INTERACTIVE_COMMAND,
             CREATE_MEMBER_BETWEEN_NODES_COMMAND,
+            MIRROR_MEMBERS_COMMAND,
             GENERATE_FROM_SELECTION_COMMAND,
             MEMBER_PROPERTIES_COMMAND,
             SELECT_MEMBERS_COMMAND,
