@@ -312,6 +312,95 @@ def classification_display_name(
     )
 
 
+def treatment_builder_label(
+    option,
+):
+    """Return builder-friendly text for one joint-treatment option."""
+
+    mode = str(
+        getattr(
+            getattr(
+                option,
+                "mode",
+                "",
+            ),
+            "value",
+            getattr(
+                option,
+                "mode",
+                "",
+            ),
+        )
+    ).strip()
+
+    label = str(
+        getattr(
+            option,
+            "label",
+            "",
+        )
+    ).strip()
+
+    if mode == "auto":
+        return (
+            "Automatic - Let ForgeCAD choose"
+        )
+
+    if mode == "member_through":
+        if label.endswith(
+            " Through"
+        ):
+            member_name = label[
+                :-len(
+                    " Through"
+                )
+            ].strip()
+
+            return (
+                f"{member_name} Through - "
+                f"Keep {member_name} continuous"
+            )
+
+        return (
+            f"{label} - Keep this member continuous"
+        )
+
+    if mode == "through_pair":
+        if label.endswith(
+            " Through Pair"
+        ):
+            pair_name = label[
+                :-len(
+                    " Through Pair"
+                )
+            ].strip()
+
+            return (
+                f"{pair_name} Through Pair - "
+                "Keep these members continuous"
+            )
+
+        return (
+            f"{label} - Keep these members continuous"
+        )
+
+    if mode in (
+        "both_coped",
+        "both_mitered",
+    ):
+        return (
+            f"{label} - Miter both members at the joint"
+        )
+
+    return label
+
+
+def treatment_builder_prompt():
+    """Return the plain-language treatment question."""
+
+    return "How should this joint be built?"
+
+
 class JointInspectorDialog(
     QtGui.QDialog
 ):
@@ -448,12 +537,26 @@ class JointInspectorDialog(
 
         treatment_group = (
             QtGui.QGroupBox(
-                "Joint Treatment"
+                "Build This Joint"
             )
         )
 
         treatment_layout = (
             QtGui.QVBoxLayout()
+        )
+
+        treatment_question = (
+            QtGui.QLabel(
+                treatment_builder_prompt()
+            )
+        )
+
+        treatment_question.setWordWrap(
+            True
+        )
+
+        treatment_layout.addWidget(
+            treatment_question
         )
 
         treatment_form = (
@@ -465,7 +568,7 @@ class JointInspectorDialog(
         )
 
         treatment_form.addRow(
-            "Treatment:",
+            "Build choice:",
             self.treatment_combo,
         )
 
@@ -650,7 +753,9 @@ class JointInspectorDialog(
             self.treatment_options
         ):
             self.treatment_combo.addItem(
-                option.label
+                treatment_builder_label(
+                    option
+                )
             )
 
         if (
@@ -671,8 +776,8 @@ class JointInspectorDialog(
         if saved is None:
             self.treatment_status.setText(
                 (
-                    "Current treatment: Automatic "
-                    "(no manual treatment saved)"
+                    "Current build: Automatic "
+                    "(ForgeCAD chooses the joint treatment)"
                 )
             )
         else:
@@ -695,13 +800,13 @@ class JointInspectorDialog(
 
                 self.treatment_status.setText(
                     (
-                        "Current treatment: "
+                        "Current build: "
                         f"{option.label}"
                     )
                 )
             else:
                 self.treatment_status.setText(
-                    "Current treatment: Automatic"
+                    "Current build: Automatic"
                 )
 
     def refresh_after_regeneration(
@@ -793,7 +898,7 @@ class JointInspectorDialog(
 
         self.treatment_status.setText(
             (
-                "Current treatment: "
+                "Current build: "
                 f"{option.label}"
             )
         )
