@@ -18,6 +18,10 @@ class JointStatusCode(
         "automatic"
     )
 
+    NEEDS_DECISION = (
+        "needs_decision"
+    )
+
     MEMBER_THROUGH = (
         "member_through"
     )
@@ -57,7 +61,7 @@ class JointStatus:
         """
         Return True when the joint requires designer attention.
 
-        Unreviewed joints require review.
+        Unreviewed and decision-required joints require attention.
 
         Invalid saved treatments also require attention even
         though a treatment record exists.
@@ -66,7 +70,10 @@ class JointStatus:
         return (
             not self.is_reviewed
             or self.code
-            == JointStatusCode.INVALID
+            in (
+                JointStatusCode.NEEDS_DECISION,
+                JointStatusCode.INVALID,
+            )
         )
 
 
@@ -81,6 +88,13 @@ AUTOMATIC_STATUS = JointStatus(
     code=JointStatusCode.AUTOMATIC,
     label="Automatic",
     is_reviewed=True,
+    is_manual=False,
+)
+
+NEEDS_DECISION_STATUS = JointStatus(
+    code=JointStatusCode.NEEDS_DECISION,
+    label="Needs Decision",
+    is_reviewed=False,
     is_manual=False,
 )
 
