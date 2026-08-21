@@ -28,6 +28,10 @@ GROUP_DEFINITIONS = {
         "ForgeCADJointTreatments",
         "Joint Treatments",
     ),
+    "Joint Constraints": (
+        "ForgeCADJointConstraints",
+        "Joint Constraints",
+    ),
     "Tube Library": (
         "ForgeCADTubeLibrary",
         "Tube Library",
@@ -120,6 +124,7 @@ def initialize_project_tree(
         "Nodes",
         "Joints",
         "Joint Treatments",
+        "Joint Constraints",
         "Tube Library",
         "Settings",
     ):

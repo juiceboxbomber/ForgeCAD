@@ -29,8 +29,8 @@ from forgecad.services import (
 from forgecad.services.layout_conversion import (
     layout_from_selected_objects,
 )
-from forgecad.adapters.freecad.joint_status_objects import (
-    rebuild_joint_status_objects,
+from forgecad.adapters.freecad.topology_refresh import (
+    refresh_joint_topology,
 )
 
 
@@ -607,7 +607,7 @@ def regenerate_frame(
 
     document.recompute()
 
-    rebuild_joint_status_objects(
+    refresh_joint_topology(
         document
     )
 

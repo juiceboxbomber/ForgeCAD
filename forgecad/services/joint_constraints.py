@@ -1,22 +1,12 @@
 """Joint constraint geometry helpers."""
 
-from dataclasses import dataclass
-
+from forgecad.fabrication.joint_constraint import (
+    CollinearThroughConstraint,
+)
 from forgecad.geometry.point import Point3D
 from forgecad.services.joint_member_roles import (
     identify_member_roles,
 )
-
-
-@dataclass(
-    frozen=True,
-    slots=True,
-)
-class CollinearThroughConstraint:
-    """A joint constrained to remain on a straight through-member axis."""
-
-    axis_start: Point3D
-    axis_end: Point3D
 
 
 def vector_between(
