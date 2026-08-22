@@ -43,6 +43,11 @@ class ForgeCADWorkbench(
             register_command as register_create_bent_tube_command,
         )
 
+        from forgecad.adapters.freecad.commands.delete_bent_tube import (
+            COMMAND_NAME as DELETE_BENT_TUBE_COMMAND,
+            register_command as register_delete_bent_tube_command,
+        )
+
         from forgecad.adapters.freecad.commands.draw_layout_line import (
             COMMAND_NAME as DRAW_LAYOUT_LINE_COMMAND,
             register_command as register_draw_layout_line_command,
@@ -179,6 +184,7 @@ class ForgeCADWorkbench(
         register_workspace_settings_command()
         register_display_settings_command()
         register_create_bent_tube_command()
+        register_delete_bent_tube_command()
         register_draw_layout_line_command()
         register_define_layout_lines_command()
         register_draw_layout_line_interactive_command()
@@ -212,6 +218,7 @@ class ForgeCADWorkbench(
             DISPLAY_SETTINGS_COMMAND,
             BENDER_TOOLING_SETTINGS_COMMAND,
             CREATE_BENT_TUBE_COMMAND,
+            DELETE_BENT_TUBE_COMMAND,
             DRAW_LAYOUT_LINE_COMMAND,
             DEFINE_LAYOUT_LINES_COMMAND,
             DRAW_LAYOUT_LINE_INTERACTIVE_COMMAND,
