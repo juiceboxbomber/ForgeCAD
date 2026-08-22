@@ -197,7 +197,7 @@ def test_plane_batch_mirrors_every_source_member(
     monkeypatch.setattr(
         module,
         "mirror_member_object_across_plane",
-        lambda document, obj, plane: (
+        lambda document, obj, plane, offset=0.0: (
             calls.append(
                 (
                     obj,

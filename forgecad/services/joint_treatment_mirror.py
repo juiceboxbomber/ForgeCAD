@@ -90,8 +90,9 @@ def mirror_node_key_across_centerline(
 def mirror_node_key_across_plane(
     source_node_key,
     plane,
+    offset=0.0,
 ):
-    """Return a joint node key reflected across a principal plane."""
+    """Return a joint node key reflected across an axis-aligned plane."""
 
     source_node = node_from_key(
         source_node_key
@@ -101,6 +102,7 @@ def mirror_node_key_across_plane(
         mirror_node_across_plane(
             source_node,
             plane,
+            offset=offset,
         )
     )
 

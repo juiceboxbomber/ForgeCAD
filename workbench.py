@@ -73,6 +73,11 @@ class ForgeCADWorkbench(
             register_command as register_create_node_from_geometry_command,
         )
 
+        from forgecad.adapters.freecad.commands.create_reference_plane import (
+            COMMAND_NAME as CREATE_REFERENCE_PLANE_COMMAND,
+            register_command as register_create_reference_plane_command,
+        )
+
         from forgecad.adapters.freecad.commands.draw_member_interactive import (
             COMMAND_NAME as DRAW_MEMBER_INTERACTIVE_COMMAND,
             register_command as register_draw_member_interactive_command,
@@ -170,6 +175,7 @@ class ForgeCADWorkbench(
         register_generate_nodes_command()
         register_create_offset_node_command()
         register_create_node_from_geometry_command()
+        register_create_reference_plane_command()
         register_draw_member_interactive_command()
         register_create_member_between_nodes_command()
         register_split_member_command()
@@ -200,6 +206,7 @@ class ForgeCADWorkbench(
             GENERATE_NODES_COMMAND,
             CREATE_OFFSET_NODE_COMMAND,
             CREATE_NODE_FROM_GEOMETRY_COMMAND,
+            CREATE_REFERENCE_PLANE_COMMAND,
             DRAW_MEMBER_INTERACTIVE_COMMAND,
             CREATE_MEMBER_BETWEEN_NODES_COMMAND,
             SPLIT_MEMBER_COMMAND,

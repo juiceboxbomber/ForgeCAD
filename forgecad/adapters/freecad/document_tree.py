@@ -20,6 +20,10 @@ GROUP_DEFINITIONS = {
         "ForgeCADNodes",
         "Nodes",
     ),
+    "Reference Geometry": (
+        "ForgeCADReferenceGeometry",
+        "Reference Geometry",
+    ),
     "Joints": (
         "ForgeCADJoints",
         "Joints",
@@ -122,6 +126,7 @@ def initialize_project_tree(
         "Frame",
         "Bent Tubes",
         "Nodes",
+        "Reference Geometry",
         "Joints",
         "Joint Treatments",
         "Joint Constraints",

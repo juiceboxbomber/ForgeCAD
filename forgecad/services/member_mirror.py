@@ -228,39 +228,67 @@ def mirror_member_across_centerline(
         material=member.material,
     )
 
+
 def mirror_node_across_plane(
     node: Node,
     plane,
+    offset=0.0,
 ) -> Node:
     """
-    Reflect a node across a principal plane through the origin.
+    Reflect a node across an axis-aligned principal plane.
 
-    XY reverses Z.
-    XZ reverses Y.
-    YZ reverses X.
+    offset is measured along the plane normal:
+      XY -> Z = offset
+      XZ -> Y = offset
+      YZ -> X = offset
+
+    The default offset of zero preserves the original global-plane API.
     """
 
     plane_name = str(
-        plane
+        getattr(
+            plane,
+            "value",
+            plane,
+        )
     ).strip().upper()
+
+    offset = float(
+        offset
+    )
 
     if plane_name == "XY":
         return Node(
             node.x,
             node.y,
-            -node.z,
+            (
+                2.0 * offset
+                - float(
+                    node.z
+                )
+            ),
         )
 
     if plane_name == "XZ":
         return Node(
             node.x,
-            -node.y,
+            (
+                2.0 * offset
+                - float(
+                    node.y
+                )
+            ),
             node.z,
         )
 
     if plane_name == "YZ":
         return Node(
-            -node.x,
+            (
+                2.0 * offset
+                - float(
+                    node.x
+                )
+            ),
             node.y,
             node.z,
         )
@@ -273,21 +301,25 @@ def mirror_node_across_plane(
 def mirror_member_across_plane(
     member: Member,
     plane,
+    offset=0.0,
 ) -> Member:
     """
-    Reflect a member across a principal plane through the origin.
+    Reflect a member across an axis-aligned principal plane.
 
-    Tube profile and material are preserved.
+    Tube profile and material are preserved. offset defaults to zero for
+    compatibility with the original global-plane mirror behavior.
     """
 
     return Member(
         start=mirror_node_across_plane(
             member.start,
             plane,
+            offset=offset,
         ),
         end=mirror_node_across_plane(
             member.end,
             plane,
+            offset=offset,
         ),
         profile=member.profile,
         material=member.material,

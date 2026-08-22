@@ -37,6 +37,10 @@ from forgecad.adapters.freecad.topology_refresh import (
 from forgecad.adapters.freecad.fabrication_refresh import (
     refresh_fabrication_for_document,
 )
+from forgecad.adapters.freecad.reference_plane_store import (
+    is_reference_plane_object,
+    reference_plane_from_object,
+)
 
 
 COMMAND_NAME = "ForgeCAD_MirrorMembers"
@@ -529,8 +533,9 @@ def preserve_plane_mirrored_treatments(
     mirrored_objects,
     treatment_snapshots,
     plane,
+    offset=0.0,
 ):
-    """Mirror saved joint decisions across a principal plane."""
+    """Mirror saved joint decisions across an axis-aligned plane."""
 
     layout_id_map = (
         mirrored_layout_id_map(
@@ -547,6 +552,7 @@ def preserve_plane_mirrored_treatments(
             mirror_node_key_across_plane(
                 source_node_key,
                 plane,
+                offset=offset,
             )
         ),
     )
@@ -666,6 +672,7 @@ class MirrorReferenceDialog(
     """Choose how selected members should be mirrored."""
 
     CENTERLINE = "centerline"
+    REFERENCE_PLANE = "reference_plane"
     XY_PLANE = "xy_plane"
     XZ_PLANE = "xz_plane"
     YZ_PLANE = "yz_plane"
@@ -709,6 +716,14 @@ class MirrorReferenceDialog(
             "ForgeCAD member or layout line to define the centerline."
         )
 
+        reference_plane_button = QtGui.QPushButton(
+            "Reference Plane"
+        )
+
+        reference_plane_button.setToolTip(
+            "After closing this dialog, select one ForgeCAD Reference Plane."
+        )
+
         xy_button = QtGui.QPushButton(
             "XY Plane"
         )
@@ -738,6 +753,10 @@ class MirrorReferenceDialog(
         )
 
         layout.addWidget(
+            reference_plane_button
+        )
+
+        layout.addWidget(
             xy_button
         )
 
@@ -751,7 +770,8 @@ class MirrorReferenceDialog(
 
         note = QtGui.QLabel(
             "Centerline uses an existing straight member or layout line. "
-            "Plane choices use the global origin planes."
+            "Reference Plane uses a saved ForgeCAD plane at its configured "
+            "offset. XY/XZ/YZ choices use the global origin planes."
         )
 
         note.setWordWrap(
@@ -772,6 +792,10 @@ class MirrorReferenceDialog(
 
         centerline_button.clicked.connect(
             self.choose_centerline
+        )
+
+        reference_plane_button.clicked.connect(
+            self.choose_reference_plane
         )
 
         xy_button.clicked.connect(
@@ -797,6 +821,17 @@ class MirrorReferenceDialog(
 
         self.reference_mode = (
             self.CENTERLINE
+        )
+
+        self.accept()
+
+    def choose_reference_plane(
+        self,
+    ):
+        """Choose a persistent ForgeCAD Reference Plane."""
+
+        self.reference_mode = (
+            self.REFERENCE_PLANE
         )
 
         self.accept()
@@ -839,8 +874,9 @@ def mirror_member_object_across_plane(
     document,
     member_object,
     plane,
+    offset=0.0,
 ):
-    """Mirror one straight member across a principal global plane."""
+    """Mirror one straight member across an axis-aligned plane."""
 
     source_member = (
         structural_member_from_freecad_object(
@@ -852,6 +888,7 @@ def mirror_member_object_across_plane(
         mirror_member_across_plane(
             source_member,
             plane,
+            offset=offset,
         )
     )
 
@@ -895,8 +932,9 @@ def mirror_member_objects_across_plane(
     document,
     member_objects,
     plane,
+    offset=0.0,
 ):
-    """Mirror selected straight members across one principal plane."""
+    """Mirror selected straight members across one axis-aligned plane."""
 
     treatment_snapshots = (
         source_treatment_snapshots(
@@ -913,6 +951,7 @@ def mirror_member_objects_across_plane(
                 document,
                 member_object,
                 plane,
+                offset=offset,
             )
         )
 
@@ -926,6 +965,7 @@ def mirror_member_objects_across_plane(
         mirrored_objects,
         treatment_snapshots,
         plane,
+        offset=offset,
     )
 
     return mirrored_objects
@@ -1154,6 +1194,201 @@ class InteractiveMirrorMembersTool:
         )
 
 
+
+class MirrorReferencePlaneSelectionObserver:
+    """Wait for one ForgeCAD Reference Plane selection."""
+
+    def __init__(
+        self,
+        tool,
+    ):
+        self.tool = tool
+
+    def addSelection(
+        self,
+        document_name,
+        object_name,
+        sub_name,
+        point,
+    ):
+        self.tool.accept_selection(
+            document_name,
+            object_name,
+        )
+
+
+class InteractiveMirrorReferencePlaneTool:
+    """Capture source members, then wait for a Reference Plane selection."""
+
+    def __init__(
+        self,
+        document,
+        member_objects,
+    ):
+        self.document = document
+        self.member_objects = tuple(
+            member_objects
+        )
+
+        self.observer = (
+            MirrorReferencePlaneSelectionObserver(
+                self
+            )
+        )
+
+        self.status_bar = None
+        self.running = False
+
+    def start(
+        self,
+    ):
+        self.status_bar = (
+            FreeCADGui.getMainWindow().statusBar()
+        )
+
+        FreeCADGui.Selection.clearSelection()
+
+        FreeCADGui.Selection.addObserver(
+            self.observer
+        )
+
+        self.running = True
+
+        self.show_status(
+            "ForgeCAD Mirror Members: SELECT REFERENCE PLANE NOW - "
+            "click one plane in the Reference Geometry group."
+        )
+
+    def stop(
+        self,
+    ):
+        global _active_tool
+
+        if self.running:
+            try:
+                FreeCADGui.Selection.removeObserver(
+                    self.observer
+                )
+            except (
+                AttributeError,
+                RuntimeError,
+            ):
+                pass
+
+        self.running = False
+
+        if self.status_bar is not None:
+            self.status_bar.clearMessage()
+
+        if _active_tool is self:
+            _active_tool = None
+
+    def show_status(
+        self,
+        message,
+    ):
+        if self.status_bar is not None:
+            self.status_bar.showMessage(
+                message
+            )
+
+    def object_from_selection(
+        self,
+        document_name,
+        object_name,
+    ):
+        document = self.document
+
+        if (
+            document is None
+            or str(
+                getattr(
+                    document,
+                    "Name",
+                    "",
+                )
+            )
+            != str(
+                document_name
+            )
+        ):
+            return None
+
+        return document.getObject(
+            object_name
+        )
+
+    def accept_selection(
+        self,
+        document_name,
+        object_name,
+    ):
+        if not self.running:
+            return
+
+        reference = self.object_from_selection(
+            document_name,
+            object_name,
+        )
+
+        if not is_reference_plane_object(
+            reference
+        ):
+            QtGui.QMessageBox.warning(
+                FreeCADGui.getMainWindow(),
+                "Select Reference Plane",
+                (
+                    "Select one ForgeCAD Reference Plane from the "
+                    "Reference Geometry group."
+                ),
+            )
+
+            FreeCADGui.Selection.clearSelection()
+
+            self.show_status(
+                "ForgeCAD Mirror Members: that object is not a "
+                "Reference Plane. Select one Reference Geometry plane."
+            )
+            return
+
+        try:
+            plane = reference_plane_from_object(
+                reference
+            )
+
+            mirrored_objects = (
+                mirror_member_objects_across_plane(
+                    self.document,
+                    self.member_objects,
+                    plane.orientation.value,
+                    offset=plane.offset,
+                )
+            )
+
+        except (
+            ValueError,
+            KeyError,
+            AttributeError,
+        ) as error:
+            self.stop()
+
+            QtGui.QMessageBox.warning(
+                FreeCADGui.getMainWindow(),
+                "Mirror Members Failed",
+                str(
+                    error
+                ),
+            )
+            return
+
+        self.stop()
+
+        finish_mirror_result(
+            self.document,
+            mirrored_objects,
+        )
+
+
 class MirrorMembersCommand:
     """Mirror selected straight members across a builder-selected centerline."""
 
@@ -1161,8 +1396,8 @@ class MirrorMembersCommand:
         return {
             "MenuText": "Mirror Members",
             "ToolTip": (
-                "Mirror selected ForgeCAD members across "
-                "a straight member or layout-line centerline"
+                "Mirror selected ForgeCAD members across a centerline, "
+                "global plane, or saved ForgeCAD Reference Plane"
             ),
         }
 
@@ -1241,6 +1476,24 @@ class MirrorMembersCommand:
 
             _active_tool = (
                 InteractiveMirrorMembersTool(
+                    document,
+                    members,
+                )
+            )
+
+            _active_tool.start()
+
+            return
+
+        if (
+            dialog.reference_mode
+            == MirrorReferenceDialog.REFERENCE_PLANE
+        ):
+            if _active_tool is not None:
+                _active_tool.stop()
+
+            _active_tool = (
+                InteractiveMirrorReferencePlaneTool(
                     document,
                     members,
                 )
