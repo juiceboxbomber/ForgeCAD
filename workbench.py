@@ -103,6 +103,11 @@ class ForgeCADWorkbench(
             register_command as register_trim_extend_member_command,
         )
 
+        from forgecad.adapters.freecad.commands.delete_member import (
+            COMMAND_NAME as DELETE_MEMBER_COMMAND,
+            register_command as register_delete_member_command,
+        )
+
         from forgecad.adapters.freecad.commands.mirror_members import (
             COMMAND_NAME as MIRROR_MEMBERS_COMMAND,
             register_command as register_mirror_members_command,
@@ -186,6 +191,7 @@ class ForgeCADWorkbench(
         register_create_member_between_nodes_command()
         register_split_member_command()
         register_trim_extend_member_command()
+        register_delete_member_command()
         register_mirror_members_command()
         register_generate_from_selection_command()
         register_member_properties_command()
@@ -218,6 +224,7 @@ class ForgeCADWorkbench(
             CREATE_MEMBER_BETWEEN_NODES_COMMAND,
             SPLIT_MEMBER_COMMAND,
             TRIM_EXTEND_MEMBER_COMMAND,
+            DELETE_MEMBER_COMMAND,
             MIRROR_MEMBERS_COMMAND,
             GENERATE_FROM_SELECTION_COMMAND,
             MEMBER_PROPERTIES_COMMAND,
