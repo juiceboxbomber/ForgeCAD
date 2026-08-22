@@ -311,6 +311,7 @@ def create_member_between_nodes(
     end_node_object,
     profile=None,
     material=None,
+    refresh=True,
 ):
     """
     Create a rendered tube between two ForgeCAD node objects.
@@ -322,6 +323,11 @@ def create_member_between_nodes(
     Members to preserve source-member properties. When omitted, the
     project active profile and default material are used exactly as
     before.
+
+    refresh=False allows compound edit operations such as Split Member
+    to create intermediate geometry without refreshing fabrication
+    against a temporarily invalid topology. Normal callers retain the
+    original refresh behavior.
     """
 
     start_node = node_from_object(
@@ -436,13 +442,14 @@ def create_member_between_nodes(
 
     document.recompute()
 
-    refresh_joint_topology(
-        document
-    )
+    if refresh:
+        refresh_joint_topology(
+            document
+        )
 
-    refresh_fabrication_for_document(
-        document
-    )
+        refresh_fabrication_for_document(
+            document
+        )
 
     return (
         layout_object,
