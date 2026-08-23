@@ -26,6 +26,11 @@ class FakeVector:
 class FakeQDialog:
     Accepted = 1
 
+    def reject(
+        self,
+    ):
+        return None
+
 
 class FakeQMessageBox:
     @staticmethod
@@ -175,7 +180,7 @@ def test_node_position_reads_authoritative_placement():
     )
 
 
-def test_move_node_changes_placement_once_and_recomputes(
+def test_preview_node_position_moves_and_recomputes_once(
     monkeypatch,
 ):
     document = FakeDocument()
@@ -191,24 +196,7 @@ def test_move_node_changes_placement_once_and_recomputes(
         ),
     )
 
-    fake_topology_refresh = types.ModuleType(
-        "forgecad.adapters.freecad.topology_refresh"
-    )
-
-    fake_topology_refresh.refresh_joint_topology = (
-        lambda document: (
-            (),
-            (),
-        )
-    )
-
-    monkeypatch.setitem(
-        sys.modules,
-        "forgecad.adapters.freecad.topology_refresh",
-        fake_topology_refresh,
-    )
-
-    result = module.move_node(
+    result = module.preview_node_position(
         document,
         node,
         500.0,
@@ -234,15 +222,80 @@ def test_move_node_changes_placement_once_and_recomputes(
 
     assert (
         document.recompute_count
-        == 2
+        == 1
     )
 
 
-def test_move_node_rejects_missing_document():
+def test_move_node_refreshes_joint_topology_after_live_geometry(
+    monkeypatch,
+):
+    document = FakeDocument()
+    node = FakeNode()
+    events = []
+
+    monkeypatch.setattr(
+        module,
+        "ensure_node_proxy",
+        lambda obj: events.append(
+            "ensure-proxy"
+        ),
+    )
+
+    original_recompute = (
+        document.recompute
+    )
+
+    def tracked_recompute():
+        events.append(
+            "recompute"
+        )
+        original_recompute()
+
+    document.recompute = (
+        tracked_recompute
+    )
+
+    fake_topology_refresh = types.ModuleType(
+        "forgecad.adapters.freecad.topology_refresh"
+    )
+
+    fake_topology_refresh.refresh_joint_topology = (
+        lambda doc: events.append(
+            "refresh-joints"
+        )
+        or (
+            (),
+            (),
+        )
+    )
+
+    monkeypatch.setitem(
+        sys.modules,
+        "forgecad.adapters.freecad.topology_refresh",
+        fake_topology_refresh,
+    )
+
+    module.move_node(
+        document,
+        node,
+        500.0,
+        250.0,
+        900.0,
+    )
+
+    assert events == [
+        "ensure-proxy",
+        "recompute",
+        "refresh-joints",
+        "recompute",
+    ]
+
+
+def test_preview_rejects_missing_document():
     node = FakeNode()
 
     try:
-        module.move_node(
+        module.preview_node_position(
             None,
             node,
             0.0,
@@ -262,11 +315,11 @@ def test_move_node_rejects_missing_document():
         )
 
 
-def test_move_node_rejects_non_node_object():
+def test_preview_rejects_non_node_object():
     document = FakeDocument()
 
     try:
-        module.move_node(
+        module.preview_node_position(
             document,
             SimpleNamespace(),
             0.0,

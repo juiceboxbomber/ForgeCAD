@@ -43,13 +43,19 @@ def node_position(
     base = node.Placement.Base
 
     return FreeCAD.Vector(
-        float(base.x),
-        float(base.y),
-        float(base.z),
+        float(
+            base.x
+        ),
+        float(
+            base.y
+        ),
+        float(
+            base.z
+        ),
     )
 
 
-def move_node(
+def preview_node_position(
     document,
     node,
     x,
@@ -57,11 +63,11 @@ def move_node(
     z,
 ):
     """
-    Move one ForgeCAD node to an absolute XYZ position.
+    Move a node for live visual preview without rebuilding joint topology.
 
-    Placement is the authoritative editable location. The node proxy owns
-    synchronization of Position/XYZ mirrors, layout endpoints, constraints,
-    and connected member dependencies.
+    The normal node proxy updates coordinate mirrors, layout endpoints,
+    and connected-member dependencies. A document recompute then redraws
+    the connected member geometry while the dialog remains open.
     """
 
     if document is None:
@@ -81,12 +87,45 @@ def move_node(
     )
 
     node.Placement.Base = FreeCAD.Vector(
-        float(x),
-        float(y),
-        float(z),
+        float(
+            x
+        ),
+        float(
+            y
+        ),
+        float(
+            z
+        ),
     )
 
     document.recompute()
+
+    return node
+
+
+def move_node(
+    document,
+    node,
+    x,
+    y,
+    z,
+):
+    """
+    Commit one ForgeCAD node to an absolute XYZ position.
+
+    Placement is the authoritative editable location. The node proxy owns
+    synchronization of Position/XYZ mirrors, layout endpoints, constraints,
+    and connected member dependencies. Joint topology is refreshed only
+    after the committed geometry has recomputed.
+    """
+
+    moved_node = preview_node_position(
+        document,
+        node,
+        x,
+        y,
+        z,
+    )
 
     from forgecad.adapters.freecad.topology_refresh import (
         refresh_joint_topology,
@@ -98,16 +137,17 @@ def move_node(
 
     document.recompute()
 
-    return node
+    return moved_node
 
 
 class MoveNodeDialog(
     QtGui.QDialog
 ):
-    """Collect an absolute XYZ position for one ForgeCAD node."""
+    """Edit one ForgeCAD node with live XYZ preview."""
 
     def __init__(
         self,
+        document,
         node,
         parent=None,
     ):
@@ -115,7 +155,26 @@ class MoveNodeDialog(
             parent
         )
 
+        self.document = document
         self.node = node
+
+        current = node_position(
+            node
+        )
+
+        self.original_position = (
+            float(
+                current.x
+            ),
+            float(
+                current.y
+            ),
+            float(
+                current.z
+            ),
+        )
+
+        self._restoring = False
 
         self.setWindowTitle(
             "Move Node"
@@ -123,10 +182,6 @@ class MoveNodeDialog(
 
         self.setMinimumWidth(
             360
-        )
-
-        current = node_position(
-            node
         )
 
         self.node_id = (
@@ -185,6 +240,17 @@ class MoveNodeDialog(
             self.z_position,
         )
 
+        live_note = (
+            QtGui.QLabel(
+                "Geometry updates live while you change X, Y, or Z. "
+                "Cancel restores the original position."
+            )
+        )
+
+        live_note.setWordWrap(
+            True
+        )
+
         buttons = (
             QtGui.QDialogButtonBox(
                 QtGui.QDialogButtonBox.Ok
@@ -214,6 +280,10 @@ class MoveNodeDialog(
             form
         )
 
+        layout.addWidget(
+            live_note
+        )
+
         layout.addSpacing(
             10
         )
@@ -224,6 +294,18 @@ class MoveNodeDialog(
 
         self.setLayout(
             layout
+        )
+
+        self.x_position.valueChanged.connect(
+            self.update_live_preview
+        )
+
+        self.y_position.valueChanged.connect(
+            self.update_live_preview
+        )
+
+        self.z_position.valueChanged.connect(
+            self.update_live_preview
         )
 
         self.x_position.setFocus()
@@ -264,9 +346,67 @@ class MoveNodeDialog(
 
         return box
 
+    def update_live_preview(
+        self,
+        *args,
+    ):
+        """Recompute connected geometry while coordinate values change."""
+
+        if self._restoring:
+            return
+
+        try:
+            preview_node_position(
+                self.document,
+                self.node,
+                self.x_position.value(),
+                self.y_position.value(),
+                self.z_position.value(),
+            )
+
+        except ValueError:
+            return
+
+    def restore_original_position(
+        self,
+    ):
+        """Restore the node to its position from when the dialog opened."""
+
+        if self._restoring:
+            return
+
+        self._restoring = True
+
+        try:
+            (
+                x,
+                y,
+                z,
+            ) = self.original_position
+
+            preview_node_position(
+                self.document,
+                self.node,
+                x,
+                y,
+                z,
+            )
+
+        finally:
+            self._restoring = False
+
+    def reject(
+        self,
+    ):
+        """Cancel the edit and restore the original geometry."""
+
+        self.restore_original_position()
+
+        super().reject()
+
 
 class MoveNodeCommand:
-    """Move one selected ForgeCAD node to an absolute XYZ position."""
+    """Move one selected ForgeCAD node with live visual feedback."""
 
     def GetResources(
         self,
@@ -275,8 +415,8 @@ class MoveNodeCommand:
             "MenuText":
                 "Move Node",
             "ToolTip": (
-                "Move one selected ForgeCAD node "
-                "to a new X, Y, Z position"
+                "Move one selected ForgeCAD node with "
+                "live connected-member preview"
             ),
         }
 
@@ -332,7 +472,12 @@ class MoveNodeCommand:
             )
             return
 
+        ensure_node_proxy(
+            node
+        )
+
         dialog = MoveNodeDialog(
+            document,
             node,
             FreeCADGui.getMainWindow(),
         )
