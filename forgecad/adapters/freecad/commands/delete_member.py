@@ -98,6 +98,53 @@ def delete_member(
     return True
 
 
+def begin_delete_transaction(document):
+    """Open one Undo transaction for a complete Delete Member operation."""
+
+    if (
+        document is None
+        or not hasattr(document, "openTransaction")
+    ):
+        return False
+
+    document.openTransaction(
+        "Delete ForgeCAD Member"
+    )
+
+    return True
+
+
+def finish_delete_transaction(
+    document,
+    transaction_started,
+):
+    """Commit a Delete Member Undo transaction."""
+
+    if (
+        transaction_started
+        and hasattr(document, "commitTransaction")
+    ):
+        document.commitTransaction()
+
+
+def abort_delete_transaction(
+    document,
+    transaction_started,
+):
+    """Abort a failed Delete Member Undo transaction."""
+
+    if (
+        not transaction_started
+        or not hasattr(document, "abortTransaction")
+    ):
+        return
+
+    try:
+        document.abortTransaction()
+    except Exception:
+        pass
+
+
 class DeleteMemberCommand:
     """Safely delete one selected ForgeCAD straight member."""
 
@@ -145,15 +192,36 @@ class DeleteMemberCommand:
             )
             return
 
+        transaction_started = False
+
         try:
+            transaction_started = (
+                begin_delete_transaction(
+                    document
+                )
+            )
+
             delete_member(
                 document,
                 member_object,
             )
+
+            finish_delete_transaction(
+                document,
+                transaction_started,
+            )
+
         except (
             ValueError,
             RuntimeError,
+            KeyError,
+            AttributeError,
         ) as error:
+            abort_delete_transaction(
+                document,
+                transaction_started,
+            )
+
             QtGui.QMessageBox.warning(
                 FreeCADGui.getMainWindow(),
                 "Delete Member Failed",
