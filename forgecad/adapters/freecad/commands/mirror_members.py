@@ -62,6 +62,64 @@ COMMAND_NAME = "ForgeCAD_MirrorMembers"
 _active_tool = None
 
 
+def begin_mirror_transaction(
+    document,
+):
+    """Open one Undo transaction for a complete Mirror Members operation."""
+
+    if (
+        document is None
+        or not hasattr(
+            document,
+            "openTransaction",
+        )
+    ):
+        return False
+
+    document.openTransaction(
+        "Mirror ForgeCAD Members"
+    )
+
+    return True
+
+
+def finish_mirror_transaction(
+    document,
+    transaction_started,
+):
+    """Commit a Mirror Members Undo transaction."""
+
+    if (
+        transaction_started
+        and hasattr(
+            document,
+            "commitTransaction",
+        )
+    ):
+        document.commitTransaction()
+
+
+def abort_mirror_transaction(
+    document,
+    transaction_started,
+):
+    """Abort a failed Mirror Members Undo transaction."""
+
+    if (
+        not transaction_started
+        or not hasattr(
+            document,
+            "abortTransaction",
+        )
+    ):
+        return
+
+    try:
+        document.abortTransaction()
+    except Exception:
+        pass
+
+
 def is_forgecad_member(
     obj,
 ):
@@ -1465,7 +1523,15 @@ class InteractiveMirrorMembersTool:
             )
             return
 
+        transaction_started = False
+
         try:
+            transaction_started = (
+                begin_mirror_transaction(
+                    self.document
+                )
+            )
+
             mirrored_objects = (
                 mirror_member_objects(
                     self.document,
@@ -1474,11 +1540,22 @@ class InteractiveMirrorMembersTool:
                 )
             )
 
+            finish_mirror_transaction(
+                self.document,
+                transaction_started,
+            )
+
         except (
             ValueError,
+            RuntimeError,
             KeyError,
             AttributeError,
         ) as error:
+            abort_mirror_transaction(
+                self.document,
+                transaction_started,
+            )
+
             self.stop()
 
             QtGui.QMessageBox.warning(
@@ -1655,9 +1732,17 @@ class InteractiveMirrorReferencePlaneTool:
             )
             return
 
+        transaction_started = False
+
         try:
             plane = reference_plane_from_object(
                 reference
+            )
+
+            transaction_started = (
+                begin_mirror_transaction(
+                    self.document
+                )
             )
 
             mirrored_objects = (
@@ -1669,11 +1754,22 @@ class InteractiveMirrorReferencePlaneTool:
                 )
             )
 
+            finish_mirror_transaction(
+                self.document,
+                transaction_started,
+            )
+
         except (
             ValueError,
+            RuntimeError,
             KeyError,
             AttributeError,
         ) as error:
+            abort_mirror_transaction(
+                self.document,
+                transaction_started,
+            )
+
             self.stop()
 
             QtGui.QMessageBox.warning(
@@ -1820,7 +1916,15 @@ class MirrorMembersCommand:
         if plane is None:
             return
 
+        transaction_started = False
+
         try:
+            transaction_started = (
+                begin_mirror_transaction(
+                    document
+                )
+            )
+
             mirrored_objects = (
                 mirror_member_objects_across_plane(
                     document,
@@ -1829,11 +1933,22 @@ class MirrorMembersCommand:
                 )
             )
 
+            finish_mirror_transaction(
+                document,
+                transaction_started,
+            )
+
         except (
             ValueError,
+            RuntimeError,
             KeyError,
             AttributeError,
         ) as error:
+            abort_mirror_transaction(
+                document,
+                transaction_started,
+            )
+
             QtGui.QMessageBox.warning(
                 FreeCADGui.getMainWindow(),
                 "Mirror Members Failed",
