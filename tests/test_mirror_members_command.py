@@ -9,6 +9,18 @@ class FakeQDialog:
     pass
 
 
+class FakeVector:
+    def __init__(
+        self,
+        x,
+        y,
+        z=0.0,
+    ):
+        self.x = float(x)
+        self.y = float(y)
+        self.z = float(z)
+
+
 class FakeQMessageBox:
     warnings = []
 
@@ -83,6 +95,7 @@ fake_freecad = types.ModuleType(
     "FreeCAD"
 )
 fake_freecad.ActiveDocument = None
+fake_freecad.Vector = FakeVector
 
 fake_freecad_gui = types.ModuleType(
     "FreeCADGui"
@@ -132,6 +145,13 @@ from forgecad.fabrication import (
 from forgecad.adapters.freecad.commands import (
     mirror_members as module,
 )
+
+# Other test modules may have imported mirror_members earlier with a
+# different FreeCADGui test double. Make this file independent of test
+# collection order by explicitly binding the module to these fixtures.
+module.FreeCAD = fake_freecad
+module.FreeCADGui = fake_freecad_gui
+module.QtGui = fake_pyside.QtGui
 
 
 def vector(

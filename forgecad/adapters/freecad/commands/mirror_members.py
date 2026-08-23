@@ -41,6 +41,20 @@ from forgecad.adapters.freecad.reference_plane_store import (
     is_reference_plane_object,
     reference_plane_from_object,
 )
+from forgecad.adapters.freecad.member_removal import (
+    layout_object_for_id,
+    remove_member_and_unused_layout,
+)
+from forgecad.adapters.freecad.node_cleanup import (
+    remove_node_if_unused,
+)
+from forgecad.adapters.freecad.node_object import (
+    update_layout_object_shape,
+)
+from forgecad.services.member_merge import (
+    merge_collinear_members,
+    nodes_match,
+)
 
 
 COMMAND_NAME = "ForgeCAD_MirrorMembers"
@@ -558,6 +572,270 @@ def preserve_plane_mirrored_treatments(
     )
 
 
+def point_vector_from_node(
+    node,
+):
+    """Return a FreeCAD vector from a domain Node-like point."""
+
+    return FreeCAD.Vector(
+        float(
+            node.x
+        ),
+        float(
+            node.y
+        ),
+        float(
+            node.z
+        ),
+    )
+
+
+def endpoint_side_for_outer_node(
+    member,
+    outer_node,
+):
+    """
+    Return which member endpoint is the outer endpoint.
+
+    The opposite endpoint is therefore the endpoint lying on the mirror
+    reference and is the endpoint that must be extended through it.
+    """
+
+    if nodes_match(
+        member.start,
+        outer_node,
+    ):
+        return "start"
+
+    if nodes_match(
+        member.end,
+        outer_node,
+    ):
+        return "end"
+
+    return None
+
+
+def linked_node_for_domain_endpoint(
+    member_object,
+    member,
+    endpoint,
+):
+    """Return the FreeCAD node object corresponding to one domain endpoint."""
+
+    if nodes_match(
+        member.start,
+        endpoint,
+    ):
+        return getattr(
+            member_object,
+            "StartNode",
+            None,
+        )
+
+    if nodes_match(
+        member.end,
+        endpoint,
+    ):
+        return getattr(
+            member_object,
+            "EndNode",
+            None,
+        )
+
+    return None
+
+
+def merge_mirrored_member_pair_in_place(
+    document,
+    source_object,
+    mirrored_object,
+):
+    """
+    Collapse one source/mirror pair into one continuous source member.
+
+    Only a source member and its own mirrored result are considered. The
+    merge occurs only when the domain geometry proves that they share one
+    endpoint and continue collinearly in opposite directions.
+
+    The original source object and SourceLayoutID are preserved. This keeps
+    existing fabrication decisions that reference the source layout stable.
+    """
+
+    if (
+        document is None
+        or source_object is None
+        or mirrored_object is None
+    ):
+        return (
+            mirrored_object,
+            False,
+        )
+
+    try:
+        source_member = (
+            structural_member_from_freecad_object(
+                source_object
+            )
+        )
+
+        mirrored_member = (
+            structural_member_from_freecad_object(
+                mirrored_object
+            )
+        )
+
+    except ValueError:
+        return (
+            mirrored_object,
+            False,
+        )
+
+    merged_member = merge_collinear_members(
+        source_member,
+        mirrored_member,
+    )
+
+    if merged_member is None:
+        return (
+            mirrored_object,
+            False,
+        )
+
+    # merge_collinear_members() keeps the first member's outer endpoint
+    # as merged.start and the second member's outer endpoint as merged.end.
+    source_outer = merged_member.start
+    mirrored_outer = merged_member.end
+
+    source_outer_side = (
+        endpoint_side_for_outer_node(
+            source_member,
+            source_outer,
+        )
+    )
+
+    if source_outer_side is None:
+        return (
+            mirrored_object,
+            False,
+        )
+
+    mirrored_outer_node = (
+        linked_node_for_domain_endpoint(
+            mirrored_object,
+            mirrored_member,
+            mirrored_outer,
+        )
+    )
+
+    if mirrored_outer_node is None:
+        return (
+            mirrored_object,
+            False,
+        )
+
+    if source_outer_side == "start":
+        replaced_node = getattr(
+            source_object,
+            "EndNode",
+            None,
+        )
+
+        source_object.EndNode = (
+            mirrored_outer_node
+        )
+
+        source_object.EndPoint = (
+            point_vector_from_node(
+                mirrored_outer
+            )
+        )
+
+        layout_endpoint_name = (
+            "EndPoint"
+        )
+
+    else:
+        replaced_node = getattr(
+            source_object,
+            "StartNode",
+            None,
+        )
+
+        source_object.StartNode = (
+            mirrored_outer_node
+        )
+
+        source_object.StartPoint = (
+            point_vector_from_node(
+                mirrored_outer
+            )
+        )
+
+        layout_endpoint_name = (
+            "StartPoint"
+        )
+
+    source_layout = (
+        layout_object_for_id(
+            document,
+            object_layout_id(
+                source_object
+            ),
+        )
+    )
+
+    if source_layout is not None:
+        setattr(
+            source_layout,
+            layout_endpoint_name,
+            point_vector_from_node(
+                mirrored_outer
+            ),
+        )
+
+        update_layout_object_shape(
+            source_layout
+        )
+
+        try:
+            source_layout.touch()
+        except Exception:
+            pass
+
+    try:
+        source_object.touch()
+    except Exception:
+        pass
+
+    document.recompute()
+
+    removed = (
+        remove_member_and_unused_layout(
+            document,
+            mirrored_object,
+        )
+    )
+
+    if not removed:
+        raise RuntimeError(
+            "Mirror created a continuous member but could not remove "
+            "the temporary mirrored half."
+        )
+
+    remove_node_if_unused(
+        document,
+        replaced_node,
+    )
+
+    document.recompute()
+
+    return (
+        source_object,
+        True,
+    )
+
+
 def mirror_member_object(
     document,
     member_object,
@@ -641,13 +919,26 @@ def mirror_member_objects(
     mirrored_objects = []
 
     for member_object in member_objects:
-        mirrored_objects.append(
+        mirrored_object = (
             mirror_member_object(
                 document,
                 member_object,
                 center_start,
                 center_end,
             )
+        )
+
+        (
+            mirrored_object,
+            merged,
+        ) = merge_mirrored_member_pair_in_place(
+            document,
+            member_object,
+            mirrored_object,
+        )
+
+        mirrored_objects.append(
+            mirrored_object
         )
 
     mirrored_objects = tuple(
@@ -946,13 +1237,26 @@ def mirror_member_objects_across_plane(
     mirrored_objects = []
 
     for member_object in member_objects:
-        mirrored_objects.append(
+        mirrored_object = (
             mirror_member_object_across_plane(
                 document,
                 member_object,
                 plane,
                 offset=offset,
             )
+        )
+
+        (
+            mirrored_object,
+            merged,
+        ) = merge_mirrored_member_pair_in_place(
+            document,
+            member_object,
+            mirrored_object,
+        )
+
+        mirrored_objects.append(
+            mirrored_object
         )
 
     mirrored_objects = tuple(

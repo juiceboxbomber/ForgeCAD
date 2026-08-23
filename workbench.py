@@ -78,6 +78,11 @@ class ForgeCADWorkbench(
             register_command as register_create_node_from_geometry_command,
         )
 
+        from forgecad.adapters.freecad.commands.create_upright import (
+            COMMAND_NAME as CREATE_UPRIGHT_COMMAND,
+            register_command as register_create_upright_command,
+        )
+
         from forgecad.adapters.freecad.commands.move_node import (
             COMMAND_NAME as MOVE_NODE_COMMAND,
             register_command as register_move_node_command,
@@ -191,6 +196,7 @@ class ForgeCADWorkbench(
         register_generate_nodes_command()
         register_create_offset_node_command()
         register_create_node_from_geometry_command()
+        register_create_upright_command()
         register_move_node_command()
         register_create_reference_plane_command()
         register_draw_member_interactive_command()
@@ -229,6 +235,7 @@ class ForgeCADWorkbench(
             CREATE_REFERENCE_PLANE_COMMAND,
             DRAW_MEMBER_INTERACTIVE_COMMAND,
             CREATE_MEMBER_BETWEEN_NODES_COMMAND,
+            CREATE_UPRIGHT_COMMAND,
             SPLIT_MEMBER_COMMAND,
             TRIM_EXTEND_MEMBER_COMMAND,
             DELETE_MEMBER_COMMAND,
