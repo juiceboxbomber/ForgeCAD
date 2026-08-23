@@ -254,21 +254,31 @@ def test_create_upright_reuses_normal_node_and_member_creation(
 def test_resolve_point_accepts_member_endpoint(
     monkeypatch,
 ):
-    tool = module.InteractiveCreateUprightTool.__new__(
-        module.InteractiveCreateUprightTool
+    tool = (
+        module.InteractiveCreateUprightTool.__new__(
+            module.InteractiveCreateUprightTool
+        )
+    )
+
+    tool.source_member = SimpleNamespace(
+        OutsideDiameter=44.45,
     )
 
     tool.view = object()
+
     tool.start_point = Point3D(
         0.0,
         0.0,
         0.0,
     )
+
     tool.end_point = Point3D(
         1000.0,
         0.0,
         0.0,
     )
+
+    tool.current_snap_label = None
 
     expected = Point3D(
         0.0,
@@ -286,12 +296,34 @@ def test_resolve_point_accepts_member_endpoint(
         ),
     )
 
+    distances = iter(
+        [
+            1.0,
+            100.0,
+            100.0,
+            100.0,
+            100.0,
+        ]
+    )
+
+    monkeypatch.setattr(
+        module,
+        "screen_distance_to_point",
+        lambda view, position, point: next(
+            distances
+        ),
+    )
+
     assert tool.resolve_point(
         (
             100,
             100,
         )
     ) == expected
+
+    assert tool.current_snap_label == (
+        "Endpoint"
+    )
 
 
 def test_resolve_point_rejects_cursor_too_far_from_member(
@@ -301,7 +333,13 @@ def test_resolve_point_rejects_cursor_too_far_from_member(
         module.InteractiveCreateUprightTool
     )
 
+    tool.source_member = SimpleNamespace(
+        OutsideDiameter=44.45,
+    )
+
     tool.view = object()
+    tool.current_snap_label = None
+
     tool.start_point = Point3D(
         0.0,
         0.0,

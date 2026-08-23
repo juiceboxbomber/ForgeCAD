@@ -1,5 +1,7 @@
 """Interactive FreeCAD command for creating a vertical ForgeCAD upright."""
 
+import math
+
 import FreeCAD
 import FreeCADGui
 import Part
@@ -121,6 +123,260 @@ def create_upright(
         member_object,
         start_node,
         end_node,
+    )
+
+
+def quantity_value(
+    value,
+):
+    """Return a numeric value from a FreeCAD quantity or test double."""
+
+    return float(
+        getattr(
+            value,
+            "Value",
+            value,
+        )
+    )
+
+
+def member_length(
+    start,
+    end,
+):
+    """Return the 3D centerline length between two points."""
+
+    dx = float(
+        end.x
+    ) - float(
+        start.x
+    )
+
+    dy = float(
+        end.y
+    ) - float(
+        start.y
+    )
+
+    dz = float(
+        end.z
+    ) - float(
+        start.z
+    )
+
+    return math.sqrt(
+        dx * dx
+        + dy * dy
+        + dz * dz
+    )
+
+
+def point_at_parameter(
+    start,
+    end,
+    parameter,
+):
+    """Return a 3D point at one normalized centerline parameter."""
+
+    parameter = float(
+        parameter
+    )
+
+    return Point3D(
+        float(
+            start.x
+        )
+        + parameter
+        * (
+            float(
+                end.x
+            )
+            - float(
+                start.x
+            )
+        ),
+        float(
+            start.y
+        )
+        + parameter
+        * (
+            float(
+                end.y
+            )
+            - float(
+                start.y
+            )
+        ),
+        float(
+            start.z
+        )
+        + parameter
+        * (
+            float(
+                end.z
+            )
+            - float(
+                start.z
+            )
+        ),
+    )
+
+
+def member_outside_diameter(
+    member_object,
+):
+    """Return the selected member's positive outside diameter in millimeters."""
+
+    try:
+        diameter = quantity_value(
+            member_object.OutsideDiameter
+        )
+    except (
+        AttributeError,
+        TypeError,
+        ValueError,
+    ):
+        return None
+
+    if diameter <= 0.0:
+        return None
+
+    return diameter
+
+
+def upright_snap_candidates(
+    member_object,
+    start,
+    end,
+):
+    """
+    Return ordered snap candidates along one selected member.
+
+    Priority order is intentional:
+    endpoint -> half-OD -> midpoint.
+
+    Free placement is handled separately when no candidate is within the
+    normal viewport snap distance.
+    """
+
+    candidates = [
+        (
+            0.0,
+            "Endpoint",
+        ),
+        (
+            1.0,
+            "Endpoint",
+        ),
+    ]
+
+    length = member_length(
+        start,
+        end,
+    )
+
+    diameter = member_outside_diameter(
+        member_object
+    )
+
+    if (
+        diameter is not None
+        and length > 1e-9
+    ):
+        radius = (
+            diameter
+            / 2.0
+        )
+
+        radius_parameter = (
+            radius
+            / length
+        )
+
+        if (
+            radius_parameter > 1e-9
+            and radius_parameter < 0.5
+        ):
+            candidates.extend(
+                [
+                    (
+                        radius_parameter,
+                        (
+                            "1/2 OD snap - "
+                            f"{radius:.3f} mm from start"
+                        ),
+                    ),
+                    (
+                        1.0
+                        - radius_parameter,
+                        (
+                            "1/2 OD snap - "
+                            f"{radius:.3f} mm from end"
+                        ),
+                    ),
+                ]
+            )
+
+    candidates.append(
+        (
+            0.5,
+            "Midpoint",
+        )
+    )
+
+    return tuple(
+        candidates
+    )
+
+
+def screen_distance_to_point(
+    view,
+    mouse_position,
+    point,
+):
+    """Return viewport pixel distance from the mouse to one 3D point."""
+
+    if (
+        view is None
+        or mouse_position is None
+        or point is None
+    ):
+        return None
+
+    try:
+        screen = (
+            view.getPointOnScreen(
+                FreeCAD.Vector(
+                    point.x,
+                    point.y,
+                    point.z,
+                )
+            )
+        )
+    except Exception:
+        return None
+
+    return math.hypot(
+        float(
+            screen[
+                0
+            ]
+        )
+        - float(
+            mouse_position[
+                0
+            ]
+        ),
+        float(
+            screen[
+                1
+            ]
+        )
+        - float(
+            mouse_position[
+                1
+            ]
+        ),
     )
 
 
@@ -262,6 +518,7 @@ class InteractiveCreateUprightTool:
 
         self.preview_object = None
         self.current_point = None
+        self.current_snap_label = None
 
     def start(
         self,
@@ -441,6 +698,7 @@ class InteractiveCreateUprightTool:
         self.remove_preview()
 
         self.current_point = None
+        self.current_snap_label = None
 
         if self.status_bar is not None:
             try:
@@ -458,10 +716,15 @@ class InteractiveCreateUprightTool:
         self,
         position,
     ):
-        """Return a valid point near the selected member centerline."""
+        """
+        Return a point on the member with fabrication-friendly snapping.
+
+        Snap priority:
+        endpoint -> half outside diameter -> midpoint -> free.
+        """
 
         (
-            point,
+            free_point,
             distance,
             parameter,
         ) = screen_point_on_segment(
@@ -472,16 +735,58 @@ class InteractiveCreateUprightTool:
         )
 
         if (
-            point is None
+            free_point is None
             or distance is None
             or parameter is None
         ):
+            self.current_snap_label = None
             return None
 
-        if distance > SNAP_DISTANCE_PIXELS:
+        if (
+            distance
+            > SNAP_DISTANCE_PIXELS
+        ):
+            self.current_snap_label = None
             return None
 
-        return point
+        for (
+            snap_parameter,
+            snap_label,
+        ) in upright_snap_candidates(
+            self.source_member,
+            self.start_point,
+            self.end_point,
+        ):
+            snap_point = point_at_parameter(
+                self.start_point,
+                self.end_point,
+                snap_parameter,
+            )
+
+            snap_distance = (
+                screen_distance_to_point(
+                    self.view,
+                    position,
+                    snap_point,
+                )
+            )
+
+            if (
+                snap_distance is not None
+                and snap_distance
+                <= SNAP_DISTANCE_PIXELS
+            ):
+                self.current_snap_label = (
+                    snap_label
+                )
+
+                return snap_point
+
+        self.current_snap_label = (
+            "Free position"
+        )
+
+        return free_point
 
     def on_mouse_move(
         self,
@@ -508,8 +813,14 @@ class InteractiveCreateUprightTool:
             )
             return
 
+        snap_label = (
+            self.current_snap_label
+            or "Free position"
+        )
+
         self.show_status(
             "ForgeCAD Create Upright: "
+            f"{snap_label} - "
             f"start ({point.x:.3f}, {point.y:.3f}, {point.z:.3f}), "
             f"height {self.height:.3f} mm - click to create. Esc: Cancel."
         )
