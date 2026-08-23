@@ -249,6 +249,107 @@ def refresh_connected_members(
 
 
 
+def sync_joint_marker_position(
+    document,
+    old_position,
+    new_position,
+):
+    """
+    Move existing disposable joint markers with a moved structural node.
+
+    This is a lightweight live-display synchronization only. It does not
+    clear or rebuild the Joints group, so interactive node movement does
+    not repeatedly create/delete document objects.
+    """
+
+    if document is None:
+        return 0
+
+    get_object = getattr(
+        document,
+        "getObject",
+        None,
+    )
+
+    if not callable(
+        get_object
+    ):
+        return 0
+
+    joints_group = get_object(
+        "ForgeCADJoints"
+    )
+
+    if joints_group is None:
+        return 0
+
+    old_key = point_key(
+        old_position
+    )
+
+    changed_count = 0
+
+    for marker in getattr(
+        joints_group,
+        "Group",
+        [],
+    ):
+        position = getattr(
+            marker,
+            "Position",
+            None,
+        )
+
+        if position is None:
+            continue
+
+        if point_key(
+            position
+        ) != old_key:
+            continue
+
+        marker.Position = vector_copy(
+            new_position
+        )
+
+        try:
+            from forgecad.adapters.freecad.joint_status_objects import (
+                configure_joint_marker,
+            )
+
+            configure_joint_marker(
+                marker
+            )
+
+        except Exception:
+            radius = float(
+                getattr(
+                    marker,
+                    "MarkerRadius",
+                    9.0,
+                )
+            )
+
+            try:
+                marker.Shape = Part.makeSphere(
+                    radius,
+                    vector_copy(
+                        new_position
+                    ),
+                )
+            except Exception:
+                pass
+
+        try:
+            marker.touch()
+        except Exception:
+            pass
+
+        changed_count += 1
+
+    return changed_count
+
+
 def touch_connected_members(
     document,
     node_object,
@@ -291,87 +392,10 @@ def rebuild_joint_status_after_topology_change(
     )
 
 
-def load_persisted_node_constraint(
-    document,
-    node_object,
-):
-    """
-    Load a persisted movement constraint for a node, if available.
-
-    This helper is intended for safe lifecycle points such as proxy
-    initialization, not for repeated calls from Placement.onChanged().
-    """
-
-    if (
-        document is None
-        or node_object is None
-    ):
-        return None
-
-    position = getattr(
-        node_object,
-        "Position",
-        None,
-    )
-
-    if position is None:
-        return None
-
-    try:
-        from forgecad.adapters.freecad.joint_constraint_store import (
-            load_joint_constraint,
-            vector_key,
-        )
-
-        return load_joint_constraint(
-            document,
-            vector_key(
-                position
-            ),
-        )
-
-    except Exception:
-        return None
-
-
-def infer_node_constraint(
-    document,
-    node_object,
-):
-    """Infer the current collinear-through constraint from live topology."""
-
-    if (
-        document is None
-        or node_object is None
-    ):
-        return None
-
-    try:
-        from forgecad.adapters.freecad.joint_inspector_adapter import (
-            joint_from_node_object,
-        )
-        from forgecad.services.joint_constraints import (
-            collinear_through_constraint_for_joint,
-        )
-
-        joint = joint_from_node_object(
-            document,
-            node_object,
-        )
-
-        return collinear_through_constraint_for_joint(
-            joint
-        )
-
-    except Exception:
-        return None
-
-
 def solve_constrained_node_position(
     document,
     node_object,
     proposed_position,
-    constraint=None,
 ):
     """
     Return a solved node position using the current joint topology.
@@ -394,17 +418,47 @@ def solve_constrained_node_position(
         )
 
     try:
+        from forgecad.adapters.freecad.joint_constraint_store import (
+            load_joint_constraint,
+            vector_key,
+        )
+        from forgecad.adapters.freecad.joint_inspector_adapter import (
+            joint_from_node_object,
+        )
         from forgecad.geometry.point import (
             Point3D,
         )
         from forgecad.services.joint_constraints import (
+            collinear_through_constraint_for_joint,
             solve_collinear_through_joint,
         )
 
+        stored_position = getattr(
+            node_object,
+            "Position",
+            None,
+        )
+
+        constraint = None
+
+        if stored_position is not None:
+            constraint = load_joint_constraint(
+                document,
+                vector_key(
+                    stored_position
+                ),
+            )
+
         if constraint is None:
-            constraint = infer_node_constraint(
+            joint = joint_from_node_object(
                 document,
                 node_object,
+            )
+
+            constraint = (
+                collinear_through_constraint_for_joint(
+                    joint
+                )
             )
 
         if constraint is None:
@@ -459,17 +513,6 @@ class ForgeCADNodeProxy:
 
         self._last_position = point_key(
             obj.Position
-        )
-
-        self._movement_constraint = (
-            load_persisted_node_constraint(
-                getattr(
-                    obj,
-                    "Document",
-                    None,
-                ),
-                obj,
-            )
         )
 
         self._ready = True
@@ -555,22 +598,11 @@ class ForgeCADNodeProxy:
             None,
         )
 
-        if self._movement_constraint is None:
-            self._movement_constraint = (
-                infer_node_constraint(
-                    document,
-                    obj,
-                )
-            )
-
         new_position = (
             solve_constrained_node_position(
                 document,
                 obj,
                 proposed_position,
-                constraint=(
-                    self._movement_constraint
-                ),
             )
         )
 
@@ -623,9 +655,15 @@ class ForgeCADNodeProxy:
                 new_position,
             )
 
-            touch_connected_members(
+            refresh_connected_members(
                 document,
                 obj,
+            )
+
+            sync_joint_marker_position(
+                document,
+                old_position,
+                new_position,
             )
 
             self._last_position = (

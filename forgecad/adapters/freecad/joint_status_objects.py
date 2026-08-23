@@ -241,6 +241,7 @@ def configure_joint_marker(
 
     try:
         obj.ViewObject.Visibility = True
+        obj.ViewObject.Transparency = 75
     except Exception:
         pass
 
