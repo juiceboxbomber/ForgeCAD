@@ -185,6 +185,64 @@ def delete_bent_tube(
     return True
 
 
+def begin_delete_bent_tube_transaction(
+    document,
+):
+    """Open one Undo transaction for a complete bent-tube deletion."""
+
+    if (
+        document is None
+        or not hasattr(
+            document,
+            "openTransaction",
+        )
+    ):
+        return False
+
+    document.openTransaction(
+        "Delete ForgeCAD Bent Tube"
+    )
+
+    return True
+
+
+def finish_delete_bent_tube_transaction(
+    document,
+    transaction_started,
+):
+    """Commit a bent-tube deletion Undo transaction."""
+
+    if (
+        transaction_started
+        and hasattr(
+            document,
+            "commitTransaction",
+        )
+    ):
+        document.commitTransaction()
+
+
+def abort_delete_bent_tube_transaction(
+    document,
+    transaction_started,
+):
+    """Abort a failed bent-tube deletion Undo transaction."""
+
+    if (
+        not transaction_started
+        or not hasattr(
+            document,
+            "abortTransaction",
+        )
+    ):
+        return
+
+    try:
+        document.abortTransaction()
+    except Exception:
+        pass
+
+
 class DeleteBentTubeCommand:
     """Safely delete one selected ForgeCAD bent tube."""
 
@@ -255,16 +313,36 @@ class DeleteBentTubeCommand:
             )
             return
 
+        transaction_started = False
+
         try:
+            transaction_started = (
+                begin_delete_bent_tube_transaction(
+                    document
+                )
+            )
+
             delete_bent_tube(
                 document,
                 bent_tube_object,
             )
 
+            finish_delete_bent_tube_transaction(
+                document,
+                transaction_started,
+            )
+
         except (
             ValueError,
             RuntimeError,
+            KeyError,
+            AttributeError,
         ) as error:
+            abort_delete_bent_tube_transaction(
+                document,
+                transaction_started,
+            )
+
             QtGui.QMessageBox.warning(
                 FreeCADGui.getMainWindow(),
                 "Delete Bent Tube Failed",
