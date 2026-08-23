@@ -140,6 +140,64 @@ def move_node(
     return moved_node
 
 
+def open_move_transaction(
+    document,
+):
+    """Open one FreeCAD transaction for the complete live Move Node edit."""
+
+    if (
+        document is not None
+        and hasattr(
+            document,
+            "openTransaction",
+        )
+    ):
+        document.openTransaction(
+            "Move ForgeCAD Node"
+        )
+
+        return True
+
+    return False
+
+
+def commit_move_transaction(
+    document,
+    transaction_started,
+):
+    """Commit the Move Node transaction when one was opened."""
+
+    if (
+        transaction_started
+        and hasattr(
+            document,
+            "commitTransaction",
+        )
+    ):
+        document.commitTransaction()
+
+
+def abort_move_transaction(
+    document,
+    transaction_started,
+):
+    """Abort the Move Node transaction without masking the original error."""
+
+    if (
+        not transaction_started
+        or not hasattr(
+            document,
+            "abortTransaction",
+        )
+    ):
+        return
+
+    try:
+        document.abortTransaction()
+    except Exception:
+        pass
+
+
 class MoveNodeDialog(
     QtGui.QDialog
 ):
@@ -175,6 +233,7 @@ class MoveNodeDialog(
         )
 
         self._restoring = False
+        self.restore_on_reject = True
 
         self.setWindowTitle(
             "Move Node"
@@ -370,7 +429,12 @@ class MoveNodeDialog(
     def restore_original_position(
         self,
     ):
-        """Restore the node to its position from when the dialog opened."""
+        """
+        Restore the original node location when no transaction owns rollback.
+
+        Normal command use disables this because abortTransaction() restores
+        the complete document state, including all dependent ForgeCAD objects.
+        """
 
         if self._restoring:
             return
@@ -398,9 +462,10 @@ class MoveNodeDialog(
     def reject(
         self,
     ):
-        """Cancel the edit and restore the original geometry."""
+        """Cancel the edit; transaction-aware callers own full rollback."""
 
-        self.restore_original_position()
+        if self.restore_on_reject:
+            self.restore_original_position()
 
         super().reject()
 
@@ -482,13 +547,30 @@ class MoveNodeCommand:
             FreeCADGui.getMainWindow(),
         )
 
-        if (
-            dialog.exec_()
-            != QtGui.QDialog.Accepted
-        ):
-            return
+        transaction_started = (
+            open_move_transaction(
+                document
+            )
+        )
+
+        # When a FreeCAD transaction is available, abortTransaction()
+        # owns cancellation so every dependent object rolls back together.
+        dialog.restore_on_reject = (
+            not transaction_started
+        )
 
         try:
+            if (
+                dialog.exec_()
+                != QtGui.QDialog.Accepted
+            ):
+                abort_move_transaction(
+                    document,
+                    transaction_started,
+                )
+
+                return
+
             moved_node = move_node(
                 document,
                 node,
@@ -497,7 +579,22 @@ class MoveNodeCommand:
                 dialog.z_position.value(),
             )
 
-        except ValueError as error:
+            commit_move_transaction(
+                document,
+                transaction_started,
+            )
+
+        except (
+            ValueError,
+            RuntimeError,
+            KeyError,
+            AttributeError,
+        ) as error:
+            abort_move_transaction(
+                document,
+                transaction_started,
+            )
+
             QtGui.QMessageBox.warning(
                 FreeCADGui.getMainWindow(),
                 "Move Node Failed",

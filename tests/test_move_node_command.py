@@ -98,11 +98,40 @@ class FakeDocument:
         self,
     ):
         self.recompute_count = 0
+        self.events = []
 
     def recompute(
         self,
     ):
         self.recompute_count += 1
+        self.events.append(
+            "recompute"
+        )
+
+    def openTransaction(
+        self,
+        name,
+    ):
+        self.events.append(
+            (
+                "open",
+                name,
+            )
+        )
+
+    def commitTransaction(
+        self,
+    ):
+        self.events.append(
+            "commit"
+        )
+
+    def abortTransaction(
+        self,
+    ):
+        self.events.append(
+            "abort"
+        )
 
 
 class FakePlacement:
@@ -289,6 +318,73 @@ def test_move_node_refreshes_joint_topology_after_live_geometry(
         "refresh-joints",
         "recompute",
     ]
+
+
+def test_move_transaction_opens_with_stable_label():
+    document = FakeDocument()
+
+    started = (
+        module.open_move_transaction(
+            document
+        )
+    )
+
+    assert started
+
+    assert document.events == [
+        (
+            "open",
+            "Move ForgeCAD Node",
+        )
+    ]
+
+
+def test_move_transaction_commits_when_started():
+    document = FakeDocument()
+
+    module.commit_move_transaction(
+        document,
+        True,
+    )
+
+    assert document.events == [
+        "commit"
+    ]
+
+
+def test_move_transaction_does_not_commit_when_not_started():
+    document = FakeDocument()
+
+    module.commit_move_transaction(
+        document,
+        False,
+    )
+
+    assert document.events == []
+
+
+def test_move_transaction_aborts_when_started():
+    document = FakeDocument()
+
+    module.abort_move_transaction(
+        document,
+        True,
+    )
+
+    assert document.events == [
+        "abort"
+    ]
+
+
+def test_move_transaction_does_not_abort_when_not_started():
+    document = FakeDocument()
+
+    module.abort_move_transaction(
+        document,
+        False,
+    )
+
+    assert document.events == []
 
 
 def test_preview_rejects_missing_document():
