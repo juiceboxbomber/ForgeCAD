@@ -852,7 +852,19 @@ class InteractiveCreateUprightTool:
 
         self.stop()
 
+        transaction_started = False
+
         try:
+            if hasattr(
+                self.document,
+                "openTransaction",
+            ):
+                self.document.openTransaction(
+                    "Create ForgeCAD Upright"
+                )
+
+                transaction_started = True
+
             (
                 layout_object,
                 member_object,
@@ -864,10 +876,33 @@ class InteractiveCreateUprightTool:
                 self.height,
             )
 
+            if (
+                transaction_started
+                and hasattr(
+                    self.document,
+                    "commitTransaction",
+                )
+            ):
+                self.document.commitTransaction()
+
         except (
             ValueError,
             RuntimeError,
+            KeyError,
+            AttributeError,
         ) as error:
+            if (
+                transaction_started
+                and hasattr(
+                    self.document,
+                    "abortTransaction",
+                )
+            ):
+                try:
+                    self.document.abortTransaction()
+                except Exception:
+                    pass
+
             QtGui.QMessageBox.warning(
                 FreeCADGui.getMainWindow(),
                 "Create Upright Failed",
