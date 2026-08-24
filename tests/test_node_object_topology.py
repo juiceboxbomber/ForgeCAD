@@ -406,5 +406,5 @@ def test_node_proxy_propagates_placement_change():
         30.0,
     )
 
-    assert member.Proxy.calls == 0
+    assert member.Proxy.calls == 1
     assert member.touched is True

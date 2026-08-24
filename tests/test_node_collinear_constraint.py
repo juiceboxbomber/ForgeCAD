@@ -95,7 +95,7 @@ def point_tuple(
     )
 
 
-def test_node_drag_uses_solved_position_before_layout_and_member_touch():
+def test_node_drag_uses_solved_position_before_layout_and_member_refresh():
     node = FakeNodeObject(
         (
             0.0,
@@ -124,8 +124,8 @@ def test_node_drag_uses_solved_position_before_layout_and_member_touch():
         node_object.sync_layout_points_for_node
     )
 
-    original_touch = (
-        node_object.touch_connected_members
+    original_refresh = (
+        node_object.refresh_connected_members
     )
 
     node_object.solve_constrained_node_position = (
@@ -166,11 +166,11 @@ def test_node_drag_uses_solved_position_before_layout_and_member_touch():
         or 0
     )
 
-    node_object.touch_connected_members = (
+    node_object.refresh_connected_members = (
         lambda document,
         node_object_value: events.append(
             (
-                "touch",
+                "refresh",
                 point_tuple(
                     node_object_value.Position
                 ),
@@ -194,8 +194,8 @@ def test_node_drag_uses_solved_position_before_layout_and_member_touch():
             original_layout_sync
         )
 
-        node_object.touch_connected_members = (
-            original_touch
+        node_object.refresh_connected_members = (
+            original_refresh
         )
 
     assert events == [
@@ -221,7 +221,7 @@ def test_node_drag_uses_solved_position_before_layout_and_member_touch():
             ),
         ),
         (
-            "touch",
+            "refresh",
             (
                 250.0,
                 0.0,
@@ -284,8 +284,8 @@ def test_node_drag_without_constraint_keeps_proposed_position():
         node_object.sync_layout_points_for_node
     )
 
-    original_touch = (
-        node_object.touch_connected_members
+    original_refresh = (
+        node_object.refresh_connected_members
     )
 
     node_object.solve_constrained_node_position = (
@@ -305,7 +305,7 @@ def test_node_drag_without_constraint_keeps_proposed_position():
         new_position: 0
     )
 
-    node_object.touch_connected_members = (
+    node_object.refresh_connected_members = (
         lambda document,
         node_object_value: ()
     )
@@ -325,8 +325,8 @@ def test_node_drag_without_constraint_keeps_proposed_position():
             original_layout_sync
         )
 
-        node_object.touch_connected_members = (
-            original_touch
+        node_object.refresh_connected_members = (
+            original_refresh
         )
 
     assert point_tuple(
