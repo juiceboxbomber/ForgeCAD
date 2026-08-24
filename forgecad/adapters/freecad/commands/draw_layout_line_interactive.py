@@ -13,7 +13,10 @@ from forgecad.services.grid_snap import (
     snap_xy_coordinates,
 )
 from forgecad.adapters.freecad.commands.draw_layout_line import (
+    abort_draw_layout_line_transaction,
+    begin_draw_layout_line_transaction,
     create_layout_line_object,
+    finish_draw_layout_line_transaction,
 )
 from forgecad.adapters.freecad.document_tree import (
     initialize_project_tree,
@@ -1072,7 +1075,7 @@ class InteractiveLayoutLineTool:
         self,
         point,
     ):
-        """Create a layout line and continue from its endpoint."""
+        """Create one undoable layout line and continue from its endpoint."""
 
         if self.start_point is None:
             return
@@ -1091,22 +1094,53 @@ class InteractiveLayoutLineTool:
             self.stop()
             return
 
-        groups = initialize_project_tree(
-            document
-        )
+        transaction_started = False
 
-        layout_object = (
-            create_layout_line_object(
-                document,
-                layout_line,
+        try:
+            transaction_started = (
+                begin_draw_layout_line_transaction(
+                    document
+                )
             )
-        )
 
-        groups["Layout"].addObject(
-            layout_object
-        )
+            groups = initialize_project_tree(
+                document
+            )
 
-        document.recompute()
+            layout_object = (
+                create_layout_line_object(
+                    document,
+                    layout_line,
+                )
+            )
+
+            groups["Layout"].addObject(
+                layout_object
+            )
+
+            document.recompute()
+
+            finish_draw_layout_line_transaction(
+                document,
+                transaction_started,
+            )
+
+        except (
+            ValueError,
+            RuntimeError,
+            KeyError,
+            AttributeError,
+        ) as error:
+            abort_draw_layout_line_transaction(
+                document,
+                transaction_started,
+            )
+
+            self.show_status(
+                f"ForgeCAD: Could not create layout line: {error}"
+            )
+            return
+
         self.refresh_snap_cache()
 
         self.start_point = point
@@ -1140,7 +1174,6 @@ class InteractiveLayoutLineTool:
             "Enter exact length if needed. "
             "Esc: Finish."
         )
-
 
 
     def accept_numeric_length(self):
