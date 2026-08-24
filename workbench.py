@@ -143,6 +143,11 @@ class ForgeCADWorkbench(
             register_command as register_inspect_joint_command,
         )
 
+        from forgecad.adapters.freecad.commands.convert_joint_to_bend import (
+            COMMAND_NAME as CONVERT_JOINT_TO_BEND_COMMAND,
+            register_command as register_convert_joint_to_bend_command,
+        )
+
         from forgecad.adapters.freecad.commands.next_joint_needing_attention import (
             COMMAND_NAME as NEXT_JOINT_COMMAND,
             register_command as register_next_joint_command,
@@ -209,6 +214,7 @@ class ForgeCADWorkbench(
         register_member_properties_command()
         register_select_members_command()
         register_inspect_joint_command()
+        register_convert_joint_to_bend_command()
         register_next_joint_command()
         register_joint_review_summary_command()
         register_fabrication_readiness_command()
@@ -244,6 +250,7 @@ class ForgeCADWorkbench(
             MEMBER_PROPERTIES_COMMAND,
             SELECT_MEMBERS_COMMAND,
             INSPECT_JOINT_COMMAND,
+            CONVERT_JOINT_TO_BEND_COMMAND,
             NEXT_JOINT_COMMAND,
             JOINT_REVIEW_SUMMARY_COMMAND,
             BEND_SCHEDULE_COMMAND,
