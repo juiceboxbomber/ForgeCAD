@@ -9,6 +9,7 @@ from forgecad.adapters.freecad.dialogs.create_reference_plane import (
     CreateReferencePlaneDialog,
 )
 from forgecad.adapters.freecad.reference_plane_store import (
+    find_reference_plane_at_location,
     find_reference_plane_object,
     save_reference_plane,
 )
@@ -36,96 +37,38 @@ def plane_shape(
             "Reference plane display size must be positive."
         )
 
-    half = (
-        size / 2.0
-    )
-
-    offset = float(
-        plane.offset
-    )
-
-    orientation = (
-        plane.orientation.value
-    )
+    half = size / 2.0
+    offset = float(plane.offset)
+    orientation = plane.orientation.value
 
     if orientation == "XY":
         points = (
-            FreeCAD.Vector(
-                -half,
-                -half,
-                offset,
-            ),
-            FreeCAD.Vector(
-                half,
-                -half,
-                offset,
-            ),
-            FreeCAD.Vector(
-                half,
-                half,
-                offset,
-            ),
-            FreeCAD.Vector(
-                -half,
-                half,
-                offset,
-            ),
+            FreeCAD.Vector(-half, -half, offset),
+            FreeCAD.Vector(half, -half, offset),
+            FreeCAD.Vector(half, half, offset),
+            FreeCAD.Vector(-half, half, offset),
         )
 
     elif orientation == "XZ":
         points = (
-            FreeCAD.Vector(
-                -half,
-                offset,
-                -half,
-            ),
-            FreeCAD.Vector(
-                half,
-                offset,
-                -half,
-            ),
-            FreeCAD.Vector(
-                half,
-                offset,
-                half,
-            ),
-            FreeCAD.Vector(
-                -half,
-                offset,
-                half,
-            ),
+            FreeCAD.Vector(-half, offset, -half),
+            FreeCAD.Vector(half, offset, -half),
+            FreeCAD.Vector(half, offset, half),
+            FreeCAD.Vector(-half, offset, half),
         )
 
     else:
         points = (
-            FreeCAD.Vector(
-                offset,
-                -half,
-                -half,
-            ),
-            FreeCAD.Vector(
-                offset,
-                half,
-                -half,
-            ),
-            FreeCAD.Vector(
-                offset,
-                half,
-                half,
-            ),
-            FreeCAD.Vector(
-                offset,
-                -half,
-                half,
-            ),
+            FreeCAD.Vector(offset, -half, -half),
+            FreeCAD.Vector(offset, half, -half),
+            FreeCAD.Vector(offset, half, half),
+            FreeCAD.Vector(offset, -half, half),
         )
 
     wire = Part.makePolygon(
         [
             *points,
-            points[
-                0
-            ],
+            points[0],
         ]
     )
 
@@ -202,16 +145,29 @@ def create_reference_plane(
             "A FreeCAD document is required."
         )
 
-    existing = (
-        find_reference_plane_object(
-            document,
-            plane.name,
-        )
+    existing = find_reference_plane_object(
+        document,
+        plane.name,
     )
 
     if existing is not None:
         raise ValueError(
             f'A reference plane named "{plane.name}" already exists.'
+        )
+
+    existing_location = find_reference_plane_at_location(
+        document,
+        plane.orientation,
+        plane.offset,
+    )
+
+    if existing_location is not None:
+        raise ValueError(
+            (
+                "A reference plane already exists at "
+                f"{plane.orientation.value} "
+                f"offset {float(plane.offset):.3f} mm."
+            )
         )
 
     obj = save_reference_plane(
@@ -247,9 +203,7 @@ class CreateReferencePlaneCommand:
     def Activated(
         self,
     ):
-        document = (
-            FreeCAD.ActiveDocument
-        )
+        document = FreeCAD.ActiveDocument
 
         if document is None:
             QtGui.QMessageBox.warning(
@@ -262,10 +216,8 @@ class CreateReferencePlaneCommand:
             )
             return
 
-        dialog = (
-            CreateReferencePlaneDialog(
-                FreeCADGui.getMainWindow()
-            )
+        dialog = CreateReferencePlaneDialog(
+            FreeCADGui.getMainWindow()
         )
 
         if (
@@ -274,20 +226,52 @@ class CreateReferencePlaneCommand:
         ):
             return
 
+        transaction_started = False
+
         try:
-            plane = (
-                dialog.reference_plane()
-            )
+            plane = dialog.reference_plane()
+
+            if hasattr(
+                document,
+                "openTransaction",
+            ):
+                document.openTransaction(
+                    "Create ForgeCAD Reference Plane"
+                )
+                transaction_started = True
 
             obj = create_reference_plane(
                 document,
                 plane,
             )
 
+            if (
+                transaction_started
+                and hasattr(
+                    document,
+                    "commitTransaction",
+                )
+            ):
+                document.commitTransaction()
+
         except (
             ValueError,
             TypeError,
+            RuntimeError,
+            AttributeError,
         ) as error:
+            if (
+                transaction_started
+                and hasattr(
+                    document,
+                    "abortTransaction",
+                )
+            ):
+                try:
+                    document.abortTransaction()
+                except Exception:
+                    pass
+
             QtGui.QMessageBox.warning(
                 FreeCADGui.getMainWindow(),
                 "Reference Plane Creation Failed",
@@ -298,7 +282,6 @@ class CreateReferencePlaneCommand:
             return
 
         FreeCADGui.Selection.clearSelection()
-
         FreeCADGui.Selection.addSelection(
             obj
         )
@@ -311,10 +294,7 @@ class CreateReferencePlaneCommand:
     def IsActive(
         self,
     ):
-        return (
-            FreeCAD.ActiveDocument
-            is not None
-        )
+        return FreeCAD.ActiveDocument is not None
 
 
 def register_command() -> None:

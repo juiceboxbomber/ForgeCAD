@@ -207,8 +207,8 @@ def save_reference_plane(
     """
     Persist one ForgeCAD ReferencePlane in the active document.
 
-    A new object is created for each call. Name uniqueness is handled
-    separately by higher-level command/UI logic.
+    A new object is created for each call. Name and geometric uniqueness are
+    handled separately by higher-level command/UI logic.
     """
 
     if document is None:
@@ -285,6 +285,57 @@ def find_reference_plane_object(
                 obj.ReferenceName
             ).strip()
             == requested_name
+        ):
+            return obj
+
+    return None
+
+
+def find_reference_plane_at_location(
+    document,
+    orientation,
+    offset,
+    tolerance=1e-6,
+):
+    """Return an existing plane with the same orientation and offset."""
+
+    requested_orientation = str(
+        getattr(
+            orientation,
+            "value",
+            orientation,
+        )
+    ).strip()
+
+    requested_offset = float(
+        offset
+    )
+
+    for obj in reference_plane_objects(
+        document
+    ):
+        existing_orientation = str(
+            obj.Orientation
+        ).strip()
+
+        existing_offset_value = getattr(
+            obj.Offset,
+            "Value",
+            obj.Offset,
+        )
+
+        existing_offset = float(
+            existing_offset_value
+        )
+
+        if (
+            existing_orientation
+            == requested_orientation
+            and abs(
+                existing_offset
+                - requested_offset
+            )
+            <= tolerance
         ):
             return obj
 
