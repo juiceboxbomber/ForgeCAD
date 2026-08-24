@@ -662,7 +662,19 @@ class GenerateFromSelectionCommand:
             )
         )
 
+        transaction_started = False
+
         try:
+            if hasattr(
+                document,
+                "openTransaction",
+            ):
+                document.openTransaction(
+                    "Generate ForgeCAD Frame"
+                )
+
+                transaction_started = True
+
             regenerate_frame(
                 document,
                 layout_objects=(
@@ -672,7 +684,28 @@ class GenerateFromSelectionCommand:
                 adjust_view=True,
             )
 
+            if (
+                transaction_started
+                and hasattr(
+                    document,
+                    "commitTransaction",
+                )
+            ):
+                document.commitTransaction()
+
         except Exception as error:
+            if (
+                transaction_started
+                and hasattr(
+                    document,
+                    "abortTransaction",
+                )
+            ):
+                try:
+                    document.abortTransaction()
+                except Exception:
+                    pass
+
             QtGui.QMessageBox.warning(
                 FreeCADGui.getMainWindow(),
                 "Frame Generation Failed",
