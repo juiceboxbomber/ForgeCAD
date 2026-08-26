@@ -535,3 +535,154 @@ def test_create_bent_tube_object_builds_initial_shape(
         calls
     ) == 1
     assert obj.Label == "Bent Tube"
+
+def test_joint_derived_bend_radius_edit_preserves_fixed_nodes(
+    monkeypatch,
+):
+    calls = _stub_shape_builder(
+        monkeypatch
+    )
+
+    obj = FakeDocumentObject()
+
+    proxy = bent_object.BentTubeProxy(
+        obj,
+        _tube(),
+    )
+
+    start_node = types.SimpleNamespace(
+        Position=FakeVector(
+            0.0,
+            0.0,
+            0.0,
+        )
+    )
+
+    design_joint_node = types.SimpleNamespace(
+        Position=FakeVector(
+            1000.0,
+            0.0,
+            0.0,
+        )
+    )
+
+    end_node = types.SimpleNamespace(
+        Position=FakeVector(
+            1000.0,
+            1000.0,
+            0.0,
+        )
+    )
+
+    obj.StartNode = start_node
+    obj.EndNode = end_node
+    obj.DesignJointNode = (
+        design_joint_node
+    )
+
+    obj.StartPoint = FakeVector(
+        0.0,
+        0.0,
+        0.0,
+    )
+
+    obj.InitialDirection = FakeVector(
+        1.0,
+        0.0,
+        0.0,
+    )
+
+    obj.InitialBendNormal = FakeVector(
+        0.0,
+        0.0,
+        1.0,
+    )
+
+    obj.BendCount = 1
+
+    obj.Run1Length = 900.0
+    obj.Run2Length = 900.0
+
+    obj.Bend1Angle = 90.0
+    obj.Bend1Radius = 200.0
+    obj.Bend1Rotation = 0.0
+
+    original_sync = (
+        bent_object.sync_bent_tube_end_node
+    )
+
+    sync_calls = []
+
+    bent_object.sync_bent_tube_end_node = (
+        lambda bent_tube_object,
+        centerline: sync_calls.append(
+            (
+                bent_tube_object,
+                centerline,
+            )
+        )
+    )
+
+    obj.Document = types.SimpleNamespace()
+
+    proxy._ready = True
+
+    try:
+        proxy.onChanged(
+            obj,
+            "Bend1Radius",
+        )
+
+    finally:
+        bent_object.sync_bent_tube_end_node = (
+            original_sync
+        )
+
+    rebuilt = calls[
+        -1
+    ][
+        0
+    ]
+
+    assert obj.Run1Length.Value == 800.0
+    assert obj.Run2Length.Value == 800.0
+
+    assert rebuilt.straight_runs[
+        0
+    ].length_mm == 800.0
+
+    assert rebuilt.straight_runs[
+        1
+    ].length_mm == 800.0
+
+    assert (
+        start_node.Position.x,
+        start_node.Position.y,
+        start_node.Position.z,
+    ) == (
+        0.0,
+        0.0,
+        0.0,
+    )
+
+    assert (
+        design_joint_node.Position.x,
+        design_joint_node.Position.y,
+        design_joint_node.Position.z,
+    ) == (
+        1000.0,
+        0.0,
+        0.0,
+    )
+
+    assert (
+        end_node.Position.x,
+        end_node.Position.y,
+        end_node.Position.z,
+    ) == (
+        1000.0,
+        1000.0,
+        0.0,
+    )
+
+    assert sync_calls == []

@@ -5,7 +5,10 @@ import FreeCAD
 from forgecad.fabrication import (
     Bend,
     BentTube,
+    Joint,
     Material,
+    Member,
+    Node,
     StraightRun,
 )
 from forgecad.geometry import (
@@ -14,6 +17,9 @@ from forgecad.geometry import (
 )
 from forgecad.services import (
     create_default_tube_library,
+)
+from forgecad.services.joint_bend import (
+    bend_specification_from_joint,
 )
 from forgecad.adapters.freecad.bent_tube_geometry import (
     build_bent_tube_shape,
@@ -164,6 +170,37 @@ def sync_bent_tube_end_node(
         return True
 
     return False
+
+
+def _node_from_link(
+    node_object,
+) -> Node:
+    """Return a fabrication Node from a linked FreeCAD node object."""
+
+    if (
+        node_object is None
+        or not hasattr(
+            node_object,
+            "Position",
+        )
+    ):
+        raise ValueError(
+            "Joint-derived bend is missing a required linked node."
+        )
+
+    position = node_object.Position
+
+    return Node(
+        float(
+            position.x
+        ),
+        float(
+            position.y
+        ),
+        float(
+            position.z
+        ),
+    )
 
 
 class BentTubeProxy:
@@ -493,6 +530,193 @@ class BentTubeProxy:
                 "Bent Tube"
             )
 
+    def _is_joint_derived_bend(
+        self,
+        obj,
+    ) -> bool:
+        """Return True when a bent tube is controlled by a design joint."""
+
+        design_joint = getattr(
+            obj,
+            "DesignJointNode",
+            None,
+        )
+
+        start_node = getattr(
+            obj,
+            "StartNode",
+            None,
+        )
+
+        end_node = getattr(
+            obj,
+            "EndNode",
+            None,
+        )
+
+        if (
+            design_joint is None
+            or start_node is None
+            or end_node is None
+            or not hasattr(
+                obj,
+                "Bend1Radius",
+            )
+        ):
+            return False
+
+        bend_count = int(
+            _quantity_value(
+                getattr(
+                    obj,
+                    "BendCount",
+                    0,
+                )
+            )
+        )
+
+        return bend_count == 1
+
+    def _refresh_joint_derived_path(
+        self,
+        obj,
+    ) -> bool:
+        """
+        Recalculate a converted joint bend from fixed structural nodes.
+
+        StartNode, DesignJointNode, and EndNode are authoritative. Changing
+        CLR changes tangent setback and straight-run lengths rather than
+        moving the frame endpoints.
+        """
+
+        if not self._is_joint_derived_bend(
+            obj
+        ):
+            return False
+
+        start_node = _node_from_link(
+            obj.StartNode
+        )
+
+        design_joint_node = _node_from_link(
+            obj.DesignJointNode
+        )
+
+        end_node = _node_from_link(
+            obj.EndNode
+        )
+
+        profile = self._selected_profile(
+            obj
+        )
+
+        material = self._material(
+            obj
+        )
+
+        first_member = Member(
+            start=start_node,
+            end=design_joint_node,
+            profile=profile,
+            material=material,
+        )
+
+        second_member = Member(
+            start=design_joint_node,
+            end=end_node,
+            profile=profile,
+            material=material,
+        )
+
+        joint = Joint(
+            node=design_joint_node,
+            members=[
+                first_member,
+                second_member,
+            ],
+        )
+
+        specification = (
+            bend_specification_from_joint(
+                joint,
+                centerline_radius_mm=(
+                    _quantity_value(
+                        obj.Bend1Radius
+                    )
+                ),
+                name=(
+                    str(
+                        getattr(
+                            obj,
+                            "TubeName",
+                            "",
+                        )
+                    ).strip()
+                    or "Bent Joint"
+                ),
+            )
+        )
+
+        obj.Run1Length = (
+            specification.tube
+            .straight_runs[
+                0
+            ]
+            .length_mm
+        )
+
+        obj.Run2Length = (
+            specification.tube
+            .straight_runs[
+                1
+            ]
+            .length_mm
+        )
+
+        obj.Bend1Angle = (
+            specification.bend_angle_degrees
+        )
+
+        obj.Bend1Rotation = 0.0
+
+        obj.StartPoint = FreeCAD.Vector(
+            float(
+                specification.start_node.x
+            ),
+            float(
+                specification.start_node.y
+            ),
+            float(
+                specification.start_node.z
+            ),
+        )
+
+        obj.InitialDirection = FreeCAD.Vector(
+            float(
+                specification.initial_direction.x
+            ),
+            float(
+                specification.initial_direction.y
+            ),
+            float(
+                specification.initial_direction.z
+            ),
+        )
+
+        obj.InitialBendNormal = FreeCAD.Vector(
+            float(
+                specification.bend_normal.x
+            ),
+            float(
+                specification.bend_normal.y
+            ),
+            float(
+                specification.bend_normal.z
+            ),
+        )
+
+        return True
+
     def _linked_start_node_changed(
         self,
         obj,
@@ -565,6 +789,12 @@ class BentTubeProxy:
                 obj
             )
 
+            joint_derived = (
+                self._refresh_joint_derived_path(
+                    obj
+                )
+            )
+
             tube = self._tube_from_properties(
                 obj
             )
@@ -591,10 +821,11 @@ class BentTubeProxy:
                 tube,
             )
 
-            sync_bent_tube_end_node(
-                obj,
-                centerline,
-            )
+            if not joint_derived:
+                sync_bent_tube_end_node(
+                    obj,
+                    centerline,
+                )
 
             self._geometry_dirty = False
 
