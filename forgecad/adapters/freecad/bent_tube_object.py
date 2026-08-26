@@ -214,6 +214,7 @@ class BentTubeProxy:
         self._updating = False
         self._ready = False
         self._geometry_dirty = True
+        self._last_joint_geometry = None
 
         obj.Proxy = self
 
@@ -717,6 +718,118 @@ class BentTubeProxy:
 
         return True
 
+    @staticmethod
+    def _linked_node_position_key(
+        node_object,
+    ):
+        """Return a stable XYZ key for one linked node object."""
+
+        if (
+            node_object is None
+            or not hasattr(
+                node_object,
+                "Position",
+            )
+        ):
+            return None
+
+        position = node_object.Position
+
+        return (
+            round(
+                float(
+                    position.x
+                ),
+                7,
+            ),
+            round(
+                float(
+                    position.y
+                ),
+                7,
+            ),
+            round(
+                float(
+                    position.z
+                ),
+                7,
+            ),
+        )
+
+    def _joint_geometry_signature(
+        self,
+        obj,
+    ):
+        """Return the authoritative linked geometry for a joint-derived bend."""
+
+        if not self._is_joint_derived_bend(
+            obj
+        ):
+            return None
+
+        start_key = (
+            self._linked_node_position_key(
+                getattr(
+                    obj,
+                    "StartNode",
+                    None,
+                )
+            )
+        )
+
+        joint_key = (
+            self._linked_node_position_key(
+                getattr(
+                    obj,
+                    "DesignJointNode",
+                    None,
+                )
+            )
+        )
+
+        end_key = (
+            self._linked_node_position_key(
+                getattr(
+                    obj,
+                    "EndNode",
+                    None,
+                )
+            )
+        )
+
+        if (
+            start_key is None
+            or joint_key is None
+            or end_key is None
+        ):
+            return None
+
+        return (
+            start_key,
+            joint_key,
+            end_key,
+        )
+
+    def _joint_link_geometry_changed(
+        self,
+        obj,
+    ) -> bool:
+        """Return True when a joint-derived bend's controlling nodes moved."""
+
+        signature = (
+            self._joint_geometry_signature(
+                obj
+            )
+        )
+
+        if signature is None:
+            return False
+
+        return (
+            signature
+            != self._last_joint_geometry
+        )
+
     def _linked_start_node_changed(
         self,
         obj,
@@ -827,6 +940,15 @@ class BentTubeProxy:
                     centerline,
                 )
 
+                self._last_joint_geometry = None
+
+            else:
+                self._last_joint_geometry = (
+                    self._joint_geometry_signature(
+                        obj
+                    )
+                )
+
             self._geometry_dirty = False
 
         finally:
@@ -894,6 +1016,9 @@ class BentTubeProxy:
         if (
             self._geometry_dirty
             or self._linked_start_node_changed(
+                obj
+            )
+            or self._joint_link_geometry_changed(
                 obj
             )
         ):

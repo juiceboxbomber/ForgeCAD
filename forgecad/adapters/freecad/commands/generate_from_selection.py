@@ -233,6 +233,65 @@ def project_layout_lines(
     )
 
 
+def bend_owned_layout_objects(
+    document,
+):
+    """Return layout objects currently owned by joint-derived bent tubes."""
+
+    if document is None:
+        return ()
+
+    bent_group = document.getObject(
+        "ForgeCADBentTubes"
+    )
+
+    if bent_group is None:
+        return ()
+
+    owned = []
+
+    for bent_object in getattr(
+        bent_group,
+        "Group",
+        (),
+    ):
+        for layout_object in getattr(
+            bent_object,
+            "SourceLayoutLines",
+            (),
+        ):
+            if (
+                layout_object is not None
+                and layout_object not in owned
+            ):
+                owned.append(
+                    layout_object
+                )
+
+    return tuple(
+        owned
+    )
+
+
+def unconsumed_layout_objects(
+    document,
+    layout_objects,
+):
+    """Exclude layout lines already represented by joint-derived bends."""
+
+    owned = set(
+        bend_owned_layout_objects(
+            document
+        )
+    )
+
+    return [
+        obj
+        for obj in layout_objects
+        if obj not in owned
+    ]
+
+
 def layout_ids_for_objects(
     objects,
 ):
@@ -515,37 +574,17 @@ def regenerate_frame(
             layout_objects
         )
 
-    layout = (
-        layout_from_selected_objects(
-            layout_objects
-        )
-    )
-
-    if layout.line_count == 0:
+    if not layout_objects:
         raise ValueError(
             "Draw or define one or more ForgeCAD "
             "layout lines before generating the frame."
         )
 
-    source_layout_ids = (
-        layout_ids_for_objects(
-            layout_objects
+    layout_objects = (
+        unconsumed_layout_objects(
+            document,
+            layout_objects,
         )
-    )
-
-    profile_overrides = (
-        profile_overrides_for_objects(
-            layout_objects
-        )
-    )
-
-    project = project_from_document(
-        document
-    )
-
-    frame = build_frame_from_layout(
-        project,
-        layout,
     )
 
     groups = initialize_project_tree(
@@ -558,35 +597,71 @@ def regenerate_frame(
         )
     )
 
-    renderer = FrameRenderer()
+    rendered_objects = []
 
-    try:
-        rendered_objects = (
-            renderer.render_frame(
-                document,
-                frame,
-                source_layout_ids=(
-                    source_layout_ids
-                ),
+    if layout_objects:
+        layout = (
+            layout_from_selected_objects(
+                layout_objects
             )
         )
 
-        apply_profile_overrides(
-            rendered_objects,
-            profile_overrides,
+        if layout.line_count == 0:
+            raise ValueError(
+                "Draw or define one or more ForgeCAD "
+                "layout lines before generating the frame."
+            )
+
+        source_layout_ids = (
+            layout_ids_for_objects(
+                layout_objects
+            )
         )
 
-        restore_rendered_member_node_links(
-            document,
-            rendered_objects,
+        profile_overrides = (
+            profile_overrides_for_objects(
+                layout_objects
+            )
         )
 
-    except Exception:
-        remove_objects_created_after(
-            document,
-            existing_names,
+        project = project_from_document(
+            document
         )
-        raise
+
+        frame = build_frame_from_layout(
+            project,
+            layout,
+        )
+
+        renderer = FrameRenderer()
+
+        try:
+            rendered_objects = (
+                renderer.render_frame(
+                    document,
+                    frame,
+                    source_layout_ids=(
+                        source_layout_ids
+                    ),
+                )
+            )
+
+            apply_profile_overrides(
+                rendered_objects,
+                profile_overrides,
+            )
+
+            restore_rendered_member_node_links(
+                document,
+                rendered_objects,
+            )
+
+        except Exception:
+            remove_objects_created_after(
+                document,
+                existing_names,
+            )
+            raise
 
     clear_group(
         document,
