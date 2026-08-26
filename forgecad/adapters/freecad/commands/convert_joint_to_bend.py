@@ -4,8 +4,16 @@ import FreeCAD
 import FreeCADGui
 from PySide import QtGui
 
+from forgecad.fabrication import (
+    Bend,
+    BentTube,
+    Node,
+    StraightRun,
+)
+
 from forgecad.adapters.freecad.bent_tube_object import (
     create_bent_tube_object,
+    ensure_bent_tube_design_joint_links,
     ensure_bent_tube_node_links,
 )
 from forgecad.adapters.freecad.document_tree import (
@@ -16,6 +24,7 @@ from forgecad.adapters.freecad.fabrication_refresh import (
 )
 from forgecad.adapters.freecad.joint_inspector_adapter import (
     frame_member_objects,
+    is_forgecad_bent_member,
     is_forgecad_member,
     structural_member_from_freecad_object,
 )
@@ -30,6 +39,9 @@ from forgecad.adapters.freecad.topology_refresh import (
 )
 from forgecad.services.joint_bend import (
     bend_specification_from_joint,
+)
+from forgecad.services.multi_joint_bend import (
+    build_multi_joint_bent_tube,
 )
 
 
@@ -58,6 +70,55 @@ def is_joint_marker(
             "Position",
         )
     )
+
+
+def is_joint_node_selection(
+    obj,
+):
+    """Return True when an object is a persistent ForgeCAD node."""
+
+    if obj is None:
+        return False
+
+    return (
+        hasattr(
+            obj,
+            "NodeID",
+        )
+        and hasattr(
+            obj,
+            "Position",
+        )
+    )
+
+
+def selected_joint_object():
+    """Return exactly one selected ForgeCAD joint node or marker."""
+
+    selection = list(
+        FreeCADGui.Selection.getSelection()
+    )
+
+    if len(
+        selection
+    ) != 1:
+        return None
+
+    selected = selection[
+        0
+    ]
+
+    if (
+        is_joint_marker(
+            selected
+        )
+        or is_joint_node_selection(
+            selected
+        )
+    ):
+        return selected
+
+    return None
 
 
 def selected_joint_marker():
@@ -129,15 +190,329 @@ def joint_status_for_marker(
     )
 
 
-def freecad_members_for_joint(
+def joint_status_for_node(
+    document,
+    node_object,
+    tolerance=1e-6,
+):
+    """Resolve one persistent ForgeCAD node to current joint review data."""
+
+    if document is None:
+        raise ValueError(
+            "A FreeCAD document is required."
+        )
+
+    if not is_joint_node_selection(
+        node_object
+    ):
+        raise ValueError(
+            "Select one ForgeCAD joint node."
+        )
+
+    position = node_object.Position
+
+    review = joint_review_for_document(
+        document
+    )
+
+    for item in review.joints:
+        joint_node = item.joint.node
+
+        if (
+            abs(
+                float(
+                    joint_node.x
+                )
+                - float(
+                    position.x
+                )
+            )
+            <= tolerance
+            and abs(
+                float(
+                    joint_node.y
+                )
+                - float(
+                    position.y
+                )
+            )
+            <= tolerance
+            and abs(
+                float(
+                    joint_node.z
+                )
+                - float(
+                    position.z
+                )
+            )
+            <= tolerance
+        ):
+            return item
+
+    raise ValueError(
+        "The selected node is not a current ForgeCAD joint."
+    )
+
+
+def joint_status_for_selection(
+    document,
+    selected_object,
+):
+    """Resolve either a joint-tree marker or persistent node to joint status."""
+
+    if is_joint_marker(
+        selected_object
+    ):
+        return joint_status_for_marker(
+            document,
+            selected_object,
+        )
+
+    if is_joint_node_selection(
+        selected_object
+    ):
+        return joint_status_for_node(
+            document,
+            selected_object,
+        )
+
+    raise ValueError(
+        "Select one ForgeCAD joint node or Joints-tree item."
+    )
+
+
+def joint_selection_label(
+    selected_object,
+    joint_status,
+):
+    """Return a useful label for the Convert Joint to Bend dialog."""
+
+    if is_joint_marker(
+        selected_object
+    ):
+        joint_id = str(
+            getattr(
+                selected_object,
+                "JointID",
+                "",
+            )
+        ).strip()
+
+        if joint_id:
+            return joint_id
+
+    node_id = str(
+        getattr(
+            selected_object,
+            "NodeID",
+            "",
+        )
+    ).strip()
+
+    if node_id:
+        return node_id
+
+    return str(
+        getattr(
+            joint_status,
+            "node_key",
+            "Joint",
+        )
+    )
+
+
+def joint_conversion_mode(
+    member_objects,
+):
+    """
+    Return the supported Convert Joint to Bend path for two FreeCAD objects.
+
+    "create" is the original two-straight-member conversion.
+    "extend" grows one existing bent tube through an adjacent straight member.
+    """
+
+    objects = tuple(
+        member_objects
+    )
+
+    if len(
+        objects
+    ) != 2:
+        raise ValueError(
+            "Convert Joint to Bend requires exactly two structural members."
+        )
+
+    bent_count = sum(
+        1
+        for obj in objects
+        if is_forgecad_bent_member(
+            obj
+        )
+        or (
+            getattr(
+                obj,
+                "Proxy",
+                None,
+            )
+            is not None
+            and hasattr(
+                getattr(
+                    obj,
+                    "Proxy",
+                    None,
+                ),
+                "replace_tube_definition",
+            )
+        )
+    )
+
+    straight_count = sum(
+        1
+        for obj in objects
+        if is_forgecad_member(
+            obj
+        )
+        or (
+            hasattr(
+                obj,
+                "MemberID",
+            )
+            and hasattr(
+                obj,
+                "SourceLayoutID",
+            )
+        )
+    )
+
+    if (
+        bent_count == 0
+        and straight_count == 2
+    ):
+        return "create"
+
+    if (
+        bent_count == 1
+        and straight_count == 1
+    ):
+        return "extend"
+
+    raise ValueError(
+        "Convert Joint to Bend currently supports either "
+        "two straight members or one bent tube plus one straight member."
+    )
+
+
+def is_extendable_bent_joint_objects(
+    member_objects,
+):
+    """
+    Return True for exactly one bent tube plus one straight member.
+
+    This identifies the next corner of one continuous fabricated tube
+    after an earlier straight-to-bend conversion. Two straight members
+    continue to use the original conversion path. Two bent members are
+    intentionally not merged here.
+    """
+
+    objects = tuple(
+        member_objects
+    )
+
+    if len(
+        objects
+    ) != 2:
+        return False
+
+    bent_count = sum(
+        1
+        for obj in objects
+        if is_forgecad_bent_member(
+            obj
+        )
+    )
+
+    straight_count = sum(
+        1
+        for obj in objects
+        if is_forgecad_member(
+            obj
+        )
+    )
+
+    return (
+        bent_count == 1
+        and straight_count == 1
+    )
+
+
+def append_bend_to_tube(
+    tube,
+    final_run_length_mm,
+    bend_angle_degrees,
+    centerline_radius_mm,
+    rotation_degrees=0.0,
+):
+    """
+    Return a new BentTube with one bend and one final straight run appended.
+
+    The original BentTube is immutable and remains unchanged.
+    """
+
+    if not isinstance(
+        tube,
+        BentTube,
+    ):
+        raise TypeError(
+            "append_bend_to_tube requires a BentTube."
+        )
+
+    final_run_length = float(
+        final_run_length_mm
+    )
+
+    if final_run_length <= 0.0:
+        raise ValueError(
+            "Final straight run length must be greater than zero."
+        )
+
+    bend = Bend(
+        angle_degrees=float(
+            bend_angle_degrees
+        ),
+        centerline_radius=float(
+            centerline_radius_mm
+        ),
+        rotation_degrees=float(
+            rotation_degrees
+        ),
+    )
+
+    return BentTube(
+        straight_runs=(
+            *tube.straight_runs,
+            StraightRun(
+                final_run_length
+            ),
+        ),
+        bends=(
+            *tube.bends,
+            bend,
+        ),
+        profile=tube.profile,
+        material=tube.material,
+    )
+
+
+def freecad_structural_objects_for_joint(
     document,
     joint,
 ):
     """
-    Return the exact straight FreeCAD member objects represented by a joint.
+    Return FreeCAD structural objects represented by a simple joint.
 
-    v1 intentionally supports only two straight members. Bent members and
-    multi-member joints remain untouched.
+    Mapping follows ``joint.members`` order exactly. Both generated straight
+    members and persistent bent-tube objects are eligible because
+    ``frame_member_objects()`` already exposes both structural object types.
     """
 
     if document is None:
@@ -150,50 +525,102 @@ def freecad_members_for_joint(
             "Convert Joint to Bend requires exactly two members."
         )
 
-    remaining = list(
-        joint.members
-    )
-
-    matches = []
+    available = []
 
     for obj in frame_member_objects(
         document
     ):
-        if not is_forgecad_member(
-            obj
-        ):
+        try:
+            domain_member = (
+                structural_member_from_freecad_object(
+                    obj
+                )
+            )
+        except ValueError:
             continue
 
-        domain_member = (
-            structural_member_from_freecad_object(
-                obj
+        available.append(
+            (
+                obj,
+                domain_member,
             )
         )
 
-        for index, requested_member in enumerate(
-            remaining
+    matches = []
+
+    used_indexes = set()
+
+    for requested_member in joint.members:
+        matched_object = None
+
+        for index, (
+            obj,
+            domain_member,
+        ) in enumerate(
+            available
         ):
+            if index in used_indexes:
+                continue
+
             if domain_member == requested_member:
-                matches.append(
-                    obj
-                )
-
-                del remaining[
+                matched_object = obj
+                used_indexes.add(
                     index
-                ]
-
+                )
                 break
 
-    if remaining or len(
+        if matched_object is None:
+            raise ValueError(
+                "ForgeCAD could not map the joint to exactly two "
+                "structural members."
+            )
+
+        matches.append(
+            matched_object
+        )
+
+    if len(
         matches
     ) != 2:
         raise ValueError(
-            "ForgeCAD could not map the joint to exactly two straight members."
+            "ForgeCAD could not map the joint to exactly two "
+            "structural members."
         )
 
     return tuple(
         matches
     )
+
+
+def freecad_members_for_joint(
+    document,
+    joint,
+):
+    """
+    Return the exact two straight FreeCAD members represented by a joint.
+
+    This preserves the original straight-to-bend conversion path while
+    delegating structural-object mapping to the generalized helper.
+    """
+
+    matches = (
+        freecad_structural_objects_for_joint(
+            document,
+            joint,
+        )
+    )
+
+    if not all(
+        is_forgecad_member(
+            obj
+        )
+        for obj in matches
+    ):
+        raise ValueError(
+            "ForgeCAD could not map the joint to exactly two straight members."
+        )
+
+    return matches
 
 
 def outer_node_object(
@@ -546,6 +973,584 @@ def remove_straight_member_object(
     )
 
 
+def extend_existing_bent_object(
+    document,
+    bent_object,
+    straight_object,
+    replacement_tube,
+    design_joint_node,
+    new_end_node,
+):
+    """
+    Extend one existing bent-tube document object through an adjacent joint.
+
+    The bent object's document identity is preserved. The adjoining straight
+    member is consumed, its source-layout object is transferred to the bent
+    tube's ownership list, the new design joint is stored in path order, and
+    the bent tube's EndNode advances to the straight member's outer endpoint.
+    """
+
+    if document is None:
+        raise ValueError(
+            "A FreeCAD document is required."
+        )
+
+    if bent_object is None:
+        raise ValueError(
+            "An existing ForgeCAD bent tube is required."
+        )
+
+    if straight_object is None:
+        raise ValueError(
+            "An adjoining ForgeCAD straight member is required."
+        )
+
+    proxy = getattr(
+        bent_object,
+        "Proxy",
+        None,
+    )
+
+    if (
+        proxy is None
+        or not hasattr(
+            proxy,
+            "replace_tube_definition",
+        )
+    ):
+        raise ValueError(
+            "The selected bent tube is not parametric."
+        )
+
+    existing_design_joints = []
+
+    index = 1
+
+    while True:
+        property_name = (
+            f"DesignJointNode{index}"
+        )
+
+        if not hasattr(
+            bent_object,
+            property_name,
+        ):
+            break
+
+        joint_node = getattr(
+            bent_object,
+            property_name,
+            None,
+        )
+
+        if joint_node is not None:
+            existing_design_joints.append(
+                joint_node
+            )
+
+        index += 1
+
+    if not existing_design_joints:
+        legacy_joint = getattr(
+            bent_object,
+            "DesignJointNode",
+            None,
+        )
+
+        if legacy_joint is not None:
+            existing_design_joints.append(
+                legacy_joint
+            )
+
+    if design_joint_node is None:
+        raise ValueError(
+            "A design joint node is required."
+        )
+
+    if (
+        not existing_design_joints
+        or existing_design_joints[
+            -1
+        ]
+        is not design_joint_node
+    ):
+        existing_design_joints.append(
+            design_joint_node
+        )
+
+    ensure_bent_tube_design_joint_links(
+        bent_object,
+        tuple(
+            existing_design_joints
+        ),
+    )
+
+    source_layouts = list(
+        getattr(
+            bent_object,
+            "SourceLayoutLines",
+            (),
+        )
+    )
+
+    layout_id = str(
+        getattr(
+            straight_object,
+            "SourceLayoutID",
+            "",
+        )
+    ).strip()
+
+    if layout_id:
+        layout_object = layout_object_for_id(
+            document,
+            layout_id,
+        )
+
+        # Tests may use the layout ID itself as the lightweight ownership
+        # stand-in when no real layout object exists.
+        layout_reference = (
+            layout_object
+            if layout_object is not None
+            else layout_id
+        )
+
+        if layout_reference not in source_layouts:
+            source_layouts.append(
+                layout_reference
+            )
+
+    bent_object.SourceLayoutLines = list(
+        source_layouts
+    )
+
+    if new_end_node is None:
+        raise ValueError(
+            "The extended bent tube requires a new endpoint node."
+        )
+
+    bent_object.EndNode = (
+        new_end_node
+    )
+
+    proxy.replace_tube_definition(
+        bent_object,
+        replacement_tube,
+    )
+
+    frame_group = document.getObject(
+        "ForgeCADFrame"
+    )
+
+    if frame_group is not None:
+        try:
+            frame_group.removeObject(
+                straight_object
+            )
+        except Exception:
+            pass
+
+    object_name = str(
+        getattr(
+            straight_object,
+            "Name",
+            "",
+        )
+    ).strip()
+
+    if not object_name:
+        raise ValueError(
+            "ForgeCAD member has no document object name."
+        )
+
+    document.removeObject(
+        object_name
+    )
+
+    document.recompute()
+
+    return bent_object
+
+
+def fabrication_node_from_object(
+    node_object,
+):
+    """Return a domain Node from one persistent FreeCAD node object."""
+
+    if node_object is None:
+        raise ValueError(
+            "A persistent ForgeCAD node is required."
+        )
+
+    position = getattr(
+        node_object,
+        "Position",
+        None,
+    )
+
+    if position is None:
+        raise ValueError(
+            "ForgeCAD node has no Position."
+        )
+
+    return Node(
+        float(
+            position.x
+        ),
+        float(
+            position.y
+        ),
+        float(
+            position.z
+        ),
+    )
+
+
+def design_joint_node_objects(
+    bent_object,
+):
+    """Return ordered persistent design-joint nodes for one bent tube."""
+
+    joints = []
+
+    index = 1
+
+    while True:
+        property_name = (
+            f"DesignJointNode{index}"
+        )
+
+        if not hasattr(
+            bent_object,
+            property_name,
+        ):
+            break
+
+        node_object = getattr(
+            bent_object,
+            property_name,
+            None,
+        )
+
+        if node_object is not None:
+            joints.append(
+                node_object
+            )
+
+        index += 1
+
+    if not joints:
+        legacy_joint = getattr(
+            bent_object,
+            "DesignJointNode",
+            None,
+        )
+
+        if legacy_joint is not None:
+            joints.append(
+                legacy_joint
+            )
+
+    return tuple(
+        joints
+    )
+
+
+def _node_object_matches_joint(
+    node_object,
+    joint_node,
+    tolerance=1e-6,
+):
+    """Return True when a persistent node occupies one domain joint point."""
+
+    if node_object is None:
+        return False
+
+    position = getattr(
+        node_object,
+        "Position",
+        None,
+    )
+
+    if position is None:
+        return False
+
+    return (
+        abs(
+            float(
+                position.x
+            )
+            - float(
+                joint_node.x
+            )
+        )
+        <= tolerance
+        and abs(
+            float(
+                position.y
+            )
+            - float(
+                joint_node.y
+            )
+        )
+        <= tolerance
+        and abs(
+            float(
+                position.z
+            )
+            - float(
+                joint_node.z
+            )
+        )
+        <= tolerance
+    )
+
+
+def extend_bent_tube_from_joint(
+    document,
+    joint_status,
+    centerline_radius_mm,
+):
+    """
+    Extend an existing bent tube through one adjoining straight-member joint.
+
+    The current implementation grows the tube from its EndNode. The existing
+    design joints and bend radii are retained, the selected joint becomes the
+    next hidden design joint, and the straight member's outer endpoint becomes
+    the bent tube's new EndNode.
+    """
+
+    if document is None:
+        raise ValueError(
+            "A FreeCAD document is required."
+        )
+
+    joint = joint_status.joint
+
+    member_objects = (
+        freecad_structural_objects_for_joint(
+            document,
+            joint,
+        )
+    )
+
+    if (
+        joint_conversion_mode(
+            member_objects
+        )
+        != "extend"
+    ):
+        raise ValueError(
+            "The selected joint is not an extendable bent-tube joint."
+        )
+
+    bent_object = next(
+        (
+            obj
+            for obj in member_objects
+            if is_forgecad_bent_member(
+                obj
+            )
+            or (
+                getattr(
+                    obj,
+                    "Proxy",
+                    None,
+                )
+                is not None
+                and hasattr(
+                    getattr(
+                        obj,
+                        "Proxy",
+                        None,
+                    ),
+                    "replace_tube_definition",
+                )
+            )
+        ),
+        None,
+    )
+
+    straight_object = next(
+        (
+            obj
+            for obj in member_objects
+            if obj is not bent_object
+            and (
+                is_forgecad_member(
+                    obj
+                )
+                or (
+                    hasattr(
+                        obj,
+                        "MemberID",
+                    )
+                    and hasattr(
+                        obj,
+                        "SourceLayoutID",
+                    )
+                )
+            )
+        ),
+        None,
+    )
+
+    if (
+        bent_object is None
+        or straight_object is None
+    ):
+        raise ValueError(
+            "ForgeCAD could not identify the bent and straight members."
+        )
+
+    current_end_node = getattr(
+        bent_object,
+        "EndNode",
+        None,
+    )
+
+    if not _node_object_matches_joint(
+        current_end_node,
+        joint.node,
+    ):
+        raise ValueError(
+            "Bent-tube extension currently requires the selected joint "
+            "to be at the bent tube's end."
+        )
+
+    design_node = joint_node_object(
+        document,
+        joint.node,
+    )
+
+    if design_node is None:
+        raise ValueError(
+            "ForgeCAD could not find the persistent node for this joint."
+        )
+
+    new_end_node = outer_node_object(
+        straight_object,
+        joint.node,
+    )
+
+    proxy = getattr(
+        bent_object,
+        "Proxy",
+        None,
+    )
+
+    if (
+        proxy is None
+        or not hasattr(
+            proxy,
+            "_tube_from_properties",
+        )
+    ):
+        raise ValueError(
+            "The selected bent tube is not parametric."
+        )
+
+    current_tube = (
+        proxy._tube_from_properties(
+            bent_object
+        )
+    )
+
+    ordered_joint_nodes = list(
+        design_joint_node_objects(
+            bent_object
+        )
+    )
+
+    if (
+        not ordered_joint_nodes
+        or ordered_joint_nodes[
+            -1
+        ]
+        is not design_node
+    ):
+        ordered_joint_nodes.append(
+            design_node
+        )
+
+    start_node = getattr(
+        bent_object,
+        "StartNode",
+        None,
+    )
+
+    if start_node is None:
+        raise ValueError(
+            "The bent tube has no persistent StartNode."
+        )
+
+    design_path_nodes = (
+        start_node,
+        *ordered_joint_nodes,
+        new_end_node,
+    )
+
+    radii = (
+        *(
+            float(
+                bend.centerline_radius
+            )
+            for bend in current_tube.bends
+        ),
+        float(
+            centerline_radius_mm
+        ),
+    )
+
+    replacement_tube = (
+        build_multi_joint_bent_tube(
+            nodes=tuple(
+                fabrication_node_from_object(
+                    node_object
+                )
+                for node_object
+                in design_path_nodes
+            ),
+            centerline_radii_mm=tuple(
+                radii
+            ),
+            profile=current_tube.profile,
+            material=current_tube.material,
+        )
+    )
+
+    result = extend_existing_bent_object(
+        document=document,
+        bent_object=bent_object,
+        straight_object=straight_object,
+        replacement_tube=replacement_tube,
+        design_joint_node=design_node,
+        new_end_node=new_end_node,
+    )
+
+    hide_design_geometry_for_bend(
+        document,
+        (
+            straight_object,
+        ),
+        joint.node,
+    )
+
+    document.recompute()
+
+    refresh_joint_topology(
+        document
+    )
+
+    refresh_fabrication_for_document(
+        document
+    )
+
+    document.recompute()
+
+    return result
+
+
 def create_bent_tube_from_joint(
     document,
     joint_status,
@@ -884,8 +1889,8 @@ class ConvertJointToBendCommand:
             "MenuText":
                 "Convert Joint to Bend",
             "ToolTip": (
-                "Replace a two-straight-member joint with "
-                "one continuous bent tube"
+                "Convert a straight joint to a bend or extend "
+                "an existing continuous bent tube"
             ),
         }
 
@@ -902,23 +1907,24 @@ class ConvertJointToBendCommand:
             )
             return
 
-        marker = selected_joint_marker()
+        selected_object = selected_joint_object()
 
-        if marker is None:
+        if selected_object is None:
             QtGui.QMessageBox.warning(
                 FreeCADGui.getMainWindow(),
                 "Select One Joint",
                 (
-                    "Select exactly one ForgeCAD joint sphere, "
-                    "then run Convert Joint to Bend."
+                    "Select exactly one ForgeCAD joint node in the 3D view "
+                    "or one joint item in the Joints tree, then run "
+                    "Convert Joint to Bend."
                 ),
             )
             return
 
         try:
-            joint_status = joint_status_for_marker(
+            joint_status = joint_status_for_selection(
                 document,
-                marker,
+                selected_object,
             )
 
             if not joint_status.joint.is_simple:
@@ -926,9 +1932,17 @@ class ConvertJointToBendCommand:
                     "Convert Joint to Bend requires exactly two members."
                 )
 
-            freecad_members_for_joint(
-                document,
-                joint_status.joint,
+            structural_objects = (
+                freecad_structural_objects_for_joint(
+                    document,
+                    joint_status.joint,
+                )
+            )
+
+            conversion_mode = (
+                joint_conversion_mode(
+                    structural_objects
+                )
             )
 
         except (
@@ -947,8 +1961,9 @@ class ConvertJointToBendCommand:
             return
 
         dialog = ConvertJointToBendDialog(
-            str(
-                marker.JointID
+            joint_selection_label(
+                selected_object,
+                joint_status,
             ),
             FreeCADGui.getMainWindow(),
         )
@@ -968,13 +1983,23 @@ class ConvertJointToBendCommand:
                 )
             )
 
-            bent_object = (
-                create_bent_tube_from_joint(
-                    document,
-                    joint_status,
-                    dialog.radius_box.value(),
+            if conversion_mode == "create":
+                bent_object = (
+                    create_bent_tube_from_joint(
+                        document,
+                        joint_status,
+                        dialog.radius_box.value(),
+                    )
                 )
-            )
+
+            else:
+                bent_object = (
+                    extend_bent_tube_from_joint(
+                        document,
+                        joint_status,
+                        dialog.radius_box.value(),
+                    )
+                )
 
             finish_convert_joint_to_bend_transaction(
                 document,

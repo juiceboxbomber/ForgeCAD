@@ -1111,3 +1111,135 @@ def test_joint_derived_bend_rebuilds_when_design_joint_moves(
         != 900.0
     )
 
+def test_proxy_can_replace_path_with_additional_bend(
+    monkeypatch,
+):
+    calls = _stub_shape_builder(
+        monkeypatch
+    )
+
+    obj = FakeDocumentObject()
+
+    original = BentTube(
+        straight_runs=(
+            StraightRun(
+                900.0
+            ),
+            StraightRun(
+                900.0
+            ),
+        ),
+        bends=(
+            Bend(
+                angle_degrees=90.0,
+                centerline_radius=100.0,
+                rotation_degrees=0.0,
+            ),
+        ),
+        profile=_profile(),
+        material=_material(),
+    )
+
+    proxy = bent_object.BentTubeProxy(
+        obj,
+        original,
+    )
+
+    replacement = BentTube(
+        straight_runs=(
+            StraightRun(
+                900.0
+            ),
+            StraightRun(
+                800.0
+            ),
+            StraightRun(
+                900.0
+            ),
+        ),
+        bends=(
+            Bend(
+                angle_degrees=90.0,
+                centerline_radius=100.0,
+                rotation_degrees=0.0,
+            ),
+            Bend(
+                angle_degrees=90.0,
+                centerline_radius=100.0,
+                rotation_degrees=0.0,
+            ),
+        ),
+        profile=_profile(),
+        material=_material(),
+    )
+
+    initial_count = len(
+        calls
+    )
+
+    proxy.replace_tube_definition(
+        obj,
+        replacement,
+    )
+
+    assert (
+        proxy._bend_count
+        == 2
+    )
+
+    assert (
+        obj.BendCount
+        == 2
+    )
+
+    assert hasattr(
+        obj,
+        "Run3Length",
+    )
+
+    assert hasattr(
+        obj,
+        "Bend2Angle",
+    )
+
+    assert hasattr(
+        obj,
+        "Bend2Radius",
+    )
+
+    assert hasattr(
+        obj,
+        "Bend2Rotation",
+    )
+
+    assert (
+        obj.Run1Length.Value
+        == 900.0
+    )
+
+    assert (
+        obj.Run2Length.Value
+        == 800.0
+    )
+
+    assert (
+        obj.Run3Length.Value
+        == 900.0
+    )
+
+    assert (
+        obj.Bend2Angle.Value
+        == 90.0
+    )
+
+    assert (
+        obj.Bend2Radius.Value
+        == 100.0
+    )
+
+    assert len(
+        calls
+    ) == (
+        initial_count + 1
+    )
+    

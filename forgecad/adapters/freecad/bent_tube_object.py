@@ -91,6 +91,83 @@ def ensure_bent_tube_node_links(
     return obj
 
 
+def ensure_bent_tube_design_joint_links(
+    obj,
+    design_joint_nodes=(),
+):
+    """
+    Ensure numbered persistent design-joint links exist in path order.
+
+    Existing one-bend documents may still use the legacy DesignJointNode
+    property. When present, migrate that link to DesignJointNode1 while
+    leaving the legacy property untouched for backward compatibility.
+    """
+
+    if obj is None:
+        raise ValueError(
+            "A bent-tube object is required."
+        )
+
+    requested_nodes = list(
+        design_joint_nodes
+    )
+
+    legacy_joint = getattr(
+        obj,
+        "DesignJointNode",
+        None,
+    )
+
+    if (
+        legacy_joint is not None
+        and (
+            not requested_nodes
+            or requested_nodes[
+                0
+            ]
+            is not legacy_joint
+        )
+    ):
+        requested_nodes.insert(
+            0,
+            legacy_joint,
+        )
+
+    for index, node_object in enumerate(
+        requested_nodes,
+        start=1,
+    ):
+        property_name = (
+            f"DesignJointNode{index}"
+        )
+
+        if not hasattr(
+            obj,
+            property_name,
+        ):
+            obj.addProperty(
+                "App::PropertyLink",
+                property_name,
+                "ForgeCAD Topology",
+            )
+
+        setattr(
+            obj,
+            property_name,
+            node_object,
+        )
+
+        try:
+            obj.setEditorMode(
+                property_name,
+                1,
+            )
+        except Exception:
+            pass
+
+    return obj
+
+
 def sync_bent_tube_start_from_node(
     obj,
 ):
@@ -397,6 +474,165 @@ class BentTubeProxy:
                 )
             except Exception:
                 pass
+
+    def replace_tube_definition(
+        self,
+        obj,
+        tube: BentTube,
+    ):
+        """
+        Replace the parametric path definition while preserving object identity.
+
+        Additional RunNLength and BendN* properties are created as needed.
+        Existing properties are reused so a one-bend FreeCAD object can grow
+        into a multi-bend object without replacing the document object.
+        """
+
+        if not isinstance(
+            tube,
+            BentTube,
+        ):
+            raise TypeError(
+                "replace_tube_definition requires a BentTube."
+            )
+
+        previous_ready = self._ready
+        self._ready = False
+
+        try:
+            required_run_count = len(
+                tube.straight_runs
+            )
+
+            required_bend_count = len(
+                tube.bends
+            )
+
+            for index, run in enumerate(
+                tube.straight_runs,
+                start=1,
+            ):
+                property_name = (
+                    f"Run{index}Length"
+                )
+
+                if not hasattr(
+                    obj,
+                    property_name,
+                ):
+                    obj.addProperty(
+                        "App::PropertyLength",
+                        property_name,
+                        "ForgeCAD Path",
+                    )
+
+                setattr(
+                    obj,
+                    property_name,
+                    run.length_mm,
+                )
+
+            for index, bend in enumerate(
+                tube.bends,
+                start=1,
+            ):
+                angle_name = (
+                    f"Bend{index}Angle"
+                )
+
+                radius_name = (
+                    f"Bend{index}Radius"
+                )
+
+                rotation_name = (
+                    f"Bend{index}Rotation"
+                )
+
+                if not hasattr(
+                    obj,
+                    angle_name,
+                ):
+                    obj.addProperty(
+                        "App::PropertyAngle",
+                        angle_name,
+                        "ForgeCAD Path",
+                    )
+
+                if not hasattr(
+                    obj,
+                    radius_name,
+                ):
+                    obj.addProperty(
+                        "App::PropertyLength",
+                        radius_name,
+                        "ForgeCAD Path",
+                    )
+
+                if not hasattr(
+                    obj,
+                    rotation_name,
+                ):
+                    obj.addProperty(
+                        "App::PropertyAngle",
+                        rotation_name,
+                        "ForgeCAD Path",
+                    )
+
+                setattr(
+                    obj,
+                    angle_name,
+                    bend.angle_degrees,
+                )
+
+                setattr(
+                    obj,
+                    radius_name,
+                    bend.centerline_radius,
+                )
+
+                setattr(
+                    obj,
+                    rotation_name,
+                    bend.rotation_degrees,
+                )
+
+            # Keep the document's profile/material metadata synchronized
+            # with the replacement domain definition.
+            obj.TubeProfile = (
+                self._profile_name_for_tube(
+                    tube
+                )
+            )
+
+            obj.Material = (
+                tube.material.name
+            )
+
+            self._bend_count = (
+                required_bend_count
+            )
+
+            self._update_summary_properties(
+                obj,
+                tube,
+            )
+
+            # Any properties left over from a future path shrink are ignored
+            # because _tube_from_properties reads only through _bend_count.
+            # Current joint-to-bend extension only grows the path.
+            _ = required_run_count
+
+            self._geometry_dirty = True
+            self._last_joint_geometry = None
+
+        finally:
+            self._ready = previous_ready
+
+        self.update_shape(
+            obj
+        )
+
+        return obj
 
     def _profile_name_for_tube(
         self,
