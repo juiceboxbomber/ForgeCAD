@@ -838,7 +838,6 @@ def ensure_node_proxy(
 
     try:
         obj.ViewObject.Proxy = 0
-        obj.ViewObject.Visibility = True
         obj.ViewObject.Selectable = True
     except Exception:
         pass

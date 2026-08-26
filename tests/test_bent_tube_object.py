@@ -820,4 +820,294 @@ def test_joint_derived_bend_rebuilds_when_end_node_moves(
         obj.Run2Length.Value
         != 900.0
     )
-    
+
+def test_joint_derived_bend_rebuilds_when_start_node_moves(
+    monkeypatch,
+):
+    calls = _stub_shape_builder(
+        monkeypatch
+    )
+
+    obj = FakeDocumentObject()
+
+    proxy = bent_object.BentTubeProxy(
+        obj,
+        _tube(),
+    )
+
+    start_node = types.SimpleNamespace(
+        Position=FakeVector(
+            0.0,
+            0.0,
+            0.0,
+        )
+    )
+
+    design_joint_node = types.SimpleNamespace(
+        Position=FakeVector(
+            1000.0,
+            0.0,
+            0.0,
+        )
+    )
+
+    end_node = types.SimpleNamespace(
+        Position=FakeVector(
+            1000.0,
+            1000.0,
+            0.0,
+        )
+    )
+
+    obj.StartNode = start_node
+    obj.EndNode = end_node
+    obj.DesignJointNode = (
+        design_joint_node
+    )
+
+    obj.StartPoint = FakeVector(
+        0.0,
+        0.0,
+        0.0,
+    )
+
+    obj.InitialDirection = FakeVector(
+        1.0,
+        0.0,
+        0.0,
+    )
+
+    obj.InitialBendNormal = FakeVector(
+        0.0,
+        0.0,
+        1.0,
+    )
+
+    obj.BendCount = 1
+
+    obj.Run1Length = 900.0
+    obj.Run2Length = 900.0
+
+    obj.Bend1Angle = 90.0
+    obj.Bend1Radius = 100.0
+    obj.Bend1Rotation = 0.0
+
+    obj.Document = types.SimpleNamespace()
+
+    proxy._ready = True
+    proxy._geometry_dirty = False
+
+    proxy._last_joint_geometry = (
+        proxy._joint_geometry_signature(
+            obj
+        )
+    )
+
+    initial_count = len(
+        calls
+    )
+
+    start_node.Position = FakeVector(
+        0.0,
+        500.0,
+        0.0,
+    )
+
+    proxy.execute(
+        obj
+    )
+
+    assert len(
+        calls
+    ) == (
+        initial_count + 1
+    )
+
+    assert (
+        start_node.Position.x,
+        start_node.Position.y,
+        start_node.Position.z,
+    ) == (
+        0.0,
+        500.0,
+        0.0,
+    )
+
+    assert (
+        end_node.Position.x,
+        end_node.Position.y,
+        end_node.Position.z,
+    ) == (
+        1000.0,
+        1000.0,
+        0.0,
+    )
+
+    assert (
+        design_joint_node.Position.x,
+        design_joint_node.Position.y,
+        design_joint_node.Position.z,
+    ) == (
+        1000.0,
+        0.0,
+        0.0,
+    )
+
+    assert (
+        obj.Bend1Angle.Value
+        != 90.0
+    )
+
+    assert (
+        obj.Run1Length.Value
+        != 900.0
+    )
+
+
+def test_joint_derived_bend_rebuilds_when_design_joint_moves(
+    monkeypatch,
+):
+    calls = _stub_shape_builder(
+        monkeypatch
+    )
+
+    obj = FakeDocumentObject()
+
+    proxy = bent_object.BentTubeProxy(
+        obj,
+        _tube(),
+    )
+
+    start_node = types.SimpleNamespace(
+        Position=FakeVector(
+            0.0,
+            0.0,
+            0.0,
+        )
+    )
+
+    design_joint_node = types.SimpleNamespace(
+        Position=FakeVector(
+            1000.0,
+            0.0,
+            0.0,
+        )
+    )
+
+    end_node = types.SimpleNamespace(
+        Position=FakeVector(
+            1000.0,
+            1000.0,
+            0.0,
+        )
+    )
+
+    obj.StartNode = start_node
+    obj.EndNode = end_node
+    obj.DesignJointNode = (
+        design_joint_node
+    )
+
+    obj.StartPoint = FakeVector(
+        0.0,
+        0.0,
+        0.0,
+    )
+
+    obj.InitialDirection = FakeVector(
+        1.0,
+        0.0,
+        0.0,
+    )
+
+    obj.InitialBendNormal = FakeVector(
+        0.0,
+        0.0,
+        1.0,
+    )
+
+    obj.BendCount = 1
+
+    obj.Run1Length = 900.0
+    obj.Run2Length = 900.0
+
+    obj.Bend1Angle = 90.0
+    obj.Bend1Radius = 100.0
+    obj.Bend1Rotation = 0.0
+
+    obj.Document = types.SimpleNamespace()
+
+    proxy._ready = True
+    proxy._geometry_dirty = False
+
+    proxy._last_joint_geometry = (
+        proxy._joint_geometry_signature(
+            obj
+        )
+    )
+
+    initial_count = len(
+        calls
+    )
+
+    design_joint_node.Position = FakeVector(
+        900.0,
+        100.0,
+        0.0,
+    )
+
+    proxy.execute(
+        obj
+    )
+
+    assert len(
+        calls
+    ) == (
+        initial_count + 1
+    )
+
+    assert (
+        start_node.Position.x,
+        start_node.Position.y,
+        start_node.Position.z,
+    ) == (
+        0.0,
+        0.0,
+        0.0,
+    )
+
+    assert (
+        end_node.Position.x,
+        end_node.Position.y,
+        end_node.Position.z,
+    ) == (
+        1000.0,
+        1000.0,
+        0.0,
+    )
+
+    assert (
+        design_joint_node.Position.x,
+        design_joint_node.Position.y,
+        design_joint_node.Position.z,
+    ) == (
+        900.0,
+        100.0,
+        0.0,
+    )
+
+    assert (
+        obj.Bend1Angle.Value
+        != 90.0
+    )
+
+    assert (
+        obj.Run1Length.Value
+        != 900.0
+    )
+
+    assert (
+        obj.Run2Length.Value
+        != 900.0
+    )
+

@@ -23,6 +23,10 @@ class ForgeCADWorkbench(
             register_undo_redo_observer,
         )
 
+        from forgecad.adapters.freecad.selection_tree_observer import (
+            register_selection_tree_observer,
+        )
+
         from forgecad.adapters.freecad.commands.new_project import (
             COMMAND_NAME as NEW_PROJECT_COMMAND,
             register_command as register_new_project_command,
@@ -189,6 +193,7 @@ class ForgeCADWorkbench(
         )
 
         register_undo_redo_observer()
+        register_selection_tree_observer()
 
         register_new_project_command()
         register_workspace_settings_command()
