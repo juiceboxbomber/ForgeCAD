@@ -249,6 +249,106 @@ def refresh_connected_members(
 
 
 
+def sync_joint_marker_position(
+    document,
+    old_position,
+    new_position,
+):
+    """
+    Move existing disposable joint markers with a moved structural node.
+
+    This is a lightweight live-display synchronization only. It does not
+    clear or rebuild the Joints group during interactive movement.
+    """
+
+    if document is None:
+        return 0
+
+    get_object = getattr(
+        document,
+        "getObject",
+        None,
+    )
+
+    if not callable(
+        get_object
+    ):
+        return 0
+
+    joints_group = get_object(
+        "ForgeCADJoints"
+    )
+
+    if joints_group is None:
+        return 0
+
+    old_key = point_key(
+        old_position
+    )
+
+    changed_count = 0
+
+    for marker in getattr(
+        joints_group,
+        "Group",
+        [],
+    ):
+        position = getattr(
+            marker,
+            "Position",
+            None,
+        )
+
+        if position is None:
+            continue
+
+        if point_key(
+            position
+        ) != old_key:
+            continue
+
+        marker.Position = vector_copy(
+            new_position
+        )
+
+        try:
+            from forgecad.adapters.freecad.joint_status_objects import (
+                configure_joint_marker,
+            )
+
+            configure_joint_marker(
+                marker
+            )
+
+        except Exception:
+            radius = float(
+                getattr(
+                    marker,
+                    "MarkerRadius",
+                    9.0,
+                )
+            )
+
+            try:
+                marker.Shape = Part.makeSphere(
+                    radius,
+                    vector_copy(
+                        new_position
+                    ),
+                )
+            except Exception:
+                pass
+
+        try:
+            marker.touch()
+        except Exception:
+            pass
+
+        changed_count += 1
+
+    return changed_count
+
+
 def touch_connected_members(
     document,
     node_object,
@@ -623,9 +723,15 @@ class ForgeCADNodeProxy:
                 new_position,
             )
 
-            touch_connected_members(
+            refresh_connected_members(
                 document,
                 obj,
+            )
+
+            sync_joint_marker_position(
+                document,
+                old_position,
+                new_position,
             )
 
             self._last_position = (
@@ -732,7 +838,6 @@ def ensure_node_proxy(
 
     try:
         obj.ViewObject.Proxy = 0
-        obj.ViewObject.Visibility = True
         obj.ViewObject.Selectable = True
     except Exception:
         pass

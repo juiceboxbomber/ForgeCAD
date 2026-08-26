@@ -535,3 +535,711 @@ def test_create_bent_tube_object_builds_initial_shape(
         calls
     ) == 1
     assert obj.Label == "Bent Tube"
+
+def test_joint_derived_bend_radius_edit_preserves_fixed_nodes(
+    monkeypatch,
+):
+    calls = _stub_shape_builder(
+        monkeypatch
+    )
+
+    obj = FakeDocumentObject()
+
+    proxy = bent_object.BentTubeProxy(
+        obj,
+        _tube(),
+    )
+
+    start_node = types.SimpleNamespace(
+        Position=FakeVector(
+            0.0,
+            0.0,
+            0.0,
+        )
+    )
+
+    design_joint_node = types.SimpleNamespace(
+        Position=FakeVector(
+            1000.0,
+            0.0,
+            0.0,
+        )
+    )
+
+    end_node = types.SimpleNamespace(
+        Position=FakeVector(
+            1000.0,
+            1000.0,
+            0.0,
+        )
+    )
+
+    obj.StartNode = start_node
+    obj.EndNode = end_node
+    obj.DesignJointNode = (
+        design_joint_node
+    )
+
+    obj.StartPoint = FakeVector(
+        0.0,
+        0.0,
+        0.0,
+    )
+
+    obj.InitialDirection = FakeVector(
+        1.0,
+        0.0,
+        0.0,
+    )
+
+    obj.InitialBendNormal = FakeVector(
+        0.0,
+        0.0,
+        1.0,
+    )
+
+    obj.BendCount = 1
+
+    obj.Run1Length = 900.0
+    obj.Run2Length = 900.0
+
+    obj.Bend1Angle = 90.0
+    obj.Bend1Radius = 200.0
+    obj.Bend1Rotation = 0.0
+
+    original_sync = (
+        bent_object.sync_bent_tube_end_node
+    )
+
+    sync_calls = []
+
+    bent_object.sync_bent_tube_end_node = (
+        lambda bent_tube_object,
+        centerline: sync_calls.append(
+            (
+                bent_tube_object,
+                centerline,
+            )
+        )
+    )
+
+    obj.Document = types.SimpleNamespace()
+
+    proxy._ready = True
+
+    try:
+        proxy.onChanged(
+            obj,
+            "Bend1Radius",
+        )
+
+    finally:
+        bent_object.sync_bent_tube_end_node = (
+            original_sync
+        )
+
+    rebuilt = calls[
+        -1
+    ][
+        0
+    ]
+
+    assert obj.Run1Length.Value == 800.0
+    assert obj.Run2Length.Value == 800.0
+
+    assert rebuilt.straight_runs[
+        0
+    ].length_mm == 800.0
+
+    assert rebuilt.straight_runs[
+        1
+    ].length_mm == 800.0
+
+    assert (
+        start_node.Position.x,
+        start_node.Position.y,
+        start_node.Position.z,
+    ) == (
+        0.0,
+        0.0,
+        0.0,
+    )
+
+    assert (
+        design_joint_node.Position.x,
+        design_joint_node.Position.y,
+        design_joint_node.Position.z,
+    ) == (
+        1000.0,
+        0.0,
+        0.0,
+    )
+
+    assert (
+        end_node.Position.x,
+        end_node.Position.y,
+        end_node.Position.z,
+    ) == (
+        1000.0,
+        1000.0,
+        0.0,
+    )
+
+    assert sync_calls == []
+
+def test_joint_derived_bend_rebuilds_when_end_node_moves(
+    monkeypatch,
+):
+    calls = _stub_shape_builder(
+        monkeypatch
+    )
+
+    obj = FakeDocumentObject()
+
+    proxy = bent_object.BentTubeProxy(
+        obj,
+        _tube(),
+    )
+
+    start_node = types.SimpleNamespace(
+        Position=FakeVector(
+            0.0,
+            0.0,
+            0.0,
+        )
+    )
+
+    design_joint_node = types.SimpleNamespace(
+        Position=FakeVector(
+            1000.0,
+            0.0,
+            0.0,
+        )
+    )
+
+    end_node = types.SimpleNamespace(
+        Position=FakeVector(
+            1000.0,
+            1000.0,
+            0.0,
+        )
+    )
+
+    obj.StartNode = start_node
+    obj.EndNode = end_node
+    obj.DesignJointNode = (
+        design_joint_node
+    )
+
+    obj.StartPoint = FakeVector(
+        0.0,
+        0.0,
+        0.0,
+    )
+
+    obj.InitialDirection = FakeVector(
+        1.0,
+        0.0,
+        0.0,
+    )
+
+    obj.InitialBendNormal = FakeVector(
+        0.0,
+        0.0,
+        1.0,
+    )
+
+    obj.BendCount = 1
+
+    obj.Run1Length = 900.0
+    obj.Run2Length = 900.0
+
+    obj.Bend1Angle = 90.0
+    obj.Bend1Radius = 100.0
+    obj.Bend1Rotation = 0.0
+
+    obj.Document = types.SimpleNamespace()
+
+    proxy._ready = True
+    proxy._geometry_dirty = False
+
+    initial_count = len(
+        calls
+    )
+
+    # Move only the outer EndNode.
+    #
+    # The theoretical joint stays at (1000, 0, 0), but the
+    # second leg now points diagonally toward (1500, 1000, 0).
+    end_node.Position = FakeVector(
+        1500.0,
+        1000.0,
+        0.0,
+    )
+
+    proxy.execute(
+        obj
+    )
+
+    assert len(
+        calls
+    ) == (
+        initial_count + 1
+    )
+
+    assert (
+        end_node.Position.x,
+        end_node.Position.y,
+        end_node.Position.z,
+    ) == (
+        1500.0,
+        1000.0,
+        0.0,
+    )
+
+    assert (
+        design_joint_node.Position.x,
+        design_joint_node.Position.y,
+        design_joint_node.Position.z,
+    ) == (
+        1000.0,
+        0.0,
+        0.0,
+    )
+
+    # Moving the endpoint changes the joint angle, so the
+    # physical bend angle must no longer remain 90 degrees.
+    assert (
+        obj.Bend1Angle.Value
+        != 90.0
+    )
+
+    # The second run must also be recalculated from the
+    # new fixed endpoint geometry.
+    assert (
+        obj.Run2Length.Value
+        != 900.0
+    )
+
+def test_joint_derived_bend_rebuilds_when_start_node_moves(
+    monkeypatch,
+):
+    calls = _stub_shape_builder(
+        monkeypatch
+    )
+
+    obj = FakeDocumentObject()
+
+    proxy = bent_object.BentTubeProxy(
+        obj,
+        _tube(),
+    )
+
+    start_node = types.SimpleNamespace(
+        Position=FakeVector(
+            0.0,
+            0.0,
+            0.0,
+        )
+    )
+
+    design_joint_node = types.SimpleNamespace(
+        Position=FakeVector(
+            1000.0,
+            0.0,
+            0.0,
+        )
+    )
+
+    end_node = types.SimpleNamespace(
+        Position=FakeVector(
+            1000.0,
+            1000.0,
+            0.0,
+        )
+    )
+
+    obj.StartNode = start_node
+    obj.EndNode = end_node
+    obj.DesignJointNode = (
+        design_joint_node
+    )
+
+    obj.StartPoint = FakeVector(
+        0.0,
+        0.0,
+        0.0,
+    )
+
+    obj.InitialDirection = FakeVector(
+        1.0,
+        0.0,
+        0.0,
+    )
+
+    obj.InitialBendNormal = FakeVector(
+        0.0,
+        0.0,
+        1.0,
+    )
+
+    obj.BendCount = 1
+
+    obj.Run1Length = 900.0
+    obj.Run2Length = 900.0
+
+    obj.Bend1Angle = 90.0
+    obj.Bend1Radius = 100.0
+    obj.Bend1Rotation = 0.0
+
+    obj.Document = types.SimpleNamespace()
+
+    proxy._ready = True
+    proxy._geometry_dirty = False
+
+    proxy._last_joint_geometry = (
+        proxy._joint_geometry_signature(
+            obj
+        )
+    )
+
+    initial_count = len(
+        calls
+    )
+
+    start_node.Position = FakeVector(
+        0.0,
+        500.0,
+        0.0,
+    )
+
+    proxy.execute(
+        obj
+    )
+
+    assert len(
+        calls
+    ) == (
+        initial_count + 1
+    )
+
+    assert (
+        start_node.Position.x,
+        start_node.Position.y,
+        start_node.Position.z,
+    ) == (
+        0.0,
+        500.0,
+        0.0,
+    )
+
+    assert (
+        end_node.Position.x,
+        end_node.Position.y,
+        end_node.Position.z,
+    ) == (
+        1000.0,
+        1000.0,
+        0.0,
+    )
+
+    assert (
+        design_joint_node.Position.x,
+        design_joint_node.Position.y,
+        design_joint_node.Position.z,
+    ) == (
+        1000.0,
+        0.0,
+        0.0,
+    )
+
+    assert (
+        obj.Bend1Angle.Value
+        != 90.0
+    )
+
+    assert (
+        obj.Run1Length.Value
+        != 900.0
+    )
+
+
+def test_joint_derived_bend_rebuilds_when_design_joint_moves(
+    monkeypatch,
+):
+    calls = _stub_shape_builder(
+        monkeypatch
+    )
+
+    obj = FakeDocumentObject()
+
+    proxy = bent_object.BentTubeProxy(
+        obj,
+        _tube(),
+    )
+
+    start_node = types.SimpleNamespace(
+        Position=FakeVector(
+            0.0,
+            0.0,
+            0.0,
+        )
+    )
+
+    design_joint_node = types.SimpleNamespace(
+        Position=FakeVector(
+            1000.0,
+            0.0,
+            0.0,
+        )
+    )
+
+    end_node = types.SimpleNamespace(
+        Position=FakeVector(
+            1000.0,
+            1000.0,
+            0.0,
+        )
+    )
+
+    obj.StartNode = start_node
+    obj.EndNode = end_node
+    obj.DesignJointNode = (
+        design_joint_node
+    )
+
+    obj.StartPoint = FakeVector(
+        0.0,
+        0.0,
+        0.0,
+    )
+
+    obj.InitialDirection = FakeVector(
+        1.0,
+        0.0,
+        0.0,
+    )
+
+    obj.InitialBendNormal = FakeVector(
+        0.0,
+        0.0,
+        1.0,
+    )
+
+    obj.BendCount = 1
+
+    obj.Run1Length = 900.0
+    obj.Run2Length = 900.0
+
+    obj.Bend1Angle = 90.0
+    obj.Bend1Radius = 100.0
+    obj.Bend1Rotation = 0.0
+
+    obj.Document = types.SimpleNamespace()
+
+    proxy._ready = True
+    proxy._geometry_dirty = False
+
+    proxy._last_joint_geometry = (
+        proxy._joint_geometry_signature(
+            obj
+        )
+    )
+
+    initial_count = len(
+        calls
+    )
+
+    design_joint_node.Position = FakeVector(
+        900.0,
+        100.0,
+        0.0,
+    )
+
+    proxy.execute(
+        obj
+    )
+
+    assert len(
+        calls
+    ) == (
+        initial_count + 1
+    )
+
+    assert (
+        start_node.Position.x,
+        start_node.Position.y,
+        start_node.Position.z,
+    ) == (
+        0.0,
+        0.0,
+        0.0,
+    )
+
+    assert (
+        end_node.Position.x,
+        end_node.Position.y,
+        end_node.Position.z,
+    ) == (
+        1000.0,
+        1000.0,
+        0.0,
+    )
+
+    assert (
+        design_joint_node.Position.x,
+        design_joint_node.Position.y,
+        design_joint_node.Position.z,
+    ) == (
+        900.0,
+        100.0,
+        0.0,
+    )
+
+    assert (
+        obj.Bend1Angle.Value
+        != 90.0
+    )
+
+    assert (
+        obj.Run1Length.Value
+        != 900.0
+    )
+
+    assert (
+        obj.Run2Length.Value
+        != 900.0
+    )
+
+def test_proxy_can_replace_path_with_additional_bend(
+    monkeypatch,
+):
+    calls = _stub_shape_builder(
+        monkeypatch
+    )
+
+    obj = FakeDocumentObject()
+
+    original = BentTube(
+        straight_runs=(
+            StraightRun(
+                900.0
+            ),
+            StraightRun(
+                900.0
+            ),
+        ),
+        bends=(
+            Bend(
+                angle_degrees=90.0,
+                centerline_radius=100.0,
+                rotation_degrees=0.0,
+            ),
+        ),
+        profile=_profile(),
+        material=_material(),
+    )
+
+    proxy = bent_object.BentTubeProxy(
+        obj,
+        original,
+    )
+
+    replacement = BentTube(
+        straight_runs=(
+            StraightRun(
+                900.0
+            ),
+            StraightRun(
+                800.0
+            ),
+            StraightRun(
+                900.0
+            ),
+        ),
+        bends=(
+            Bend(
+                angle_degrees=90.0,
+                centerline_radius=100.0,
+                rotation_degrees=0.0,
+            ),
+            Bend(
+                angle_degrees=90.0,
+                centerline_radius=100.0,
+                rotation_degrees=0.0,
+            ),
+        ),
+        profile=_profile(),
+        material=_material(),
+    )
+
+    initial_count = len(
+        calls
+    )
+
+    proxy.replace_tube_definition(
+        obj,
+        replacement,
+    )
+
+    assert (
+        proxy._bend_count
+        == 2
+    )
+
+    assert (
+        obj.BendCount
+        == 2
+    )
+
+    assert hasattr(
+        obj,
+        "Run3Length",
+    )
+
+    assert hasattr(
+        obj,
+        "Bend2Angle",
+    )
+
+    assert hasattr(
+        obj,
+        "Bend2Radius",
+    )
+
+    assert hasattr(
+        obj,
+        "Bend2Rotation",
+    )
+
+    assert (
+        obj.Run1Length.Value
+        == 900.0
+    )
+
+    assert (
+        obj.Run2Length.Value
+        == 800.0
+    )
+
+    assert (
+        obj.Run3Length.Value
+        == 900.0
+    )
+
+    assert (
+        obj.Bend2Angle.Value
+        == 90.0
+    )
+
+    assert (
+        obj.Bend2Radius.Value
+        == 100.0
+    )
+
+    assert len(
+        calls
+    ) == (
+        initial_count + 1
+    )
+    

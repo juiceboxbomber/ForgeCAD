@@ -228,7 +228,7 @@ def test_90_degree_miter_extension_equals_other_tube_radius():
     )
 
 
-def test_miter_extension_uses_intersecting_tube_radius():
+def test_miter_extension_uses_extended_member_radius():
     center = Node(
         0,
         0,
@@ -276,11 +276,11 @@ def test_miter_extension_uses_intersecting_tube_radius():
     )
 
     assert extension == pytest.approx(
-        25.4
+        31.75 / 2.0
     )
 
 
-def test_60_degree_miter_extension_is_angle_corrected():
+def test_60_degree_miter_extension_reaches_shared_miter_plane():
     joint, first, second = (
         make_60_degree_corner()
     )
@@ -295,9 +295,9 @@ def test_60_degree_miter_extension_is_angle_corrected():
 
     expected = (
         (44.45 / 2.0)
-        / math.sin(
+        / math.tan(
             math.radians(
-                60.0
+                60.0 / 2.0
             )
         )
     )
@@ -585,7 +585,7 @@ def test_both_coped_extends_both_members():
 
 def test_angled_both_coped_keeps_angle_corrected_extension():
     """
-    Unlike Member Through, miter stock is angle corrected.
+    Unlike Member Through, miter stock reaches the shared bisector plane.
     """
 
     joint, first, second = (
@@ -606,9 +606,9 @@ def test_angled_both_coped_keeps_angle_corrected_extension():
 
     expected = (
         (44.45 / 2.0)
-        / math.sin(
+        / math.tan(
             math.radians(
-                60.0
+                60.0 / 2.0
             )
         )
     )
@@ -633,6 +633,156 @@ def test_angled_both_coped_keeps_angle_corrected_extension():
         == pytest.approx(
             expected
         )
+    )
+
+
+@pytest.mark.parametrize(
+    "angle_degrees",
+    [
+        45.0,
+        30.0,
+        25.0,
+    ],
+)
+def test_acute_miter_extension_reaches_outside_corner(
+    angle_degrees,
+):
+    """
+    Acute miters need enough axial stock for the complete outside corner.
+    """
+
+    center = Node(
+        0,
+        0,
+        0,
+    )
+
+    first = make_member(
+        center,
+        Node(
+            500,
+            0,
+            0,
+        ),
+    )
+
+    angle = math.radians(
+        angle_degrees
+    )
+
+    second = make_member(
+        center,
+        Node(
+            500.0
+            * math.cos(
+                angle
+            ),
+            500.0
+            * math.sin(
+                angle
+            ),
+            0,
+        ),
+    )
+
+    joint = Joint(
+        node=center,
+        members=[
+            first,
+            second,
+        ],
+    )
+
+    extension = (
+        extension_to_outer_surface(
+            first,
+            second,
+            joint,
+        )
+    )
+
+    expected = (
+        (44.45 / 2.0)
+        / math.tan(
+            math.radians(
+                angle_degrees / 2.0
+            )
+        )
+    )
+
+    assert extension == pytest.approx(
+        expected
+    )
+
+
+def test_acute_miter_extension_grows_as_angle_tightens():
+    center = Node(
+        0,
+        0,
+        0,
+    )
+
+    first = make_member(
+        center,
+        Node(
+            500,
+            0,
+            0,
+        ),
+    )
+
+    extensions = []
+
+    for angle_degrees in (
+        45.0,
+        30.0,
+        25.0,
+    ):
+        angle = math.radians(
+            angle_degrees
+        )
+
+        second = make_member(
+            center,
+            Node(
+                500.0
+                * math.cos(
+                    angle
+                ),
+                500.0
+                * math.sin(
+                    angle
+                ),
+                0,
+            ),
+        )
+
+        joint = Joint(
+            node=center,
+            members=[
+                first,
+                second,
+            ],
+        )
+
+        extensions.append(
+            extension_to_outer_surface(
+                first,
+                second,
+                joint,
+            )
+        )
+
+    assert (
+        extensions[
+            0
+        ]
+        < extensions[
+            1
+        ]
+        < extensions[
+            2
+        ]
     )
 
 
@@ -755,4 +905,3 @@ def test_collinear_miter_extension_is_rejected():
             second,
             joint,
         )
-        

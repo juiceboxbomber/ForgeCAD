@@ -514,7 +514,19 @@ class CreateMemberBetweenNodesCommand:
             )
             return
 
+        transaction_started = False
+
         try:
+            if hasattr(
+                document,
+                "openTransaction",
+            ):
+                document.openTransaction(
+                    "Create ForgeCAD Member"
+                )
+
+                transaction_started = True
+
             layout_object, member_object = (
                 create_member_between_nodes(
                     document,
@@ -522,6 +534,40 @@ class CreateMemberBetweenNodesCommand:
                     selection[1],
                 )
             )
+
+            if (
+                transaction_started
+                and hasattr(
+                    document,
+                    "commitTransaction",
+                )
+            ):
+                document.commitTransaction()
+
+        except (
+            ValueError,
+            KeyError,
+            RuntimeError,
+            AttributeError,
+        ) as error:
+            if (
+                transaction_started
+                and hasattr(
+                    document,
+                    "abortTransaction",
+                )
+            ):
+                try:
+                    document.abortTransaction()
+                except Exception:
+                    pass
+
+            QtGui.QMessageBox.warning(
+                FreeCADGui.getMainWindow(),
+                "Member Creation Failed",
+                str(error),
+            )
+            return
 
         except (
             ValueError,

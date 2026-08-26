@@ -23,6 +23,10 @@ class ForgeCADWorkbench(
             register_undo_redo_observer,
         )
 
+        from forgecad.adapters.freecad.selection_tree_observer import (
+            register_selection_tree_observer,
+        )
+
         from forgecad.adapters.freecad.commands.new_project import (
             COMMAND_NAME as NEW_PROJECT_COMMAND,
             register_command as register_new_project_command,
@@ -41,6 +45,11 @@ class ForgeCADWorkbench(
         from forgecad.adapters.freecad.commands.create_bent_tube import (
             COMMAND_NAME as CREATE_BENT_TUBE_COMMAND,
             register_command as register_create_bent_tube_command,
+        )
+
+        from forgecad.adapters.freecad.commands.delete_bent_tube import (
+            COMMAND_NAME as DELETE_BENT_TUBE_COMMAND,
+            register_command as register_delete_bent_tube_command,
         )
 
         from forgecad.adapters.freecad.commands.draw_layout_line import (
@@ -73,6 +82,21 @@ class ForgeCADWorkbench(
             register_command as register_create_node_from_geometry_command,
         )
 
+        from forgecad.adapters.freecad.commands.create_upright import (
+            COMMAND_NAME as CREATE_UPRIGHT_COMMAND,
+            register_command as register_create_upright_command,
+        )
+
+        from forgecad.adapters.freecad.commands.move_node import (
+            COMMAND_NAME as MOVE_NODE_COMMAND,
+            register_command as register_move_node_command,
+        )
+
+        from forgecad.adapters.freecad.commands.create_reference_plane import (
+            COMMAND_NAME as CREATE_REFERENCE_PLANE_COMMAND,
+            register_command as register_create_reference_plane_command,
+        )
+
         from forgecad.adapters.freecad.commands.draw_member_interactive import (
             COMMAND_NAME as DRAW_MEMBER_INTERACTIVE_COMMAND,
             register_command as register_draw_member_interactive_command,
@@ -91,6 +115,11 @@ class ForgeCADWorkbench(
         from forgecad.adapters.freecad.commands.trim_extend_member import (
             COMMAND_NAME as TRIM_EXTEND_MEMBER_COMMAND,
             register_command as register_trim_extend_member_command,
+        )
+
+        from forgecad.adapters.freecad.commands.delete_member import (
+            COMMAND_NAME as DELETE_MEMBER_COMMAND,
+            register_command as register_delete_member_command,
         )
 
         from forgecad.adapters.freecad.commands.mirror_members import (
@@ -116,6 +145,11 @@ class ForgeCADWorkbench(
         from forgecad.adapters.freecad.commands.inspect_joint import (
             COMMAND_NAME as INSPECT_JOINT_COMMAND,
             register_command as register_inspect_joint_command,
+        )
+
+        from forgecad.adapters.freecad.commands.convert_joint_to_bend import (
+            COMMAND_NAME as CONVERT_JOINT_TO_BEND_COMMAND,
+            register_command as register_convert_joint_to_bend_command,
         )
 
         from forgecad.adapters.freecad.commands.next_joint_needing_attention import (
@@ -159,26 +193,33 @@ class ForgeCADWorkbench(
         )
 
         register_undo_redo_observer()
+        register_selection_tree_observer()
 
         register_new_project_command()
         register_workspace_settings_command()
         register_display_settings_command()
         register_create_bent_tube_command()
+        register_delete_bent_tube_command()
         register_draw_layout_line_command()
         register_define_layout_lines_command()
         register_draw_layout_line_interactive_command()
         register_generate_nodes_command()
         register_create_offset_node_command()
         register_create_node_from_geometry_command()
+        register_create_upright_command()
+        register_move_node_command()
+        register_create_reference_plane_command()
         register_draw_member_interactive_command()
         register_create_member_between_nodes_command()
         register_split_member_command()
         register_trim_extend_member_command()
+        register_delete_member_command()
         register_mirror_members_command()
         register_generate_from_selection_command()
         register_member_properties_command()
         register_select_members_command()
         register_inspect_joint_command()
+        register_convert_joint_to_bend_command()
         register_next_joint_command()
         register_joint_review_summary_command()
         register_fabrication_readiness_command()
@@ -194,21 +235,27 @@ class ForgeCADWorkbench(
             DISPLAY_SETTINGS_COMMAND,
             BENDER_TOOLING_SETTINGS_COMMAND,
             CREATE_BENT_TUBE_COMMAND,
+            DELETE_BENT_TUBE_COMMAND,
             DRAW_LAYOUT_LINE_COMMAND,
             DEFINE_LAYOUT_LINES_COMMAND,
             DRAW_LAYOUT_LINE_INTERACTIVE_COMMAND,
             GENERATE_NODES_COMMAND,
             CREATE_OFFSET_NODE_COMMAND,
             CREATE_NODE_FROM_GEOMETRY_COMMAND,
+            MOVE_NODE_COMMAND,
+            CREATE_REFERENCE_PLANE_COMMAND,
             DRAW_MEMBER_INTERACTIVE_COMMAND,
             CREATE_MEMBER_BETWEEN_NODES_COMMAND,
+            CREATE_UPRIGHT_COMMAND,
             SPLIT_MEMBER_COMMAND,
             TRIM_EXTEND_MEMBER_COMMAND,
+            DELETE_MEMBER_COMMAND,
             MIRROR_MEMBERS_COMMAND,
             GENERATE_FROM_SELECTION_COMMAND,
             MEMBER_PROPERTIES_COMMAND,
             SELECT_MEMBERS_COMMAND,
             INSPECT_JOINT_COMMAND,
+            CONVERT_JOINT_TO_BEND_COMMAND,
             NEXT_JOINT_COMMAND,
             JOINT_REVIEW_SUMMARY_COMMAND,
             BEND_SCHEDULE_COMMAND,

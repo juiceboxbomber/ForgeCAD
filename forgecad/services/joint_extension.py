@@ -1,7 +1,7 @@
 """Fabrication extension analysis for ForgeCAD tube joints."""
 
 from dataclasses import dataclass
-from math import radians, sin
+from math import radians, tan
 
 from forgecad.fabrication import (
     Joint,
@@ -96,13 +96,20 @@ def extension_to_outer_surface(
     joint: Joint,
 ) -> float:
     """
-    Return angle-corrected stock required for a miter.
+    Return the axial stock required for a complete shared planar miter.
 
-    This calculation is appropriate when stock must reach the
-    complete projected outer surface before being trimmed by an
-    angled shared plane.
+    The shared miter plane follows the internal angle bisector. For a
+    tube of radius R and included fabrication angle A, the farthest
+    outside point of the tube reaches the plane at:
 
-        extension = intersecting radius / sin(angle)
+        extension = R / tan(A / 2)
+
+    The radius belongs to the member being extended because this
+    calculation answers how much of that tube's own cross-section must
+    exist beyond the design-centerline joint before the planar cut.
+
+    This becomes especially important at acute angles, where the
+    required outside-corner stock grows rapidly.
     """
 
     angle_degrees = fabrication_angle(
@@ -111,25 +118,28 @@ def extension_to_outer_surface(
         joint,
     )
 
-    angle_radians = radians(
-        angle_degrees
+    half_angle_radians = (
+        radians(
+            angle_degrees
+        )
+        / 2.0
     )
 
-    sine = sin(
-        angle_radians
+    tangent = tan(
+        half_angle_radians
     )
 
     if abs(
-        sine
+        tangent
     ) <= 1e-9:
         raise ValueError(
             "Cannot calculate fabrication extension "
             "for collinear members."
         )
 
-    target_radius = (
+    member_radius = (
         float(
-            intersecting_member
+            extended_member
             .profile
             .outside_diameter
         )
@@ -137,8 +147,10 @@ def extension_to_outer_surface(
     )
 
     return (
-        target_radius
-        / abs(sine)
+        member_radius
+        / abs(
+            tangent
+        )
     )
 
 

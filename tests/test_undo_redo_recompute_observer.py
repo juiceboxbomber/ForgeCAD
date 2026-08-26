@@ -1,4 +1,4 @@
-"""Tests for ForgeCAD post-Undo/Redo dependency refresh."""
+"""Tests for ForgeCAD Undo/Redo observer behavior."""
 
 import importlib
 import sys
@@ -23,10 +23,6 @@ class FakeMember:
         self,
     ):
         self.touch_count += 1
-
-
-class FakeUnrelated:
-    pass
 
 
 class FakeDocument:
@@ -82,7 +78,7 @@ observer_module = importlib.import_module(
 )
 
 
-def test_refresh_members_touches_only_linked_members():
+def test_parametric_member_detection_is_preserved():
     linked = FakeMember(
         linked=True
     )
@@ -91,29 +87,57 @@ def test_refresh_members_touches_only_linked_members():
         linked=False
     )
 
+    assert observer_module.is_parametric_tube_member(
+        linked
+    )
+
+    assert not observer_module.is_parametric_tube_member(
+        unlinked
+    )
+
+    assert not observer_module.is_parametric_tube_member(
+        object()
+    )
+
+
+def test_post_undo_redo_member_refresh_does_not_mutate_document():
+    linked = FakeMember(
+        linked=True
+    )
+
     document = FakeDocument(
         [
             linked,
-            unlinked,
         ]
     )
 
-    touched = (
+    result = (
         observer_module.refresh_parametric_members(
             document
         )
     )
 
-    assert touched == (
-        linked,
+    assert result == ()
+    assert linked.touch_count == 0
+    assert document.recompute_count == 0
+
+
+def test_post_undo_redo_marker_refresh_is_non_mutating():
+    document = FakeDocument(
+        []
     )
 
-    assert linked.touch_count == 1
-    assert unlinked.touch_count == 0
-    assert document.recompute_count == 1
+    result = (
+        observer_module.rebuild_disposable_joint_markers(
+            document
+        )
+    )
+
+    assert result == ()
+    assert document.recompute_count == 0
 
 
-def test_undo_redo_rebuilds_joint_markers_after_member_refresh():
+def test_combined_post_undo_redo_refresh_is_non_mutating():
     member = FakeMember(
         linked=True
     )
@@ -124,66 +148,22 @@ def test_undo_redo_rebuilds_joint_markers_after_member_refresh():
         ]
     )
 
-    events = []
-
-    original_members = (
-        observer_module.refresh_parametric_members
-    )
-
-    original_markers = (
-        observer_module.rebuild_disposable_joint_markers
-    )
-
-    observer_module.refresh_parametric_members = (
-        lambda current_document: events.append(
-            "members"
-        )
-        or (
-            member,
+    result = (
+        observer_module.refresh_after_undo_redo(
+            document
         )
     )
-
-    observer_module.rebuild_disposable_joint_markers = (
-        lambda current_document: events.append(
-            "markers"
-        )
-        or (
-            "J001",
-        )
-    )
-
-    try:
-        result = (
-            observer_module.refresh_after_undo_redo(
-                document
-            )
-        )
-
-    finally:
-        observer_module.refresh_parametric_members = (
-            original_members
-        )
-
-        observer_module.rebuild_disposable_joint_markers = (
-            original_markers
-        )
-
-    assert events == [
-        "members",
-        "markers",
-    ]
 
     assert result == (
-        (
-            member,
-        ),
-        (
-            "J001",
-        ),
+        (),
+        (),
     )
 
+    assert member.touch_count == 0
+    assert document.recompute_count == 0
 
-def test_observer_uses_combined_post_transaction_refresh():
+
+def test_observer_calls_non_mutating_refresh_for_undo_and_redo():
     document = FakeDocument(
         []
     )
@@ -209,6 +189,10 @@ def test_observer_uses_combined_post_transaction_refresh():
             observer_module.ForgeCADUndoRedoObserver()
         )
 
+        observer.slotUndoDocument(
+            document
+        )
+
         observer.slotRedoDocument(
             document
         )
@@ -219,7 +203,8 @@ def test_observer_uses_combined_post_transaction_refresh():
         )
 
     assert events == [
-        document
+        document,
+        document,
     ]
 
 

@@ -732,7 +732,18 @@ class InteractiveMemberTool(
             self.stop()
             return
 
+        transaction_started = False
+
         try:
+            if hasattr(
+                document,
+                "openTransaction",
+            ):
+                document.openTransaction(
+                    "Create ForgeCAD Member"
+                )
+                transaction_started = True
+
             start_node = (
                 get_or_create_node(
                     document,
@@ -753,10 +764,33 @@ class InteractiveMemberTool(
                 end_node,
             )
 
+            if (
+                transaction_started
+                and hasattr(
+                    document,
+                    "commitTransaction",
+                )
+            ):
+                document.commitTransaction()
+
         except (
             ValueError,
+            RuntimeError,
             KeyError,
+            AttributeError,
         ) as error:
+            if (
+                transaction_started
+                and hasattr(
+                    document,
+                    "abortTransaction",
+                )
+            ):
+                try:
+                    document.abortTransaction()
+                except Exception:
+                    pass
+
             QtGui.QMessageBox.warning(
                 FreeCADGui.getMainWindow(),
                 "Member Creation Failed",

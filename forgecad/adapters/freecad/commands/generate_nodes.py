@@ -698,20 +698,81 @@ class GenerateNodesCommand:
             )
             return
 
-        node_objects = (
-            generate_nodes_from_layout(
-                document,
-                layout_objects,
-            )
-        )
+        transaction_started = False
 
-        if not node_objects:
+        try:
+            if hasattr(
+                document,
+                "openTransaction",
+            ):
+                document.openTransaction(
+                    "Generate ForgeCAD Nodes"
+                )
+
+                transaction_started = True
+
+            node_objects = (
+                generate_nodes_from_layout(
+                    document,
+                    layout_objects,
+                )
+            )
+
+            if not node_objects:
+                if (
+                    transaction_started
+                    and hasattr(
+                        document,
+                        "abortTransaction",
+                    )
+                ):
+                    try:
+                        document.abortTransaction()
+                    except Exception:
+                        pass
+
+                QtGui.QMessageBox.warning(
+                    FreeCADGui.getMainWindow(),
+                    "No Nodes Generated",
+                    (
+                        "The selected layout objects did not "
+                        "contain usable StartPoint/EndPoint data."
+                    ),
+                )
+                return
+
+            if (
+                transaction_started
+                and hasattr(
+                    document,
+                    "commitTransaction",
+                )
+            ):
+                document.commitTransaction()
+
+        except (
+            ValueError,
+            RuntimeError,
+            KeyError,
+            AttributeError,
+        ) as error:
+            if (
+                transaction_started
+                and hasattr(
+                    document,
+                    "abortTransaction",
+                )
+            ):
+                try:
+                    document.abortTransaction()
+                except Exception:
+                    pass
+
             QtGui.QMessageBox.warning(
                 FreeCADGui.getMainWindow(),
-                "No Nodes Generated",
-                (
-                    "The selected layout objects did not "
-                    "contain usable StartPoint/EndPoint data."
+                "Node Generation Failed",
+                str(
+                    error
                 ),
             )
             return
