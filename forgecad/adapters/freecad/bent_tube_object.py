@@ -21,6 +21,9 @@ from forgecad.services import (
 from forgecad.services.joint_bend import (
     bend_specification_from_joint,
 )
+from forgecad.services.multi_joint_bend import (
+    build_multi_joint_bent_tube,
+)
 from forgecad.adapters.freecad.bent_tube_geometry import (
     build_bent_tube_shape,
 )
@@ -767,6 +770,298 @@ class BentTubeProxy:
                 "Bent Tube"
             )
 
+    @staticmethod
+    def _design_joint_link_objects(
+        obj,
+    ):
+        """Return numbered design-joint links in start-to-end path order."""
+
+        joints = []
+        index = 1
+
+        while True:
+            property_name = (
+                f"DesignJointNode{index}"
+            )
+
+            if not hasattr(
+                obj,
+                property_name,
+            ):
+                break
+
+            node_object = getattr(
+                obj,
+                property_name,
+                None,
+            )
+
+            if node_object is not None:
+                joints.append(
+                    node_object
+                )
+
+            index += 1
+
+        return tuple(
+            joints
+        )
+
+    def _is_multi_joint_derived_bend(
+        self,
+        obj,
+    ) -> bool:
+        """Return True when a multi-bend tube is controlled by design joints."""
+
+        start_node = getattr(
+            obj,
+            "StartNode",
+            None,
+        )
+
+        end_node = getattr(
+            obj,
+            "EndNode",
+            None,
+        )
+
+        bend_count = int(
+            _quantity_value(
+                getattr(
+                    obj,
+                    "BendCount",
+                    0,
+                )
+            )
+        )
+
+        if (
+            start_node is None
+            or end_node is None
+            or bend_count < 2
+        ):
+            return False
+
+        joint_nodes = (
+            self._design_joint_link_objects(
+                obj
+            )
+        )
+
+        if len(
+            joint_nodes
+        ) != bend_count:
+            return False
+
+        return all(
+            hasattr(
+                obj,
+                f"Bend{index}Radius",
+            )
+            for index in range(
+                1,
+                bend_count + 1,
+            )
+        )
+
+    def _refresh_multi_joint_derived_path(
+        self,
+        obj,
+    ) -> bool:
+        """
+        Recalculate a multi-bend tube from authoritative linked design nodes.
+
+        StartNode, DesignJointNode1..N, and EndNode define the theoretical
+        design path. Existing BendNRadius values remain user-controlled.
+        Straight runs, bend angles, and bend rotations are recalculated from
+        that path so moving any design node updates the complete tube.
+        """
+
+        if not self._is_multi_joint_derived_bend(
+            obj
+        ):
+            return False
+
+        joint_objects = (
+            self._design_joint_link_objects(
+                obj
+            )
+        )
+
+        node_objects = (
+            getattr(
+                obj,
+                "StartNode",
+            ),
+            *joint_objects,
+            getattr(
+                obj,
+                "EndNode",
+            ),
+        )
+
+        nodes = tuple(
+            _node_from_link(
+                node_object
+            )
+            for node_object in node_objects
+        )
+
+        bend_count = len(
+            joint_objects
+        )
+
+        radii = tuple(
+            _quantity_value(
+                getattr(
+                    obj,
+                    f"Bend{index}Radius",
+                )
+            )
+            for index in range(
+                1,
+                bend_count + 1,
+            )
+        )
+
+        tube = (
+            build_multi_joint_bent_tube(
+                nodes=nodes,
+                centerline_radii_mm=radii,
+                profile=self._selected_profile(
+                    obj
+                ),
+                material=self._material(
+                    obj
+                ),
+            )
+        )
+
+        for index, run in enumerate(
+            tube.straight_runs,
+            start=1,
+        ):
+            setattr(
+                obj,
+                f"Run{index}Length",
+                run.length_mm,
+            )
+
+        for index, bend in enumerate(
+            tube.bends,
+            start=1,
+        ):
+            setattr(
+                obj,
+                f"Bend{index}Angle",
+                bend.angle_degrees,
+            )
+
+            setattr(
+                obj,
+                f"Bend{index}Rotation",
+                bend.rotation_degrees,
+            )
+
+        first_direction = Vector3D(
+            nodes[
+                1
+            ].x
+            - nodes[
+                0
+            ].x,
+            nodes[
+                1
+            ].y
+            - nodes[
+                0
+            ].y,
+            nodes[
+                1
+            ].z
+            - nodes[
+                0
+            ].z,
+        ).normalized()
+
+        first_outgoing = Vector3D(
+            nodes[
+                2
+            ].x
+            - nodes[
+                1
+            ].x,
+            nodes[
+                2
+            ].y
+            - nodes[
+                1
+            ].y,
+            nodes[
+                2
+            ].z
+            - nodes[
+                1
+            ].z,
+        ).normalized()
+
+        first_normal = first_direction.cross(
+            first_outgoing
+        )
+
+        if first_normal.magnitude <= 1e-12:
+            raise ValueError(
+                "Cannot determine the first bend plane from collinear nodes."
+            )
+
+        first_normal = (
+            first_normal.normalized()
+        )
+
+        obj.StartPoint = FreeCAD.Vector(
+            float(
+                nodes[
+                    0
+                ].x
+            ),
+            float(
+                nodes[
+                    0
+                ].y
+            ),
+            float(
+                nodes[
+                    0
+                ].z
+            ),
+        )
+
+        obj.InitialDirection = FreeCAD.Vector(
+            float(
+                first_direction.x
+            ),
+            float(
+                first_direction.y
+            ),
+            float(
+                first_direction.z
+            ),
+        )
+
+        obj.InitialBendNormal = FreeCAD.Vector(
+            float(
+                first_normal.x
+            ),
+            float(
+                first_normal.y
+            ),
+            float(
+                first_normal.z
+            ),
+        )
+
+        return True
+
     def _is_joint_derived_bend(
         self,
         obj,
@@ -996,55 +1291,65 @@ class BentTubeProxy:
         self,
         obj,
     ):
-        """Return the authoritative linked geometry for a joint-derived bend."""
+        """Return authoritative linked geometry for a joint-derived bent tube."""
 
-        if not self._is_joint_derived_bend(
+        if self._is_multi_joint_derived_bend(
             obj
         ):
-            return None
-
-        start_key = (
-            self._linked_node_position_key(
+            node_objects = (
                 getattr(
                     obj,
                     "StartNode",
                     None,
-                )
-            )
-        )
-
-        joint_key = (
-            self._linked_node_position_key(
-                getattr(
-                    obj,
-                    "DesignJointNode",
-                    None,
-                )
-            )
-        )
-
-        end_key = (
-            self._linked_node_position_key(
+                ),
+                *self._design_joint_link_objects(
+                    obj
+                ),
                 getattr(
                     obj,
                     "EndNode",
                     None,
-                )
+                ),
             )
+
+        elif self._is_joint_derived_bend(
+            obj
+        ):
+            node_objects = (
+                getattr(
+                    obj,
+                    "StartNode",
+                    None,
+                ),
+                getattr(
+                    obj,
+                    "DesignJointNode",
+                    None,
+                ),
+                getattr(
+                    obj,
+                    "EndNode",
+                    None,
+                ),
+            )
+
+        else:
+            return None
+
+        keys = tuple(
+            self._linked_node_position_key(
+                node_object
+            )
+            for node_object in node_objects
         )
 
-        if (
-            start_key is None
-            or joint_key is None
-            or end_key is None
+        if any(
+            key is None
+            for key in keys
         ):
             return None
 
-        return (
-            start_key,
-            joint_key,
-            end_key,
-        )
+        return keys
 
     def _joint_link_geometry_changed(
         self,
@@ -1138,8 +1443,15 @@ class BentTubeProxy:
                 obj
             )
 
+            multi_joint_derived = (
+                self._refresh_multi_joint_derived_path(
+                    obj
+                )
+            )
+
             joint_derived = (
-                self._refresh_joint_derived_path(
+                multi_joint_derived
+                or self._refresh_joint_derived_path(
                     obj
                 )
             )
