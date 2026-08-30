@@ -123,13 +123,7 @@ def ensure_bent_tube_design_joint_links(
 
     if (
         legacy_joint is not None
-        and (
-            not requested_nodes
-            or requested_nodes[
-                0
-            ]
-            is not legacy_joint
-        )
+        and not requested_nodes
     ):
         requested_nodes.insert(
             0,

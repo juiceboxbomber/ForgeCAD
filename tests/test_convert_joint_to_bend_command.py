@@ -212,6 +212,34 @@ def test_convert_transaction_can_abort():
         ),
     ]
 
+def test_start_node_joint_is_supported_for_bent_tube_extension(monkeypatch):
+    """A bent tube joined to a straight member at its StartNode should
+    be recognized as a valid extension case.
+    """
+
+    bent_object = types.SimpleNamespace(
+        Proxy=types.SimpleNamespace(
+            replace_tube_definition=lambda *_args: None
+        ),
+        StartNode=types.SimpleNamespace(),
+        EndNode=types.SimpleNamespace(),
+    )
+
+    straight_object = types.SimpleNamespace(
+        MemberID="member-1",
+        SourceLayoutID="layout-1",
+    )
+
+    assert (
+        module.joint_conversion_mode(
+            (
+                bent_object,
+                straight_object,
+            )
+        )
+        == "extend"
+    )
+
 
 def test_joint_status_resolution_uses_marker_node_key():
     marker = FakeMarker()
@@ -679,6 +707,460 @@ def test_extend_existing_bend_removes_straight_without_deleting_layout(
         "ForgeCADMember003",
     ]
 
+
+
+def test_prepend_existing_bent_object_keeps_identity_and_relinks_start(
+    monkeypatch,
+):
+    """
+    Extending a continuous bent tube from its StartNode must prepend the new
+    design joint while preserving the existing bent-object identity and EndNode.
+    """
+
+    bent_object = FakeBentExtensionObject()
+
+    old_start_node = object()
+    old_end_node = bent_object.EndNode
+    existing_design_joint = bent_object.DesignJointNode1
+    new_start_node = object()
+
+    bent_object.StartNode = old_start_node
+
+    straight_object = FakeStraightExtensionObject(
+        new_start_node
+    )
+
+    document = FakeExtensionDocument(
+        (
+            straight_object,
+        )
+    )
+
+    replacement_tube = object()
+
+    captured_joints = []
+
+    def fake_design_joint_links(
+        obj,
+        joints,
+    ):
+        captured_joints[:] = list(
+            joints
+        )
+
+        for index, joint in enumerate(
+            joints,
+            start=1,
+        ):
+            setattr(
+                obj,
+                f"DesignJointNode{index}",
+                joint,
+            )
+
+        return obj
+
+    monkeypatch.setattr(
+        module,
+        "ensure_bent_tube_design_joint_links",
+        fake_design_joint_links,
+        raising=False,
+    )
+
+    result = module.prepend_existing_bent_object(
+        document=document,
+        bent_object=bent_object,
+        straight_object=straight_object,
+        replacement_tube=replacement_tube,
+        design_joint_node=old_start_node,
+        new_start_node=new_start_node,
+    )
+
+    assert result is bent_object
+
+    assert (
+        bent_object.Proxy.replacements
+        == [
+            (
+                bent_object,
+                replacement_tube,
+            )
+        ]
+    )
+
+    assert (
+        bent_object.StartNode
+        is new_start_node
+    )
+
+    assert (
+        bent_object.EndNode
+        is old_end_node
+    )
+
+    assert captured_joints == [
+        old_start_node,
+        existing_design_joint,
+    ]
+
+    assert (
+        straight_object
+        not in document.frame_group.Group
+    )
+
+    assert document.removed == [
+        "ForgeCADMember003",
+    ]
+
+
+
+def test_prepend_existing_bend_preserves_layout_ownership_and_removes_only_member(
+    monkeypatch,
+):
+    """
+    StartNode extension must retain the consumed straight member's source layout
+    as bend-owned design geometry while removing only the straight member object.
+    """
+
+    bent_object = FakeBentExtensionObject()
+
+    old_start_node = object()
+    old_end_node = bent_object.EndNode
+    existing_design_joint = bent_object.DesignJointNode1
+    new_start_node = object()
+
+    bent_object.StartNode = old_start_node
+
+    straight_object = FakeStraightExtensionObject(
+        new_start_node
+    )
+
+    document = FakeExtensionDocument(
+        (
+            straight_object,
+        )
+    )
+
+    replacement_tube = object()
+
+    monkeypatch.setattr(
+        module,
+        "ensure_bent_tube_design_joint_links",
+        lambda obj, joints: obj,
+        raising=False,
+    )
+
+    monkeypatch.setattr(
+        module,
+        "ensure_bent_tube_node_links",
+        lambda obj, start_node, end_node: (
+            setattr(
+                obj,
+                "StartNode",
+                start_node,
+            )
+            or setattr(
+                obj,
+                "EndNode",
+                end_node,
+            )
+            or obj
+        ),
+        raising=False,
+    )
+
+    monkeypatch.setattr(
+        module,
+        "layout_object_for_id",
+        lambda document, layout_id: layout_id,
+        raising=False,
+    )
+
+    result = module.prepend_existing_bent_object(
+        document=document,
+        bent_object=bent_object,
+        straight_object=straight_object,
+        replacement_tube=replacement_tube,
+        design_joint_node=old_start_node,
+        new_start_node=new_start_node,
+    )
+
+    assert result is bent_object
+
+    assert bent_object.SourceLayoutLines == [
+        "L001",
+        "L002",
+        "L003",
+    ]
+
+    assert (
+        bent_object.StartNode
+        is new_start_node
+    )
+
+    assert (
+        bent_object.EndNode
+        is old_end_node
+    )
+
+    assert (
+        straight_object
+        not in document.frame_group.Group
+    )
+
+    assert document.removed == [
+        "ForgeCADMember003",
+    ]
+
+    assert "L003" not in document.removed
+
+    assert (
+        existing_design_joint
+        is bent_object.DesignJointNode1
+    )
+
+def test_start_node_extension_prepends_path_and_new_radius(
+    monkeypatch,
+):
+    """
+    Extending at the bent tube's StartNode must prepend the straight member,
+    selected joint, and new bend radius ahead of the existing bent path.
+    """
+
+    joint_point = types.SimpleNamespace(
+        x=0.0,
+        y=0.0,
+        z=0.0,
+    )
+
+    old_start_node = types.SimpleNamespace(
+        Position=FakeVector(
+            0.0,
+            0.0,
+            0.0,
+        )
+    )
+
+    existing_design_joint = types.SimpleNamespace(
+        Position=FakeVector(
+            1000.0,
+            0.0,
+            0.0,
+        )
+    )
+
+    old_end_node = types.SimpleNamespace(
+        Position=FakeVector(
+            2000.0,
+            1000.0,
+            0.0,
+        )
+    )
+
+    new_start_node = types.SimpleNamespace(
+        Position=FakeVector(
+            -1000.0,
+            0.0,
+            0.0,
+        )
+    )
+
+    current_tube = types.SimpleNamespace(
+        bends=(
+            types.SimpleNamespace(
+                centerline_radius=125.0,
+            ),
+        ),
+        profile=object(),
+        material=object(),
+    )
+
+    class StartExtensionProxy:
+        def replace_tube_definition(
+            self,
+            *_args,
+        ):
+            return None
+
+        def _tube_from_properties(
+            self,
+            _obj,
+        ):
+            return current_tube
+
+    bent_object = types.SimpleNamespace(
+        Name="ForgeCADBentTube",
+        Proxy=StartExtensionProxy(),
+        StartNode=old_start_node,
+        EndNode=old_end_node,
+        DesignJointNode1=existing_design_joint,
+    )
+
+    straight_object = types.SimpleNamespace(
+        Name="ForgeCADMember003",
+        MemberID="M003",
+        SourceLayoutID="L003",
+        StartNode=old_start_node,
+        EndNode=new_start_node,
+    )
+
+    joint = types.SimpleNamespace(
+        is_simple=True,
+        node=joint_point,
+        members=(
+            object(),
+            object(),
+        ),
+    )
+
+    joint_status = types.SimpleNamespace(
+        joint=joint,
+        node_key="J-START",
+    )
+
+    captured_build = {}
+    captured_prepend = {}
+
+    monkeypatch.setattr(
+        module,
+        "freecad_structural_objects_for_joint",
+        lambda document, selected_joint: (
+            bent_object,
+            straight_object,
+        ),
+    )
+
+    monkeypatch.setattr(
+        module,
+        "joint_node_object",
+        lambda document, selected_joint_node: old_start_node,
+    )
+
+    monkeypatch.setattr(
+        module,
+        "design_joint_node_objects",
+        lambda obj: (
+            existing_design_joint,
+        ),
+    )
+
+    monkeypatch.setattr(
+        module,
+        "fabrication_node_from_object",
+        lambda node_object: node_object,
+    )
+
+    replacement_tube = object()
+
+    def fake_build_multi_joint_bent_tube(
+        *,
+        nodes,
+        centerline_radii_mm,
+        profile,
+        material,
+    ):
+        captured_build["nodes"] = nodes
+        captured_build["radii"] = centerline_radii_mm
+        captured_build["profile"] = profile
+        captured_build["material"] = material
+        return replacement_tube
+
+    monkeypatch.setattr(
+        module,
+        "build_multi_joint_bent_tube",
+        fake_build_multi_joint_bent_tube,
+    )
+
+    def fake_prepend_existing_bent_object(
+        **kwargs,
+    ):
+        captured_prepend.update(
+            kwargs
+        )
+        return bent_object
+
+    monkeypatch.setattr(
+        module,
+        "prepend_existing_bent_object",
+        fake_prepend_existing_bent_object,
+    )
+
+    monkeypatch.setattr(
+        module,
+        "extend_existing_bent_object",
+        lambda **kwargs: (_ for _ in ()).throw(
+            AssertionError(
+                "StartNode extension must not use the EndNode append helper."
+            )
+        ),
+    )
+
+    monkeypatch.setattr(
+        module,
+        "hide_design_geometry_for_bend",
+        lambda *args, **kwargs: None,
+    )
+
+    monkeypatch.setattr(
+        module,
+        "refresh_joint_topology",
+        lambda *args, **kwargs: None,
+    )
+
+    monkeypatch.setattr(
+        module,
+        "refresh_fabrication_for_document",
+        lambda *args, **kwargs: None,
+    )
+
+    document = types.SimpleNamespace(
+        recompute=lambda: None,
+    )
+
+    result = module.extend_bent_tube_from_joint(
+        document,
+        joint_status,
+        75.0,
+    )
+
+    assert result is bent_object
+
+    assert captured_build["nodes"] == (
+        new_start_node,
+        old_start_node,
+        existing_design_joint,
+        old_end_node,
+    )
+
+    assert captured_build["radii"] == (
+        75.0,
+        125.0,
+    )
+
+    assert (
+        captured_prepend["bent_object"]
+        is bent_object
+    )
+
+    assert (
+        captured_prepend["straight_object"]
+        is straight_object
+    )
+
+    assert (
+        captured_prepend["replacement_tube"]
+        is replacement_tube
+    )
+
+    assert (
+        captured_prepend["design_joint_node"]
+        is old_start_node
+    )
+
+    assert (
+        captured_prepend["new_start_node"]
+        is new_start_node
+    )
 
 def test_conversion_path_detects_existing_bent_plus_straight():
     """

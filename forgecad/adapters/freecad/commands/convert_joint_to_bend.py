@@ -1172,6 +1172,186 @@ def extend_existing_bent_object(
     return bent_object
 
 
+
+def prepend_existing_bent_object(
+    document,
+    bent_object,
+    straight_object,
+    replacement_tube,
+    design_joint_node,
+    new_start_node,
+):
+    """
+    Prepend one adjoining straight member to an existing bent-tube object.
+
+    The bent object's document identity is preserved. The previous StartNode
+    becomes the first design joint, existing design joints shift forward in
+    path order, the straight member's outer endpoint becomes the new StartNode,
+    and the straight member is removed while its source layout remains owned
+    by the bent tube.
+    """
+
+    if document is None:
+        raise ValueError(
+            "A FreeCAD document is required."
+        )
+
+    if bent_object is None:
+        raise ValueError(
+            "An existing ForgeCAD bent tube is required."
+        )
+
+    if straight_object is None:
+        raise ValueError(
+            "An adjoining ForgeCAD straight member is required."
+        )
+
+    proxy = getattr(
+        bent_object,
+        "Proxy",
+        None,
+    )
+
+    if (
+        proxy is None
+        or not hasattr(
+            proxy,
+            "replace_tube_definition",
+        )
+    ):
+        raise ValueError(
+            "The selected bent tube is not parametric."
+        )
+
+    if design_joint_node is None:
+        raise ValueError(
+            "A design joint node is required."
+        )
+
+    if new_start_node is None:
+        raise ValueError(
+            "The extended bent tube requires a new start endpoint node."
+        )
+
+    existing_design_joints = list(
+        design_joint_node_objects(
+            bent_object
+        )
+    )
+
+    ordered_design_joints = [
+        design_joint_node,
+    ]
+
+    for joint_node in existing_design_joints:
+        if joint_node is design_joint_node:
+            continue
+
+        ordered_design_joints.append(
+            joint_node
+        )
+
+    ensure_bent_tube_design_joint_links(
+        bent_object,
+        tuple(
+            ordered_design_joints
+        ),
+    )
+
+    source_layouts = list(
+        getattr(
+            bent_object,
+            "SourceLayoutLines",
+            (),
+        )
+    )
+
+    layout_id = str(
+        getattr(
+            straight_object,
+            "SourceLayoutID",
+            "",
+        )
+    ).strip()
+
+    if layout_id:
+        layout_object = layout_object_for_id(
+            document,
+            layout_id,
+        )
+
+        # Tests may use the layout ID itself as the lightweight ownership
+        # stand-in when no real layout object exists.
+        layout_reference = (
+            layout_object
+            if layout_object is not None
+            else layout_id
+        )
+
+        if layout_reference not in source_layouts:
+            source_layouts.append(
+                layout_reference
+            )
+
+    bent_object.SourceLayoutLines = list(
+        source_layouts
+    )
+
+    old_end_node = getattr(
+        bent_object,
+        "EndNode",
+        None,
+    )
+
+    if old_end_node is None:
+        raise ValueError(
+            "The bent tube has no persistent EndNode."
+        )
+
+    ensure_bent_tube_node_links(
+        bent_object,
+        new_start_node,
+        old_end_node,
+    )
+
+    proxy.replace_tube_definition(
+        bent_object,
+        replacement_tube,
+    )
+
+    frame_group = document.getObject(
+        "ForgeCADFrame"
+    )
+
+    if frame_group is not None:
+        try:
+            frame_group.removeObject(
+                straight_object
+            )
+        except Exception:
+            pass
+
+    object_name = str(
+        getattr(
+            straight_object,
+            "Name",
+            "",
+        )
+    ).strip()
+
+    if not object_name:
+        raise ValueError(
+            "ForgeCAD member has no document object name."
+        )
+
+    document.removeObject(
+        object_name
+    )
+
+    document.recompute()
+
+    return bent_object
+
 def fabrication_node_from_object(
     node_object,
 ):
@@ -1314,10 +1494,9 @@ def extend_bent_tube_from_joint(
     """
     Extend an existing bent tube through one adjoining straight-member joint.
 
-    The current implementation grows the tube from its EndNode. The existing
-    design joints and bend radii are retained, the selected joint becomes the
-    next hidden design joint, and the straight member's outer endpoint becomes
-    the bent tube's new EndNode.
+    The selected joint may be at either persistent endpoint. EndNode extension
+    appends the new bend to the existing path. StartNode extension prepends the
+    new bend while preserving the same bent-object identity and old EndNode.
     """
 
     if document is None:
@@ -1403,19 +1582,36 @@ def extend_bent_tube_from_joint(
             "ForgeCAD could not identify the bent and straight members."
         )
 
+    current_start_node = getattr(
+        bent_object,
+        "StartNode",
+        None,
+    )
     current_end_node = getattr(
         bent_object,
         "EndNode",
         None,
     )
 
-    if not _node_object_matches_joint(
+    matches_start = _node_object_matches_joint(
+        current_start_node,
+        joint.node,
+    )
+    matches_end = _node_object_matches_joint(
         current_end_node,
         joint.node,
-    ):
+    )
+
+    if not matches_start and not matches_end:
         raise ValueError(
-            "Bent-tube extension currently requires the selected joint "
-            "to be at the bent tube's end."
+            "Bent-tube extension requires the selected joint "
+            "to be at the bent tube's StartNode or EndNode."
+        )
+
+    if matches_start and matches_end:
+        raise ValueError(
+            "ForgeCAD cannot extend a bent tube whose StartNode and EndNode "
+            "occupy the same selected joint."
         )
 
     design_node = joint_node_object(
@@ -1428,7 +1624,7 @@ def extend_bent_tube_from_joint(
             "ForgeCAD could not find the persistent node for this joint."
         )
 
-    new_end_node = outer_node_object(
+    outer_node = outer_node_object(
         straight_object,
         joint.node,
     )
@@ -1456,77 +1652,118 @@ def extend_bent_tube_from_joint(
         )
     )
 
-    ordered_joint_nodes = list(
+    existing_joint_nodes = list(
         design_joint_node_objects(
             bent_object
         )
     )
 
-    if (
-        not ordered_joint_nodes
-        or ordered_joint_nodes[
-            -1
-        ]
-        is not design_node
-    ):
-        ordered_joint_nodes.append(
-            design_node
-        )
-
-    start_node = getattr(
-        bent_object,
-        "StartNode",
-        None,
-    )
-
-    if start_node is None:
-        raise ValueError(
-            "The bent tube has no persistent StartNode."
-        )
-
-    design_path_nodes = (
-        start_node,
-        *ordered_joint_nodes,
-        new_end_node,
-    )
-
-    radii = (
-        *(
-            float(
-                bend.centerline_radius
-            )
-            for bend in current_tube.bends
-        ),
+    existing_radii = tuple(
         float(
-            centerline_radius_mm
-        ),
-    )
-
-    replacement_tube = (
-        build_multi_joint_bent_tube(
-            nodes=tuple(
-                fabrication_node_from_object(
-                    node_object
-                )
-                for node_object
-                in design_path_nodes
-            ),
-            centerline_radii_mm=tuple(
-                radii
-            ),
-            profile=current_tube.profile,
-            material=current_tube.material,
+            bend.centerline_radius
         )
+        for bend in current_tube.bends
     )
 
-    result = extend_existing_bent_object(
-        document=document,
-        bent_object=bent_object,
-        straight_object=straight_object,
-        replacement_tube=replacement_tube,
-        design_joint_node=design_node,
-        new_end_node=new_end_node,
-    )
+    if matches_start:
+        if current_end_node is None:
+            raise ValueError(
+                "The bent tube has no persistent EndNode."
+            )
+
+        design_path_nodes = (
+            outer_node,
+            design_node,
+            *existing_joint_nodes,
+            current_end_node,
+        )
+
+        radii = (
+            float(
+                centerline_radius_mm
+            ),
+            *existing_radii,
+        )
+
+        replacement_tube = (
+            build_multi_joint_bent_tube(
+                nodes=tuple(
+                    fabrication_node_from_object(
+                        node_object
+                    )
+                    for node_object in design_path_nodes
+                ),
+                centerline_radii_mm=radii,
+                profile=current_tube.profile,
+                material=current_tube.material,
+            )
+        )
+
+        result = prepend_existing_bent_object(
+            document=document,
+            bent_object=bent_object,
+            straight_object=straight_object,
+            replacement_tube=replacement_tube,
+            design_joint_node=design_node,
+            new_start_node=outer_node,
+        )
+
+    else:
+        if current_start_node is None:
+            raise ValueError(
+                "The bent tube has no persistent StartNode."
+            )
+
+        ordered_joint_nodes = list(
+            existing_joint_nodes
+        )
+
+        if (
+            not ordered_joint_nodes
+            or ordered_joint_nodes[
+                -1
+            ]
+            is not design_node
+        ):
+            ordered_joint_nodes.append(
+                design_node
+            )
+
+        design_path_nodes = (
+            current_start_node,
+            *ordered_joint_nodes,
+            outer_node,
+        )
+
+        radii = (
+            *existing_radii,
+            float(
+                centerline_radius_mm
+            ),
+        )
+
+        replacement_tube = (
+            build_multi_joint_bent_tube(
+                nodes=tuple(
+                    fabrication_node_from_object(
+                        node_object
+                    )
+                    for node_object in design_path_nodes
+                ),
+                centerline_radii_mm=radii,
+                profile=current_tube.profile,
+                material=current_tube.material,
+            )
+        )
+
+        result = extend_existing_bent_object(
+            document=document,
+            bent_object=bent_object,
+            straight_object=straight_object,
+            replacement_tube=replacement_tube,
+            design_joint_node=design_node,
+            new_end_node=outer_node,
+        )
 
     hide_design_geometry_for_bend(
         document,
@@ -1549,7 +1786,6 @@ def extend_bent_tube_from_joint(
     document.recompute()
 
     return result
-
 
 def create_bent_tube_from_joint(
     document,
