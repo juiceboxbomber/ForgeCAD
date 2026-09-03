@@ -9,6 +9,29 @@ NODE_RADIUS = 6.0
 POINT_PRECISION = 6
 
 
+def document_is_restoring_transaction(document):
+    """Return True while FreeCAD is performing Undo, Redo, or rollback."""
+
+    if document is None:
+        return False
+
+    checker = getattr(
+        document,
+        "isPerformingTransaction",
+        None,
+    )
+
+    if checker is None:
+        return False
+
+    try:
+        return bool(
+            checker()
+        )
+    except Exception:
+        return False
+
+
 def point_key(
     vector,
     precision=POINT_PRECISION,
@@ -631,6 +654,25 @@ class ForgeCADNodeProxy:
         ):
             return
 
+        document = getattr(
+            obj,
+            "Document",
+            None,
+        )
+
+        # Undo/Redo restores the node and its linked topology as one native
+        # FreeCAD transaction. Do not propagate topology changes while that
+        # transaction is being replayed.
+        if document_is_restoring_transaction(
+            document
+        ):
+            self._last_position = point_key(
+                self._placement_position(
+                    obj
+                )
+            )
+            return
+
         proposed_position = (
             self._placement_position(
                 obj
@@ -641,12 +683,6 @@ class ForgeCADNodeProxy:
             self._position_from_key(
                 self._last_position
             )
-        )
-
-        document = getattr(
-            obj,
-            "Document",
-            None,
         )
 
         if self._movement_constraint is None:
@@ -746,6 +782,25 @@ class ForgeCADNodeProxy:
             not self._ready
             or self._updating
         ):
+            return
+
+        document = getattr(
+            obj,
+            "Document",
+            None,
+        )
+
+        # During Undo/Redo, FreeCAD owns restoration of Position, XYZ, and
+        # Placement. Keep the mirrored properties read-only, but advance the
+        # proxy's cached position to the Placement FreeCAD has just restored.
+        if document_is_restoring_transaction(
+            document
+        ):
+            self._last_position = point_key(
+                self._placement_position(
+                    obj
+                )
+            )
             return
 
         self._updating = True
