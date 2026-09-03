@@ -408,3 +408,83 @@ def test_node_proxy_propagates_placement_change():
 
     assert member.Proxy.calls == 1
     assert member.touched is True
+
+def test_sync_layout_points_for_node_uses_owned_layout_objects():
+    import forgecad.adapters.freecad.node_object as node_object
+
+    old_position = node_object.FreeCAD.Vector(
+        500,
+        0,
+        0,
+    )
+
+    new_position = node_object.FreeCAD.Vector(
+        600,
+        100,
+        0,
+    )
+
+    owned_line_a = FakeLayoutObject(
+        (0, 0, 0),
+        (500, 0, 0),
+    )
+
+    owned_line_b = FakeLayoutObject(
+        (500, 0, 0),
+        (500, 500, 0),
+    )
+
+    unowned_line = FakeLayoutObject(
+        (500, 0, 0),
+        (500, -500, 0),
+    )
+
+    class FakeNode:
+        SourceLayoutLines = [
+            owned_line_a,
+            owned_line_b,
+        ]
+
+    class FakeLayoutGroup:
+        Group = [
+            owned_line_a,
+            owned_line_b,
+            unowned_line,
+        ]
+
+    class FakeDocument:
+        def getObject(
+            self,
+            name,
+        ):
+            if name == "ForgeCADLayout":
+                return FakeLayoutGroup()
+
+            return None
+
+    changed = node_object.sync_layout_points_for_node(
+        FakeDocument(),
+        old_position,
+        new_position,
+        node_object=FakeNode(),
+    )
+
+    assert changed == 2
+
+    assert node_object.point_key(
+        owned_line_a.EndPoint
+    ) == node_object.point_key(
+        new_position
+    )
+
+    assert node_object.point_key(
+        owned_line_b.StartPoint
+    ) == node_object.point_key(
+        new_position
+    )
+
+    assert node_object.point_key(
+        unowned_line.StartPoint
+    ) == node_object.point_key(
+        old_position
+    )

@@ -152,7 +152,8 @@ def test_node_drag_uses_solved_position_before_layout_and_member_refresh():
     node_object.sync_layout_points_for_node = (
         lambda document,
         old_position,
-        new_position: events.append(
+        new_position,
+        **kwargs: events.append(
             (
                 "layout",
                 point_tuple(
@@ -302,7 +303,8 @@ def test_node_drag_without_constraint_keeps_proposed_position():
     node_object.sync_layout_points_for_node = (
         lambda document,
         old_position,
-        new_position: 0
+        new_position,
+        **kwargs: 0
     )
 
     node_object.refresh_connected_members = (

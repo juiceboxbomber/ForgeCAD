@@ -179,7 +179,7 @@ def test_first_inferred_constraint_is_cached_for_later_drags():
     )
 
     node_object.sync_layout_points_for_node = (
-        lambda *args: 0
+        lambda *args, **kwargs: 0
     )
     node_object.touch_connected_members = (
         lambda *args: ()
