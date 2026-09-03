@@ -146,79 +146,6 @@ def point_on_segment(
         tolerance * tolerance
     )
 
-def layout_objects_for_point(
-    point,
-    layout_objects,
-):
-    """
-    Return layout objects whose finite segment contains the point.
-
-    This includes both endpoint connections and interior connections such
-    as T-junctions. Continuous through-lines are referenced but not split.
-    """
-
-    result = []
-
-    for obj in layout_objects:
-        if not hasattr(
-            obj,
-            "StartPoint",
-        ):
-            continue
-
-        if not hasattr(
-            obj,
-            "EndPoint",
-        ):
-            continue
-
-        if not point_on_segment(
-            point,
-            obj.StartPoint,
-            obj.EndPoint,
-        ):
-            continue
-
-        result.append(
-            obj
-        )
-
-    return result
-
-def ensure_source_layout_objects(
-    obj,
-    layout_objects,
-):
-    """
-    Ensure a ForgeCAD node stores references to its source layout objects.
-    """
-
-    if not hasattr(
-        obj,
-        "SourceLayoutLines",
-    ):
-        obj.addProperty(
-            "App::PropertyLinkList",
-            "SourceLayoutLines",
-            "ForgeCAD Node",
-        )
-
-    obj.SourceLayoutLines = list(
-        layout_objects
-    )
-
-    try:
-        obj.setEditorMode(
-            "SourceLayoutLines",
-            1,
-        )
-    except Exception:
-        pass
-
-    return list(
-        obj.SourceLayoutLines
-    )
-
 
 def canonical_layout_point(
     point,
@@ -675,13 +602,6 @@ def generate_nodes_from_layout(
     layout_node_objects = []
 
     for point in points:
-        source_layout_objects = (
-            layout_objects_for_point(
-                point,
-                layout_objects,
-            )
-        )
-
         existing = node_by_point(
             nodes_group,
             point,
@@ -703,11 +623,6 @@ def generate_nodes_from_layout(
                     SOURCE_LAYOUT,
                 )
 
-                ensure_source_layout_objects(
-                    existing,
-                    source_layout_objects,
-                )
-
             layout_node_objects.append(
                 existing
             )
@@ -723,11 +638,6 @@ def generate_nodes_from_layout(
             point,
             node_id,
             source_type=SOURCE_LAYOUT,
-        )
-
-        ensure_source_layout_objects(
-            node_object,
-            source_layout_objects,
         )
 
         nodes_group.addObject(
