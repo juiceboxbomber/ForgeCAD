@@ -131,6 +131,7 @@ def sync_layout_points_for_node(
     document,
     old_position,
     new_position,
+    node_object=None,
 ):
     """
     Move layout endpoints that occupied a node's previous position.
@@ -144,24 +145,31 @@ def sync_layout_points_for_node(
     if document is None:
         return 0
 
-    layout_group = document.getObject(
-        "ForgeCADLayout"
+    old_key = point_key(old_position)
+
+    source_layout_objects = getattr(
+        node_object,
+        "SourceLayoutLines",
+        None,
     )
 
-    if layout_group is None:
-        return 0
+    if source_layout_objects:
+        layout_objects = list(source_layout_objects)
+    else:
+        layout_group = document.getObject("ForgeCADLayout")
 
-    old_key = point_key(
-        old_position
-    )
+        if layout_group is None:
+            return 0
+
+        layout_objects = getattr(
+            layout_group,
+            "Group",
+            [],
+        )
 
     changed_count = 0
 
-    for layout_object in getattr(
-        layout_group,
-        "Group",
-        [],
-    ):
+    for layout_object in layout_objects:
         changed = False
 
         if (
@@ -169,15 +177,9 @@ def sync_layout_points_for_node(
                 layout_object,
                 "StartPoint",
             )
-            and point_key(
-                layout_object.StartPoint
-            ) == old_key
+            and point_key(layout_object.StartPoint) == old_key
         ):
-            layout_object.StartPoint = (
-                vector_copy(
-                    new_position
-                )
-            )
+            layout_object.StartPoint = vector_copy(new_position)
             changed = True
 
         if (
@@ -185,21 +187,13 @@ def sync_layout_points_for_node(
                 layout_object,
                 "EndPoint",
             )
-            and point_key(
-                layout_object.EndPoint
-            ) == old_key
+            and point_key(layout_object.EndPoint) == old_key
         ):
-            layout_object.EndPoint = (
-                vector_copy(
-                    new_position
-                )
-            )
+            layout_object.EndPoint = vector_copy(new_position)
             changed = True
 
         if changed:
-            update_layout_object_shape(
-                layout_object
-            )
+            update_layout_object_shape(layout_object)
 
             try:
                 layout_object.touch()
@@ -721,6 +715,7 @@ class ForgeCADNodeProxy:
                 document,
                 old_position,
                 new_position,
+                node_object=obj,
             )
 
             refresh_connected_members(
