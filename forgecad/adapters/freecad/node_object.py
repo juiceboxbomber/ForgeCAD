@@ -31,6 +31,36 @@ def point_key(
     )
 
 
+def document_is_restoring_transaction(
+    document,
+):
+    """
+    Return True while FreeCAD is replaying Undo, Redo, or rollback.
+
+    App::Document.isPerformingTransaction() is specifically intended
+    for this transaction-replay phase.
+    """
+
+    if document is None:
+        return False
+
+    checker = getattr(
+        document,
+        "isPerformingTransaction",
+        None,
+    )
+
+    if checker is None:
+        return False
+
+    try:
+        return bool(
+            checker()
+        )
+    except Exception:
+        return False
+
+
 def vector_copy(
     vector,
 ):
@@ -346,6 +376,22 @@ class ForgeCADNodeProxy:
         ):
             return
 
+        document = getattr(
+            obj,
+            "Document",
+            None,
+        )
+
+        if document_is_restoring_transaction(
+            document
+        ):
+            self._last_position = point_key(
+                self._placement_position(
+                    obj
+                )
+            )
+            return
+
         new_position = (
             self._placement_position(
                 obj
@@ -374,12 +420,6 @@ class ForgeCADNodeProxy:
             self._refresh_coordinate_properties(
                 obj,
                 new_position,
-            )
-
-            document = getattr(
-                obj,
-                "Document",
-                None,
             )
 
             sync_layout_points_for_node(
@@ -414,6 +454,22 @@ class ForgeCADNodeProxy:
             not self._ready
             or self._updating
         ):
+            return
+
+        document = getattr(
+            obj,
+            "Document",
+            None,
+        )
+
+        if document_is_restoring_transaction(
+            document
+        ):
+            self._last_position = point_key(
+                self._placement_position(
+                    obj
+                )
+            )
             return
 
         self._updating = True

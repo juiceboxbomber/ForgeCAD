@@ -12,6 +12,53 @@ from forgecad.adapters.freecad.member_notch import (
 )
 
 
+def document_is_restoring_transaction(document):
+    """Return True while FreeCAD is performing Undo, Redo, or rollback."""
+
+    if document is None:
+        return False
+
+    checker = getattr(
+        document,
+        "isPerformingTransaction",
+        None,
+    )
+
+    if checker is None:
+        return False
+
+    try:
+        return bool(
+            checker()
+        )
+    except Exception:
+        return False
+
+
+def schedule_member_refresh_after_transaction(obj):
+    """
+    Mark a member for one geometry refresh after transaction replay ends.
+
+    FreeCAD may call execute() while Undo/Redo is still restoring document
+    state.  Geometry must not be rebuilt during that replay.  The pending
+    flag records that a normal post-replay recompute should refresh the
+    member once transaction restoration has finished.
+    """
+
+    proxy = getattr(
+        obj,
+        "Proxy",
+        None,
+    )
+
+    if proxy is None:
+        return False
+
+    proxy._replay_refresh_pending = True
+
+    return True
+
+
 def build_tube_shape(
     start,
     end,
@@ -192,7 +239,14 @@ def ensure_member_node_links(
 def sync_member_points_from_nodes(
     obj,
 ):
-    """Synchronize member endpoint coordinates from linked nodes."""
+    """
+    Synchronize each member endpoint from its linked node independently.
+
+    A member may be linked at only one end. This is useful for branch
+    members at T-junctions, where the shared junction node should drive
+    one endpoint while the opposite endpoint remains at its stored
+    coordinate.
+    """
 
     start_node = getattr(
         obj,
@@ -206,65 +260,67 @@ def sync_member_points_from_nodes(
         None,
     )
 
-    if (
-        start_node is None
-        or end_node is None
-    ):
-        return False
+    changed = False
 
     if (
-        not hasattr(
+        start_node is not None
+        and hasattr(
             start_node,
             "Position",
         )
-        or not hasattr(
+    ):
+        start_position = (
+            start_node.Position
+        )
+
+        start_vector_type = type(
+            obj.StartPoint
+        )
+
+        obj.StartPoint = start_vector_type(
+            float(
+                start_position.x
+            ),
+            float(
+                start_position.y
+            ),
+            float(
+                start_position.z
+            ),
+        )
+
+        changed = True
+
+    if (
+        end_node is not None
+        and hasattr(
             end_node,
             "Position",
         )
     ):
-        return False
+        end_position = (
+            end_node.Position
+        )
 
-    start_position = (
-        start_node.Position
-    )
+        end_vector_type = type(
+            obj.EndPoint
+        )
 
-    end_position = (
-        end_node.Position
-    )
+        obj.EndPoint = end_vector_type(
+            float(
+                end_position.x
+            ),
+            float(
+                end_position.y
+            ),
+            float(
+                end_position.z
+            ),
+        )
 
-    start_vector_type = type(
-        obj.StartPoint
-    )
+        changed = True
 
-    end_vector_type = type(
-        obj.EndPoint
-    )
-
-    obj.StartPoint = start_vector_type(
-        float(
-            start_position.x
-        ),
-        float(
-            start_position.y
-        ),
-        float(
-            start_position.z
-        ),
-    )
-
-    obj.EndPoint = end_vector_type(
-        float(
-            end_position.x
-        ),
-        float(
-            end_position.y
-        ),
-        float(
-            end_position.z
-        ),
-    )
-
-    return True
+    return changed
 
 
 class TubeMemberProxy:
@@ -278,6 +334,7 @@ class TubeMemberProxy:
     ):
         self._updating = False
         self._ready = False
+        self._replay_refresh_pending = False
 
         obj.Proxy = self
 
@@ -656,13 +713,34 @@ class TubeMemberProxy:
         self,
         obj,
     ):
-        """Regenerate geometry during document recompute."""
+        """Regenerate geometry during an ordinary document recompute."""
 
-        if self._ready:
-            self.update_shape(
+        if not self._ready:
+            return
+
+        document = getattr(
+            obj,
+            "Document",
+            None,
+        )
+
+        # During Undo/Redo, FreeCAD is restoring Shape and fabrication
+        # properties from its transaction history. Rebuilding Shape here
+        # can race that native restore and leave invalid geometry references.
+        if document_is_restoring_transaction(
+            document
+        ):
+            schedule_member_refresh_after_transaction(
                 obj
             )
+            return
 
-            self._update_label(
-                obj
-            )
+        self._replay_refresh_pending = False
+
+        self.update_shape(
+            obj
+        )
+
+        self._update_label(
+            obj
+        )
