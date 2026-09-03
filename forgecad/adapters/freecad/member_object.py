@@ -13,52 +13,6 @@ from forgecad.adapters.freecad.member_notch import (
 )
 
 
-def document_is_restoring_transaction(document):
-    """Return True while FreeCAD is performing Undo, Redo, or rollback."""
-
-    if document is None:
-        return False
-
-    checker = getattr(
-        document,
-        "isPerformingTransaction",
-        None,
-    )
-
-    if checker is None:
-        return False
-
-    try:
-        return bool(
-            checker()
-        )
-    except Exception:
-        return False
-
-
-def schedule_member_refresh_after_transaction(obj):
-    """
-    Mark a member for a geometry refresh after transaction replay ends.
-
-    FreeCAD may call execute() while Undo/Redo is still restoring document
-    state. Geometry must not be rebuilt during that replay. A later normal
-    recompute will perform the refresh once transaction restoration ends.
-    """
-
-    proxy = getattr(
-        obj,
-        "Proxy",
-        None,
-    )
-
-    if proxy is None:
-        return False
-
-    proxy._replay_refresh_pending = True
-
-    return True
-
-
 def build_tube_shape(
     start,
     end,
@@ -325,7 +279,6 @@ class TubeMemberProxy:
     ):
         self._updating = False
         self._ready = False
-        self._replay_refresh_pending = False
 
         obj.Proxy = self
 
@@ -713,28 +666,6 @@ class TubeMemberProxy:
         if not self._ready:
             return
 
-        document = getattr(
-            obj,
-            "Document",
-            None,
-        )
-
-        # FreeCAD restores Shape and related fabrication properties from its
-        # transaction history during Undo/Redo. Do not rebuild member geometry
-        # while that replay is in progress.
-        if document_is_restoring_transaction(
-            document
-        ):
-            schedule_member_refresh_after_transaction(
-                obj
-            )
-            return
-
-        self._replay_refresh_pending = False
-
-        # Keep the modern linked-topology behavior: synchronize the member
-        # endpoint before rebuilding so callers that replace update_shape()
-        # still observe the current node position.
         sync_member_points_from_nodes(
             obj
         )

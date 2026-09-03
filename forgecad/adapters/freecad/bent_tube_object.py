@@ -29,29 +29,6 @@ from forgecad.adapters.freecad.bent_tube_geometry import (
 )
 
 
-def document_is_restoring_transaction(document) -> bool:
-    """Return True while FreeCAD is performing Undo, Redo, or rollback."""
-
-    if document is None:
-        return False
-
-    checker = getattr(
-        document,
-        "isPerformingTransaction",
-        None,
-    )
-
-    if checker is None:
-        return False
-
-    try:
-        return bool(
-            checker()
-        )
-    except Exception:
-        return False
-
-
 def _quantity_value(value) -> float:
     """Return a numeric value from a FreeCAD quantity or test double."""
 
@@ -1529,19 +1506,6 @@ class BentTubeProxy:
         if not self._ready:
             return
 
-        document = getattr(
-            obj,
-            "Document",
-            None,
-        )
-
-        # FreeCAD owns property restoration during Undo/Redo. Do not rebuild
-        # or mutate bent-tube state while that transaction is being replayed.
-        if document_is_restoring_transaction(
-            document
-        ):
-            return
-
         if property_name == "TubeName":
             self._update_label(
                 obj
@@ -1589,19 +1553,6 @@ class BentTubeProxy:
         """Regenerate geometry during document recompute."""
 
         if not self._ready:
-            return
-
-        document = getattr(
-            obj,
-            "Document",
-            None,
-        )
-
-        # Avoid rebuilding bent-tube geometry while FreeCAD is replaying
-        # Undo/Redo. The restored document state remains authoritative.
-        if document_is_restoring_transaction(
-            document
-        ):
             return
 
         if (
