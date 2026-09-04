@@ -846,7 +846,7 @@ class JointInspectorDialog(
     def apply_treatment(
         self,
     ):
-        """Save the selected treatment and regenerate immediately."""
+        """Save the selected treatment and regenerate atomically."""
 
         index = (
             self.treatment_combo.currentIndex()
@@ -867,7 +867,27 @@ class JointInspectorDialog(
             ]
         )
 
+        transaction_started = False
+
         try:
+            transaction_supported = all(
+                hasattr(
+                    self.document,
+                    method_name,
+                )
+                for method_name in (
+                    "openTransaction",
+                    "commitTransaction",
+                    "abortTransaction",
+                )
+            )
+
+            if transaction_supported:
+                self.document.openTransaction(
+                    "Change ForgeCAD Joint Treatment"
+                )
+                transaction_started = True
+
             save_joint_treatment(
                 self.document,
                 vector_key(
@@ -885,10 +905,17 @@ class JointInspectorDialog(
 
             self.refresh_after_regeneration()
 
-        except (
-            ValueError,
-            KeyError,
-        ) as error:
+            if transaction_started:
+                self.document.commitTransaction()
+                transaction_started = False
+
+        except Exception as error:
+            if transaction_started:
+                try:
+                    self.document.abortTransaction()
+                except Exception:
+                    pass
+
             QtGui.QMessageBox.warning(
                 self,
                 "Joint Treatment Failed",
@@ -898,7 +925,7 @@ class JointInspectorDialog(
 
         self.treatment_status.setText(
             (
-                "Current build: "
+                "Current treatment: "
                 f"{option.label}"
             )
         )
