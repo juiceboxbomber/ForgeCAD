@@ -245,3 +245,60 @@ def test_constraint_is_derived_from_identified_through_pair():
         0.0,
         0.0,
     )
+
+def test_constraint_is_derived_from_continuous_through_member():
+    joint_node = Node(
+        0.0,
+        0.0,
+        0.0,
+    )
+
+    through = FakeMember(
+        start=Node(
+            -1000.0,
+            0.0,
+            0.0,
+        ),
+        end=Node(
+            1000.0,
+            0.0,
+            0.0,
+        ),
+    )
+
+    branch = FakeMember(
+        start=joint_node,
+        end=Node(
+            0.0,
+            500.0,
+            0.0,
+        ),
+    )
+
+    joint = Joint(
+        node=joint_node,
+        members=(
+            through,
+            branch,
+        ),
+    )
+
+    constraint = (
+        collinear_through_constraint_for_joint(
+            joint
+        )
+    )
+
+    assert constraint is not None
+
+    assert constraint.axis_start == Point3D(
+        -1000.0,
+        0.0,
+        0.0,
+    )
+
+    assert constraint.axis_end == Point3D(
+        1000.0,
+        0.0,
+        0.0,
+    )

@@ -237,17 +237,56 @@ def collinear_through_constraint_for_joint(
     joint,
 ):
     """
-    Return a collinear movement constraint for a split through-pair joint.
+    Return a collinear movement constraint for a through-member joint.
 
-    The existing ForgeCAD member-role analysis remains the authority for
-    determining which members are the through path. A continuous physical
-    member passing through the node is intentionally not converted into a
-    split-member constraint here.
+    A joint may be represented in either of two valid ways:
+
+    - one continuous physical member passing through the joint interior;
+    - two endpoint-connected members forming a split straight-through pair.
+
+    In both cases, constrain movement to the through-member centerline.
     """
 
     roles = identify_member_roles(
         joint
     )
+
+    if (
+        len(
+            roles.through_members
+        )
+        == 1
+    ):
+        through_member = (
+            roles.through_members[
+                0
+            ]
+        )
+
+        return CollinearThroughConstraint(
+            axis_start=Point3D(
+                float(
+                    through_member.start.x
+                ),
+                float(
+                    through_member.start.y
+                ),
+                float(
+                    through_member.start.z
+                ),
+            ),
+            axis_end=Point3D(
+                float(
+                    through_member.end.x
+                ),
+                float(
+                    through_member.end.y
+                ),
+                float(
+                    through_member.end.z
+                ),
+            ),
+        )
 
     if not roles.has_through_pair:
         return None
