@@ -561,6 +561,7 @@ def member_through_option(
 def both_mitered_option(
     first_member_object=None,
     second_member_object=None,
+    pair_label=False,
 ):
     """
     Return the shared-miter option.
@@ -571,6 +572,7 @@ def both_mitered_option(
     """
 
     through_layout_ids = ()
+    label = "Both Mitered"
 
     if (
         first_member_object is not None
@@ -605,8 +607,15 @@ def both_mitered_option(
                 second_layout_id,
             )
 
+        if pair_label:
+            label = (
+                f"{member_display_name(first_member_object)} + "
+                f"{member_display_name(second_member_object)} "
+                f"Mitered"
+            )
+
     return JointTreatmentOption(
-        label="Both Mitered",
+        label=label,
         mode=(
             JointTreatmentMode.BOTH_COPED
         ),
@@ -837,25 +846,86 @@ def treatment_options_for_members(
             )
         )
 
-    for (
-        first_member,
-        second_member,
-    ) in combinations(
-        persistent_members,
-        2,
-    ):
-        if not is_collinear_through_pair(
+    member_pairs = tuple(
+        combinations(
+            persistent_members,
+            2,
+        )
+    )
+
+    collinear_pairs = tuple(
+        (
             first_member,
             second_member,
-        ):
-            continue
+        )
+        for (
+            first_member,
+            second_member,
+        )
+        in member_pairs
+        if is_collinear_through_pair(
+            first_member,
+            second_member,
+        )
+    )
 
-        options.append(
-            through_pair_option(
+    # A joint containing a valid straight-through pair is treated as a
+    # branch/T-junction. Preserve the existing through-pair choices and do
+    # not offer corner-miter pairs that would compete with that topology.
+    if collinear_pairs:
+        for (
+            first_member,
+            second_member,
+        ) in collinear_pairs:
+            options.append(
+                through_pair_option(
+                    first_member,
+                    second_member,
+                )
+            )
+
+        return tuple(
+            options
+        )
+
+    # No straight-through relationship exists. Only treat this as a
+    # multi-member corner when every member pair is approximately a right
+    # angle. This covers the common chassis corner of two base rails plus
+    # an upright without exposing unsafe miter choices on an arbitrary
+    # three-member fan-out.
+    is_orthogonal_corner = (
+        len(
+            members
+        )
+        == 3
+        and all(
+            is_right_angle_corner(
+                first_member,
+                second_member,
+                tolerance_degrees=(
+                    right_angle_tolerance_degrees
+                ),
+            )
+            for (
                 first_member,
                 second_member,
             )
+            in member_pairs
         )
+    )
+
+    if is_orthogonal_corner:
+        for (
+            first_member,
+            second_member,
+        ) in member_pairs:
+            options.append(
+                both_mitered_option(
+                    first_member,
+                    second_member,
+                    pair_label=True,
+                )
+            )
 
     return tuple(
         options
