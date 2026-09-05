@@ -228,14 +228,29 @@ def both_coped_extensions(
     name for the user-facing Both Mitered treatment.
     """
 
+    miter_members = (
+        treatment.coped_members
+    )
+
+    if (
+        len(
+            miter_members
+        )
+        != 2
+    ):
+        raise ValueError(
+            "A both-mitered treatment requires "
+            "exactly two selected members."
+        )
+
     first_member = (
-        treatment.joint.members[
+        miter_members[
             0
         ]
     )
 
     second_member = (
-        treatment.joint.members[
+        miter_members[
             1
         ]
     )

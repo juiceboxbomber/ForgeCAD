@@ -123,18 +123,23 @@ class JointTreatment:
             == JointTreatmentMode.BOTH_COPED
         ):
             if self.through_members:
-                raise ValueError(
-                    "Both-coped treatment cannot "
-                    "specify through members."
-                )
-
-            if (
+                if (
+                    len(
+                        self.through_members
+                    )
+                    != 2
+                ):
+                    raise ValueError(
+                        "Both-mitered treatment requires "
+                        "exactly two selected members."
+                    )
+            elif (
                 self.joint.member_count
                 != 2
             ):
                 raise ValueError(
-                    "Both-coped treatment currently "
-                    "requires exactly two members."
+                    "Legacy both-mitered treatment without "
+                    "member identity requires exactly two members."
                 )
 
             return
@@ -203,6 +208,11 @@ class JointTreatment:
             self.mode
             == JointTreatmentMode.BOTH_COPED
         ):
+            if self.through_members:
+                return tuple(
+                    self.through_members
+                )
+
             return tuple(
                 self.joint.members
             )
@@ -272,13 +282,41 @@ class JointTreatment:
     def both_coped(
         cls,
         joint: Joint,
+        first_member: Member | None = None,
+        second_member: Member | None = None,
     ):
-        """Create a treatment where both corner members are coped."""
+        """
+        Create the persistence-compatible Both Mitered treatment.
+
+        Legacy two-member joints may omit the explicit pair. New saved
+        treatments should provide both members so the miter survives when
+        additional members are later connected at the same node.
+        """
+
+        if (
+            (first_member is None)
+            != (second_member is None)
+        ):
+            raise ValueError(
+                "Both-mitered treatment must specify "
+                "both selected members or neither."
+            )
+
+        selected_members = ()
+
+        if first_member is not None:
+            selected_members = (
+                first_member,
+                second_member,
+            )
 
         return cls(
             joint=joint,
             mode=(
                 JointTreatmentMode.BOTH_COPED
+            ),
+            through_members=(
+                selected_members
             ),
         )
 

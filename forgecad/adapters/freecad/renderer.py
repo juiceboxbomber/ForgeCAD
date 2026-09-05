@@ -383,6 +383,51 @@ def saved_treatment_for_joint(
         == JointTreatmentMode.BOTH_COPED
     ):
         if (
+            len(
+                through_layout_ids
+            )
+            == 2
+        ):
+            first_member = (
+                member_for_layout_id(
+                    joint,
+                    through_layout_ids[
+                        0
+                    ],
+                    layout_ids_by_member,
+                )
+            )
+
+            second_member = (
+                member_for_layout_id(
+                    joint,
+                    through_layout_ids[
+                        1
+                    ],
+                    layout_ids_by_member,
+                )
+            )
+
+            if (
+                first_member is None
+                or second_member is None
+                or first_member
+                is second_member
+            ):
+                return automatic
+
+            return JointTreatment.both_coped(
+                joint,
+                first_member,
+                second_member,
+            )
+
+        if through_layout_ids:
+            return automatic
+
+        # Legacy Both Mitered records did not persist member IDs. They remain
+        # unambiguous only while the joint still contains exactly two members.
+        if (
             joint.member_count
             != 2
         ):

@@ -558,13 +558,60 @@ def member_through_option(
     )
 
 
-def both_mitered_option():
-    """Return the two-member shared-miter option."""
+def both_mitered_option(
+    first_member_object=None,
+    second_member_object=None,
+):
+    """
+    Return the shared-miter option.
+
+    When both member objects are supplied, persist their SourceLayoutID
+    values so the same physical pair can be recovered after the joint grows
+    from two members to three or more.
+    """
+
+    through_layout_ids = ()
+
+    if (
+        first_member_object is not None
+        or second_member_object is not None
+    ):
+        if (
+            first_member_object is None
+            or second_member_object is None
+        ):
+            raise ValueError(
+                "Both Mitered requires either two members "
+                "or no explicit members."
+            )
+
+        first_layout_id = (
+            member_layout_id(
+                first_member_object
+            )
+        )
+        second_layout_id = (
+            member_layout_id(
+                second_member_object
+            )
+        )
+
+        if (
+            first_layout_id
+            and second_layout_id
+        ):
+            through_layout_ids = (
+                first_layout_id,
+                second_layout_id,
+            )
 
     return JointTreatmentOption(
         label="Both Mitered",
         mode=(
             JointTreatmentMode.BOTH_COPED
+        ),
+        through_layout_ids=(
+            through_layout_ids
         ),
     )
 
@@ -739,7 +786,10 @@ def treatment_options_for_members(
                 )
 
         options.append(
-            both_mitered_option()
+            both_mitered_option(
+                first_member,
+                second_member,
+            )
         )
 
         return tuple(
@@ -838,10 +888,24 @@ def option_matches_saved_treatment(
         ).strip()
     )
 
-    return (
+    if (
         option.mode.value
-        == mode_value
-        and option.through_layout_ids
+        != mode_value
+    ):
+        return False
+
+    # Backward compatibility: older two-member Both Mitered records did not
+    # store member IDs. On a two-member corner there is only one possible pair,
+    # so the new ID-bearing option still represents that legacy treatment.
+    if (
+        mode_value
+        == JointTreatmentMode.BOTH_COPED.value
+        and not saved_ids
+    ):
+        return True
+
+    return (
+        option.through_layout_ids
         == saved_ids
     )
 

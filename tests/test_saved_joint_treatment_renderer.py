@@ -558,4 +558,105 @@ def test_unknown_mode_falls_back_to_auto():
         treatment.mode
         == JointTreatmentMode.AUTO
     )
-    
+
+
+def test_saved_both_coped_pair_survives_additional_member():
+    (
+        joint,
+        left,
+        right,
+        branch,
+    ) = make_t_joint()
+
+    document = FakeDocument(
+        [
+            FakeTreatmentObject(
+                "0.000000,0.000000,0.000000",
+                "both_coped",
+                "L001|L003",
+            )
+        ]
+    )
+
+    mapping = {
+        id(left): "L001",
+        id(right): "L002",
+        id(branch): "L003",
+    }
+
+    treatment = saved_treatment_for_joint(
+        document,
+        joint,
+        mapping,
+    )
+
+    assert treatment.mode == JointTreatmentMode.BOTH_COPED
+    assert treatment.through_members == (
+        left,
+        branch,
+    )
+
+
+def test_legacy_both_coped_without_pair_is_ambiguous_after_member_added():
+    (
+        joint,
+        left,
+        right,
+        branch,
+    ) = make_t_joint()
+
+    document = FakeDocument(
+        [
+            FakeTreatmentObject(
+                "0.000000,0.000000,0.000000",
+                "both_coped",
+            )
+        ]
+    )
+
+    mapping = {
+        id(left): "L001",
+        id(right): "L002",
+        id(branch): "L003",
+    }
+
+    treatment = saved_treatment_for_joint(
+        document,
+        joint,
+        mapping,
+    )
+
+    assert treatment.mode == JointTreatmentMode.AUTO
+
+
+def test_stale_both_coped_pair_falls_back_to_auto():
+    (
+        joint,
+        left,
+        right,
+        branch,
+    ) = make_t_joint()
+
+    document = FakeDocument(
+        [
+            FakeTreatmentObject(
+                "0.000000,0.000000,0.000000",
+                "both_coped",
+                "L001|L999",
+            )
+        ]
+    )
+
+    mapping = {
+        id(left): "L001",
+        id(right): "L002",
+        id(branch): "L003",
+    }
+
+    treatment = saved_treatment_for_joint(
+        document,
+        joint,
+        mapping,
+    )
+
+    assert treatment.mode == JointTreatmentMode.AUTO
