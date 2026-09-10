@@ -1,4 +1,4 @@
-"""The old builder-UX test name now verifies review-only inspector UX."""
+"""Transition tests: Inspect Joint is now review-only."""
 
 from pathlib import Path
 

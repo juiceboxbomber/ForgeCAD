@@ -44,6 +44,7 @@ from forgecad.fabrication.joint_treatment import (
     JointTreatmentMode,
 )
 from forgecad.adapters.freecad.renderer import (
+    explicit_cope_specifications_for_joint,
     member_for_layout_id,
     saved_treatment_for_joint,
 )
@@ -660,3 +661,68 @@ def test_stale_both_coped_pair_falls_back_to_auto():
     )
 
     assert treatment.mode == JointTreatmentMode.AUTO
+
+
+def test_saved_miter_and_explicit_cope_can_coexist():
+    (
+        joint,
+        left,
+        right,
+        branch,
+    ) = make_t_joint()
+
+    treatment_object = (
+        FakeTreatmentObject(
+            "0.000000,0.000000,0.000000",
+            "both_coped",
+            "L001|L003",
+        )
+    )
+    treatment_object.ExplicitCopePairs = (
+        '[["L002","L003"]]'
+    )
+
+    document = FakeDocument(
+        [
+            treatment_object
+        ]
+    )
+
+    mapping = {
+        id(left): "L001",
+        id(right): "L002",
+        id(branch): "L003",
+    }
+
+    treatment = (
+        saved_treatment_for_joint(
+            document,
+            joint,
+            mapping,
+        )
+    )
+
+    assert treatment.through_members == (
+        left,
+        branch,
+    )
+
+    cope_specs = (
+        explicit_cope_specifications_for_joint(
+            document,
+            joint,
+            mapping,
+        )
+    )
+
+    assert len(
+        cope_specs
+    ) == 1
+
+    assert cope_specs[
+        0
+    ].coped_member is right
+
+    assert cope_specs[
+        0
+    ].target_member is branch
