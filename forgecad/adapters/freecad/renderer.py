@@ -29,9 +29,14 @@ from forgecad.services.joint_miter import (
 from forgecad.services.notch_analysis import (
     BRANCH_END_END,
     BRANCH_END_START,
+    build_cope_specification,
     cope_specifications_for_treatment,
 )
+from forgecad.services.joint_treatment_resolver import (
+    CopeInstruction,
+)
 from forgecad.adapters.freecad.joint_treatment_store import (
+    load_joint_cope_pairs,
     load_joint_treatment,
     node_key,
 )
@@ -548,29 +553,118 @@ def treatments_for_frame(
     )
 
 
-def cope_specifications_for_frame(
+
+def explicit_cope_specifications_for_joint(
     document,
-    frame,
-    source_layout_ids=None,
+    joint,
+    layout_ids_by_member,
 ):
-    """Return all cylindrical cope specifications for a frame."""
+    """Return valid persisted additive cope specifications for one joint."""
 
     specifications = []
 
-    for treatment in treatments_for_frame(
+    for (
+        coped_layout_id,
+        target_layout_id,
+    ) in load_joint_cope_pairs(
         document,
-        frame,
-        source_layout_ids=source_layout_ids,
+        node_key(
+            joint.node
+        ),
     ):
-        specifications.extend(
-            cope_specifications_for_treatment(
-                treatment
+        coped_member = (
+            member_for_layout_id(
+                joint,
+                coped_layout_id,
+                layout_ids_by_member,
             )
+        )
+
+        target_member = (
+            member_for_layout_id(
+                joint,
+                target_layout_id,
+                layout_ids_by_member,
+            )
+        )
+
+        if (
+            coped_member is None
+            or target_member is None
+            or coped_member
+            is target_member
+        ):
+            continue
+
+        try:
+            specification = (
+                build_cope_specification(
+                    CopeInstruction(
+                        joint=joint,
+                        coped_member=(
+                            coped_member
+                        ),
+                        target_member=(
+                            target_member
+                        ),
+                    )
+                )
+            )
+        except ValueError:
+            continue
+
+        specifications.append(
+            specification
         )
 
     return tuple(
         specifications
     )
+
+
+
+def cope_specifications_for_frame(
+    document,
+    frame,
+    source_layout_ids=None,
+):
+    """Return primary/automatic copes plus direct selection-first overrides."""
+    from forgecad.services.cope_override import merge_direct_cope_specifications
+
+    layout_ids_by_member = member_layout_id_map(
+        frame,
+        source_layout_ids,
+    )
+    specifications = []
+
+    for joint in detect_joints(frame):
+        treatment = saved_treatment_for_joint(
+            document,
+            joint,
+            layout_ids_by_member,
+        )
+        primary = cope_specifications_for_treatment(treatment)
+        direct_copes = explicit_cope_specifications_for_joint(
+            document,
+            joint,
+            layout_ids_by_member,
+        )
+        through_copes = explicit_through_cope_specifications_for_joint(
+            document,
+            joint,
+            layout_ids_by_member,
+        )
+        specifications.extend(
+            merge_direct_cope_specifications(
+                primary,
+                tuple(direct_copes) + tuple(through_copes),
+            )
+        )
+
+    return tuple(specifications)
+
+
+
 
 
 def extension_specifications_for_frame(
@@ -578,8 +672,7 @@ def extension_specifications_for_frame(
     frame,
     source_layout_ids=None,
 ):
-    """Return all physical member extensions required by treatments."""
-
+    """Return primary extensions plus selection-first Through extensions."""
     specifications = []
 
     for treatment in treatments_for_frame(
@@ -588,14 +681,24 @@ def extension_specifications_for_frame(
         source_layout_ids=source_layout_ids,
     ):
         specifications.extend(
-            extension_specifications_for_treatment(
-                treatment
+            extension_specifications_for_treatment(treatment)
+        )
+
+    layout_ids_by_member = member_layout_id_map(
+        frame,
+        source_layout_ids,
+    )
+    for joint in detect_joints(frame):
+        specifications.extend(
+            explicit_through_extension_specifications_for_joint(
+                document,
+                joint,
+                layout_ids_by_member,
             )
         )
 
-    return tuple(
-        specifications
-    )
+    return tuple(specifications)
+
 
 
 def miter_specifications_for_frame(
@@ -1360,3 +1463,108 @@ class FrameRenderer:
         document.recompute()
 
         return rendered_objects
+
+def explicit_through_cope_specifications_for_joint(
+    document,
+    joint,
+    layout_ids_by_member,
+):
+    """Return cope cuts belonging specifically to Through Selected."""
+    from forgecad.adapters.freecad.joint_treatment_store import load_joint_through_pairs
+    from forgecad.services.joint_treatment_resolver import CopeInstruction
+    from forgecad.services.notch_analysis import build_cope_specification
+
+    specifications = []
+    for branch_layout_id, through_layout_id in load_joint_through_pairs(
+        document,
+        node_key(joint.node),
+    ):
+        branch_member = member_for_layout_id(
+            joint,
+            branch_layout_id,
+            layout_ids_by_member,
+        )
+        through_member = member_for_layout_id(
+            joint,
+            through_layout_id,
+            layout_ids_by_member,
+        )
+        if (
+            branch_member is None
+            or through_member is None
+            or branch_member is through_member
+        ):
+            continue
+        try:
+            specifications.append(
+                build_cope_specification(
+                    CopeInstruction(
+                        joint=joint,
+                        coped_member=branch_member,
+                        target_member=through_member,
+                    )
+                )
+            )
+        except ValueError:
+            continue
+    return tuple(specifications)
+
+
+def explicit_through_extension_specifications_for_joint(
+    document,
+    joint,
+    layout_ids_by_member,
+):
+    """Return the physical extension required by Through Selected.
+
+    Endpoint through tubes extend to the far outside wall of selected branch
+    tube(s). A through tube that already crosses the joint in its interior
+    requires no extension.
+    """
+    from forgecad.adapters.freecad.joint_treatment_store import load_joint_through_pairs
+    from forgecad.fabrication import Joint
+    from forgecad.fabrication.joint_treatment import JointTreatment
+    from forgecad.services.joint_extension import member_through_extensions
+
+    grouped = {}
+    for branch_layout_id, through_layout_id in load_joint_through_pairs(
+        document,
+        node_key(joint.node),
+    ):
+        branch_member = member_for_layout_id(
+            joint,
+            branch_layout_id,
+            layout_ids_by_member,
+        )
+        through_member = member_for_layout_id(
+            joint,
+            through_layout_id,
+            layout_ids_by_member,
+        )
+        if (
+            branch_member is None
+            or through_member is None
+            or branch_member is through_member
+        ):
+            continue
+        group = grouped.setdefault(
+            through_layout_id,
+            [through_member, []],
+        )
+        if branch_member not in group[1]:
+            group[1].append(branch_member)
+
+    specifications = []
+    for through_member, branch_members in grouped.values():
+        selected_joint = Joint(
+            node=joint.node,
+            members=[through_member] + branch_members,
+        )
+        treatment = JointTreatment.member_through(
+            selected_joint,
+            through_member,
+        )
+        specifications.extend(
+            member_through_extensions(treatment)
+        )
+    return tuple(specifications)

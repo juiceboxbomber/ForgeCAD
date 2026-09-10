@@ -147,6 +147,26 @@ class ForgeCADWorkbench(
             register_command as register_inspect_joint_command,
         )
 
+        from forgecad.adapters.freecad.commands.cope_selected import (
+            COMMAND_NAME as COPE_SELECTED_COMMAND,
+            register_command as register_cope_selected_command,
+        )
+
+        from forgecad.adapters.freecad.commands.miter_selected import (
+            COMMAND_NAME as MITER_SELECTED_COMMAND,
+            register_command as register_miter_selected_command,
+        )
+
+        from forgecad.adapters.freecad.commands.clear_selected_joint import (
+            COMMAND_NAME as CLEAR_SELECTED_JOINT_COMMAND,
+            register_command as register_clear_selected_joint_command,
+        )
+
+        from forgecad.adapters.freecad.commands.through_selected import (
+            COMMAND_NAME as THROUGH_SELECTED_COMMAND,
+            register_command as register_through_selected_command,
+        )
+
         from forgecad.adapters.freecad.commands.convert_joint_to_bend import (
             COMMAND_NAME as CONVERT_JOINT_TO_BEND_COMMAND,
             register_command as register_convert_joint_to_bend_command,
@@ -219,6 +239,10 @@ class ForgeCADWorkbench(
         register_member_properties_command()
         register_select_members_command()
         register_inspect_joint_command()
+        register_cope_selected_command()
+        register_miter_selected_command()
+        register_through_selected_command()
+        register_clear_selected_joint_command()
         register_convert_joint_to_bend_command()
         register_next_joint_command()
         register_joint_review_summary_command()
@@ -254,6 +278,10 @@ class ForgeCADWorkbench(
             GENERATE_FROM_SELECTION_COMMAND,
             MEMBER_PROPERTIES_COMMAND,
             SELECT_MEMBERS_COMMAND,
+            MITER_SELECTED_COMMAND,
+            COPE_SELECTED_COMMAND,
+            THROUGH_SELECTED_COMMAND,
+            CLEAR_SELECTED_JOINT_COMMAND,
             INSPECT_JOINT_COMMAND,
             CONVERT_JOINT_TO_BEND_COMMAND,
             NEXT_JOINT_COMMAND,
