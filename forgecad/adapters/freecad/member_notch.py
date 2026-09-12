@@ -1261,6 +1261,59 @@ def apply_cope_to_existing_shape(
     )
 
 
+def bounded_cope_target_axis(
+    target_member,
+    fallback_start,
+    fallback_end,
+):
+    """Return the finite physical axis of a secondary cope target.
+
+    Primary fishmouth cutters intentionally extend beyond the target axis so a
+    complete saddle can form. A secondary branch-to-branch cope at a compound
+    corner must not extend the target through the joint: doing so mirrors the
+    inside relief onto the outside of the corner.
+    """
+    if (
+        target_member is not None
+        and hasattr(target_member, "StartPoint")
+        and hasattr(target_member, "EndPoint")
+    ):
+        try:
+            return physical_member_endpoints(target_member)
+        except Exception:
+            pass
+
+    return (fallback_start, fallback_end)
+
+
+def apply_bounded_cope_to_existing_shape(
+    shape,
+    through_start,
+    through_end,
+    through_outside_diameter,
+    keep_point,
+):
+    """Subtract only the finite physical target cylinder from a tube shape."""
+    diameter = validate_cope_diameter(
+        through_outside_diameter
+    )
+
+    cutter = build_through_tube_cutting_tool(
+        through_start,
+        through_end,
+        diameter,
+        extension=0.0,
+    )
+
+    cut_shape = shape.cut(
+        cutter
+    )
+
+    return primary_cope_component(
+        cut_shape,
+        keep_point,
+    )
+
 def build_member_shape(
     obj,
     profile,
@@ -1338,10 +1391,15 @@ def build_member_shape(
             )
 
         if bool(obj.StartCope2Enabled):
-            shape = apply_cope_to_existing_shape(
-                shape,
+            secondary_start, secondary_end = bounded_cope_target_axis(
+                getattr(obj, "StartCope2TargetMember", None),
                 obj.StartCope2ThroughStart,
                 obj.StartCope2ThroughEnd,
+            )
+            shape = apply_bounded_cope_to_existing_shape(
+                shape,
+                secondary_start,
+                secondary_end,
                 obj.StartCope2ThroughDiameter,
                 physical_end,
             )
@@ -1358,10 +1416,15 @@ def build_member_shape(
             )
 
         if bool(obj.EndCope2Enabled):
-            shape = apply_cope_to_existing_shape(
-                shape,
+            secondary_start, secondary_end = bounded_cope_target_axis(
+                getattr(obj, "EndCope2TargetMember", None),
                 obj.EndCope2ThroughStart,
                 obj.EndCope2ThroughEnd,
+            )
+            shape = apply_bounded_cope_to_existing_shape(
+                shape,
+                secondary_start,
+                secondary_end,
                 obj.EndCope2ThroughDiameter,
                 physical_start,
             )
