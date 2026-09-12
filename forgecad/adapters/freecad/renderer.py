@@ -1469,13 +1469,30 @@ def explicit_through_cope_specifications_for_joint(
     joint,
     layout_ids_by_member,
 ):
-    """Return cope cuts belonging specifically to Through Selected."""
-    from forgecad.adapters.freecad.joint_treatment_store import load_joint_through_pairs
-    from forgecad.services.joint_treatment_resolver import CopeInstruction
-    from forgecad.services.notch_analysis import build_cope_specification
+    """Return cope cuts belonging specifically to Through Selected.
 
-    specifications = []
-    for branch_layout_id, through_layout_id in load_joint_through_pairs(
+    Saved branch->through relationships that share one through member are
+    resolved as one member-through joint. This preserves the established
+    compound-corner rule: with exactly two branches, the second branch also
+    receives a secondary cope against the first branch.
+    """
+    from forgecad.adapters.freecad.joint_treatment_store import (
+        load_joint_through_pairs,
+    )
+    from forgecad.fabrication import Joint
+    from forgecad.services.joint_treatment_resolver import (
+        member_through_cope_instructions,
+    )
+    from forgecad.services.notch_analysis import (
+        build_cope_specification,
+    )
+
+    grouped = {}
+
+    for (
+        branch_layout_id,
+        through_layout_id,
+    ) in load_joint_through_pairs(
         document,
         node_key(joint.node),
     ):
@@ -1489,25 +1506,67 @@ def explicit_through_cope_specifications_for_joint(
             through_layout_id,
             layout_ids_by_member,
         )
+
         if (
             branch_member is None
             or through_member is None
             or branch_member is through_member
         ):
             continue
-        try:
-            specifications.append(
-                build_cope_specification(
-                    CopeInstruction(
-                        joint=joint,
-                        coped_member=branch_member,
-                        target_member=through_member,
+
+        group = grouped.setdefault(
+            through_layout_id,
+            [
+                through_member,
+                [],
+            ],
+        )
+
+        if branch_member not in group[1]:
+            group[1].append(
+                branch_member
+            )
+
+    specifications = []
+
+    for (
+        through_member,
+        branch_members,
+    ) in grouped.values():
+        selected_joint = Joint(
+            node=joint.node,
+            members=(
+                [through_member]
+                + list(branch_members)
+            ),
+        )
+
+        instructions = (
+            member_through_cope_instructions(
+                selected_joint,
+                through_member,
+                branch_members,
+            )
+        )
+
+        for instruction in instructions:
+            try:
+                specification = (
+                    build_cope_specification(
+                        instruction
                     )
                 )
+            except ValueError:
+                continue
+
+            specifications.append(
+                specification
             )
-        except ValueError:
-            continue
-    return tuple(specifications)
+
+    return tuple(
+        specifications
+    )
+
 
 
 def explicit_through_extension_specifications_for_joint(
