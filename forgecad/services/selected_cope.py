@@ -23,65 +23,45 @@ def _end_keys(obj, precision=6):
 
 
 def selected_cope_request(objects, precision=6):
-    """Resolve source, targets, and their one shared design endpoint.
-
-    Selection order is intentional: first object is the tube being coped;
-    the second and optional third objects are targets. Fabrication metadata
-    such as miter state is deliberately ignored here: an already-mitered
-    member is a valid cope *target*.
-    """
-    objects = list(objects or ())
-    if len(objects) not in (2, 3):
-        raise ValueError(
-            "Select the tube to cope first, then one or two target tubes."
-        )
-
-    ids = []
-    common = None
+    objects=list(objects or ())
+    if not 2 <= len(objects) <= 4:
+        raise ValueError("Select the tube to cope first, then one to three target tubes.")
+    ids=[]; common=None
     for obj in objects:
-        ident = _layout_id(obj)
+        ident=_layout_id(obj)
         if not ident:
-            raise ValueError(
-                "Every selected tube must be a generated ForgeCAD member with a SourceLayoutID."
-            )
+            raise ValueError("Every selected tube must be a generated ForgeCAD member with a SourceLayoutID.")
         if ident in ids:
             raise ValueError("Select each tube only once.")
         ids.append(ident)
-        ends = _end_keys(obj, precision)
-        common = ends if common is None else common.intersection(ends)
-
+        ends=_end_keys(obj, precision)
+        common=ends if common is None else common.intersection(ends)
     if len(common or ()) != 1:
-        raise ValueError(
-            "The selected tubes must share exactly one joint endpoint."
-        )
+        raise ValueError("The selected tubes must share exactly one joint endpoint.")
+    return next(iter(common)), ids[0], tuple(ids[1:])
 
-    node_xyz = next(iter(common))
-    return node_xyz, ids[0], tuple(ids[1:])
+
 
 
 def replace_source_pairs(existing_pairs, source_id, target_ids):
-    """Replace only one source member's additive cope targets."""
-    source_id = str(source_id or "").strip()
-    targets = tuple(str(value or "").strip() for value in target_ids)
-    if not source_id or len(targets) not in (1, 2):
-        raise ValueError("A cope requires one source and one or two targets.")
-    if any(not target or target == source_id for target in targets):
+    source_id=str(source_id or "").strip()
+    targets=tuple(str(v or "").strip() for v in target_ids)
+    if not source_id or not 1 <= len(targets) <= 3:
+        raise ValueError("A cope requires one source and one to three targets.")
+    if any(not t or t==source_id for t in targets):
         raise ValueError("Cope targets must be different from the coped tube.")
     if len(set(targets)) != len(targets):
         raise ValueError("Cope targets must be different from each other.")
-
-    kept = []
+    kept=[]
     for pair in existing_pairs or ():
-        if not isinstance(pair, (list, tuple)) or len(pair) != 2:
+        if not isinstance(pair,(list,tuple)) or len(pair)!=2:
             raise ValueError("A stored cope pair is malformed.")
-        old_source = str(pair[0] or "").strip()
-        old_target = str(pair[1] or "").strip()
-        if not old_source or not old_target or old_source == old_target:
+        s=str(pair[0] or "").strip(); t=str(pair[1] or "").strip()
+        if not s or not t or s==t:
             raise ValueError("A stored cope pair is malformed.")
-        if old_source != source_id:
-            value = (old_source, old_target)
-            if value not in kept:
-                kept.append(value)
-
-    kept.extend((source_id, target) for target in targets)
+        if s != source_id and (s,t) not in kept:
+            kept.append((s,t))
+    kept.extend((source_id,t) for t in targets)
     return tuple(kept)
+
+

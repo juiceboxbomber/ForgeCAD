@@ -36,7 +36,7 @@ def test_secondary_slots_use_bounded_path_and_target_links():
     source = _function_source("build_member_shape")
     assert "StartCope2TargetMember" in source
     assert "EndCope2TargetMember" in source
-    assert source.count("apply_bounded_cope_to_existing_shape(") == 2
+    assert source.count("apply_bounded_cope_to_existing_shape(") == 4
 
 def test_secondary_does_not_fall_back_to_extended_path():
     source = _function_source("build_member_shape")

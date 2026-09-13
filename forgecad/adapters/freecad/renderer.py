@@ -50,10 +50,12 @@ from forgecad.adapters.freecad.member_notch import (
     clear_notch,
     configure_end_cope,
     configure_end_cope_secondary,
+    configure_end_cope_tertiary,
     configure_end_extension,
     configure_end_miter,
     configure_start_cope,
     configure_start_cope_secondary,
+    configure_start_cope_tertiary,
     configure_start_extension,
     configure_start_miter,
 )
@@ -753,168 +755,53 @@ def automatic_cope_specifications(
     )
 
 
-def configure_cope_specifications(
-    frame,
-    rendered_objects,
-    specifications,
-    clear_existing=True,
-):
-    """
-    Apply cylindrical cope specifications by member end.
-
-    A member may have up to two sequential cylindrical copes at
-    its start and up to two at its end. The first specification
-    uses the primary cope slot and the second uses the secondary
-    cope slot.
-    """
-
-    if (
-        len(rendered_objects)
-        != len(frame.members)
-    ):
-        raise ValueError(
-            "Rendered member count does not match "
-            "the domain frame."
-        )
-
-    object_by_member_identity = {
-        id(member): obj
-        for member, obj in zip(
-            frame.members,
-            rendered_objects,
-        )
-    }
-
+def configure_cope_specifications(frame, rendered_objects, specifications, clear_existing=True):
+    if len(rendered_objects) != len(frame.members):
+        raise ValueError("Rendered member count does not match the domain frame.")
+    by_member={id(m):o for m,o in zip(frame.members,rendered_objects)}
     if clear_existing:
         for obj in rendered_objects:
-            clear_notch(
-                obj
-            )
-
-    configured_member_end_counts = {}
-
+            clear_notch(obj)
+    counts={}
     for specification in specifications:
-        coped_key = id(
-            specification.coped_member
-        )
-
-        coped_object = (
-            object_by_member_identity.get(
-                coped_key
-            )
-        )
-
-        if coped_object is None:
+        key=id(specification.coped_member)
+        obj=by_member.get(key)
+        if obj is None:
             continue
-
-        target_object = (
-            object_by_member_identity.get(
-                id(
-                    specification.target_member
-                )
-            )
-        )
-
-        coped_end = (
-            specification.coped_end
-        )
-
-        configuration_key = (
-            coped_key,
-            coped_end,
-        )
-
-        cope_index = (
-            configured_member_end_counts.get(
-                configuration_key,
-                0,
-            )
-        )
-
-        if cope_index >= 2:
-            raise ValueError(
-                "Cope generation received more than "
-                "two treatments for the same member end."
-            )
-
-        target_start, target_end = (
-            target_axis_for_cope_specification(
-                specification
-            )
-        )
-
-        if (
-            coped_end
-            == BRANCH_END_START
-        ):
-            if cope_index == 0:
-                configure_start_cope(
-                    coped_object,
-                    target_start,
-                    target_end,
-                    specification.target_outside_diameter,
-                )
-
-                if target_object is not None:
-                    coped_object.StartCopeTargetMember = (
-                        target_object
-                    )
-
+        target_obj=by_member.get(id(specification.target_member))
+        end=specification.coped_end
+        ckey=(key,end)
+        idx=counts.get(ckey,0)
+        if idx >= 3:
+            raise ValueError("Cope generation received more than three treatments for the same member end.")
+        a,b=target_axis_for_cope_specification(specification)
+        d=specification.target_outside_diameter
+        if end == BRANCH_END_START:
+            if idx==0:
+                configure_start_cope(obj,a,b,d)
+                if target_obj is not None: obj.StartCopeTargetMember=target_obj
+            elif idx==1:
+                configure_start_cope_secondary(obj,a,b,d)
+                if target_obj is not None: obj.StartCope2TargetMember=target_obj
             else:
-                configure_start_cope_secondary(
-                    coped_object,
-                    target_start,
-                    target_end,
-                    specification.target_outside_diameter,
-                )
-
-                if target_object is not None:
-                    coped_object.StartCope2TargetMember = (
-                        target_object
-                    )
-
-        elif (
-            coped_end
-            == BRANCH_END_END
-        ):
-            if cope_index == 0:
-                configure_end_cope(
-                    coped_object,
-                    target_start,
-                    target_end,
-                    specification.target_outside_diameter,
-                )
-
-                if target_object is not None:
-                    coped_object.EndCopeTargetMember = (
-                        target_object
-                    )
-
+                configure_start_cope_tertiary(obj,a,b,d)
+                if target_obj is not None: obj.StartCope3TargetMember=target_obj
+        elif end == BRANCH_END_END:
+            if idx==0:
+                configure_end_cope(obj,a,b,d)
+                if target_obj is not None: obj.EndCopeTargetMember=target_obj
+            elif idx==1:
+                configure_end_cope_secondary(obj,a,b,d)
+                if target_obj is not None: obj.EndCope2TargetMember=target_obj
             else:
-                configure_end_cope_secondary(
-                    coped_object,
-                    target_start,
-                    target_end,
-                    specification.target_outside_diameter,
-                )
-
-                if target_object is not None:
-                    coped_object.EndCope2TargetMember = (
-                        target_object
-                    )
-
+                configure_end_cope_tertiary(obj,a,b,d)
+                if target_obj is not None: obj.EndCope3TargetMember=target_obj
         else:
-            raise ValueError(
-                "Unknown cope member end."
-            )
-
-        configured_member_end_counts[
-            configuration_key
-        ] = (
-            cope_index + 1
-        )
-
+            raise ValueError("Unknown cope member end.")
+        counts[ckey]=idx+1
     return rendered_objects
+
+
 
 
 def configure_extension_specifications(
