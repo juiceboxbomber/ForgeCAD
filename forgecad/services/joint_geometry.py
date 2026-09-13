@@ -64,16 +64,14 @@ def member_other_node(
     joint_node: Node,
 ) -> Node:
     """Return the member endpoint opposite an endpoint joint node."""
+    from forgecad.services.node_proximity import nodes_coincident
 
-    if member.start == joint_node:
+    if nodes_coincident(member.start, joint_node, tolerance=POINT_TOLERANCE):
         return member.end
-
-    if member.end == joint_node:
+    if nodes_coincident(member.end, joint_node, tolerance=POINT_TOLERANCE):
         return member.start
+    raise ValueError("The joint node is not a member endpoint.")
 
-    raise ValueError(
-        "The joint node is not a member endpoint."
-    )
 
 
 def member_point_parameter(
@@ -81,126 +79,39 @@ def member_point_parameter(
     node: Node,
     tolerance: float = POINT_TOLERANCE,
 ) -> float | None:
-    """
-    Return the node position along a finite structural member.
+    """Return a finite-member parameter; bent members expose endpoints only."""
+    from forgecad.services.node_proximity import nodes_coincident
 
-    Straight members use a normalized 0.0-to-1.0 line parameter.
-
-    Bent members currently expose only their structural endpoints:
-    0.0 for start, 1.0 for end, and None for any other node.
-    """
-
-    if isinstance(
-        member,
-        BentMember,
-    ):
-        if member.start == node:
+    if isinstance(member, BentMember):
+        if nodes_coincident(member.start, node, tolerance=tolerance):
             return 0.0
-
-        if member.end == node:
+        if nodes_coincident(member.end, node, tolerance=tolerance):
             return 1.0
-
         return None
 
-    ax = float(
-        member.start.x
-    )
-    ay = float(
-        member.start.y
-    )
-    az = float(
-        member.start.z
-    )
+    ax, ay, az = float(member.start.x), float(member.start.y), float(member.start.z)
+    bx, by, bz = float(member.end.x), float(member.end.y), float(member.end.z)
+    px, py, pz = float(node.x), float(node.y), float(node.z)
 
-    bx = float(
-        member.end.x
-    )
-    by = float(
-        member.end.y
-    )
-    bz = float(
-        member.end.z
-    )
-
-    px = float(
-        node.x
-    )
-    py = float(
-        node.y
-    )
-    pz = float(
-        node.z
-    )
-
-    ab_x = bx - ax
-    ab_y = by - ay
-    ab_z = bz - az
-
-    ap_x = px - ax
-    ap_y = py - ay
-    ap_z = pz - az
-
-    length_squared = (
-        ab_x * ab_x
-        + ab_y * ab_y
-        + ab_z * ab_z
-    )
-
+    ab_x, ab_y, ab_z = bx - ax, by - ay, bz - az
+    ap_x, ap_y, ap_z = px - ax, py - ay, pz - az
+    length_squared = ab_x * ab_x + ab_y * ab_y + ab_z * ab_z
     if length_squared <= 1e-12:
         return None
 
-    parameter = (
-        ap_x * ab_x
-        + ap_y * ab_y
-        + ap_z * ab_z
-    ) / length_squared
-
-    if (
-        parameter < -tolerance
-        or parameter > 1.0 + tolerance
-    ):
+    parameter = (ap_x * ab_x + ap_y * ab_y + ap_z * ab_z) / length_squared
+    if parameter < -tolerance or parameter > 1.0 + tolerance:
         return None
 
-    parameter = max(
-        0.0,
-        min(
-            1.0,
-            parameter,
-        ),
-    )
-
-    nearest_x = (
-        ax
-        + parameter * ab_x
-    )
-
-    nearest_y = (
-        ay
-        + parameter * ab_y
-    )
-
-    nearest_z = (
-        az
-        + parameter * ab_z
-    )
-
-    dx = px - nearest_x
-    dy = py - nearest_y
-    dz = pz - nearest_z
-
-    distance_squared = (
-        dx * dx
-        + dy * dy
-        + dz * dz
-    )
-
-    if (
-        distance_squared
-        > tolerance * tolerance
-    ):
+    parameter = max(0.0, min(1.0, parameter))
+    nearest_x = ax + parameter * ab_x
+    nearest_y = ay + parameter * ab_y
+    nearest_z = az + parameter * ab_z
+    dx, dy, dz = px - nearest_x, py - nearest_y, pz - nearest_z
+    if dx * dx + dy * dy + dz * dz > tolerance * tolerance:
         return None
-
     return parameter
+
 
 
 def member_contains_node_interior(
@@ -240,141 +151,45 @@ def member_contains_node_interior(
 def member_direction_from_node(
     member: StructuralMember,
     joint_node: Node,
-) -> tuple[
-    float,
-    float,
-    float,
-]:
-    """
-    Return a unit vector along a member from a joint location.
+) -> tuple[float, float, float]:
+    """Return a unit direction from a joint into a structural member."""
+    from forgecad.services.node_proximity import nodes_coincident
 
-    Straight-member endpoint joints point toward the opposite endpoint.
-    Interior straight-member joints use the deterministic direction
-    toward member.end.
+    if isinstance(member, BentMember):
+        if nodes_coincident(member.start, joint_node, tolerance=POINT_TOLERANCE):
+            direction = member.initial_direction.normalized()
+            return (direction.x, direction.y, direction.z)
 
-    Bent-member endpoint joints use the true local centerline tangent.
-    At the end node, the solved outgoing tangent is reversed so the
-    returned vector points from the joint back into the member.
-    """
+        if nodes_coincident(member.end, joint_node, tolerance=POINT_TOLERANCE):
+            centerline = _bent_member_centerline(member)
+            direction = centerline.end_direction.normalized()
+            return (-direction.x, -direction.y, -direction.z)
 
-    if isinstance(
-        member,
-        BentMember,
-    ):
-        if member.start == joint_node:
-            direction = (
-                member.initial_direction
-                .normalized()
-            )
+        raise ValueError("The bent member does not touch the supplied joint node.")
 
-            return (
-                direction.x,
-                direction.y,
-                direction.z,
-            )
-
-        if member.end == joint_node:
-            centerline = (
-                _bent_member_centerline(
-                    member
-                )
-            )
-
-            direction = (
-                centerline.end_direction
-                .normalized()
-            )
-
-            return (
-                -direction.x,
-                -direction.y,
-                -direction.z,
-            )
-
-        raise ValueError(
-            "The bent member does not touch the supplied joint node."
-        )
-
-    if member.start == joint_node:
+    if nodes_coincident(member.start, joint_node, tolerance=POINT_TOLERANCE):
         other_node = member.end
-
-        dx = (
-            other_node.x
-            - joint_node.x
-        )
-
-        dy = (
-            other_node.y
-            - joint_node.y
-        )
-
-        dz = (
-            other_node.z
-            - joint_node.z
-        )
-
-    elif member.end == joint_node:
+        dx = other_node.x - joint_node.x
+        dy = other_node.y - joint_node.y
+        dz = other_node.z - joint_node.z
+    elif nodes_coincident(member.end, joint_node, tolerance=POINT_TOLERANCE):
         other_node = member.start
-
-        dx = (
-            other_node.x
-            - joint_node.x
-        )
-
-        dy = (
-            other_node.y
-            - joint_node.y
-        )
-
-        dz = (
-            other_node.z
-            - joint_node.z
-        )
-
+        dx = other_node.x - joint_node.x
+        dy = other_node.y - joint_node.y
+        dz = other_node.z - joint_node.z
     else:
-        parameter = (
-            member_point_parameter(
-                member,
-                joint_node,
-            )
-        )
-
+        parameter = member_point_parameter(member, joint_node)
         if parameter is None:
-            raise ValueError(
-                "The member does not touch the supplied joint node."
-            )
+            raise ValueError("The member does not touch the supplied joint node.")
+        dx = member.end.x - member.start.x
+        dy = member.end.y - member.start.y
+        dz = member.end.z - member.start.z
 
-        dx = (
-            member.end.x
-            - member.start.x
-        )
-
-        dy = (
-            member.end.y
-            - member.start.y
-        )
-
-        dz = (
-            member.end.z
-            - member.start.z
-        )
-
-    magnitude = sqrt(
-        dx * dx
-        + dy * dy
-        + dz * dz
-    )
-
+    magnitude = sqrt(dx * dx + dy * dy + dz * dz)
     if magnitude <= 0.0:
-        raise ValueError(
-            "Cannot determine direction for a zero-length member."
-        )
+        raise ValueError("Cannot determine direction for a zero-length member.")
+    return (dx / magnitude, dy / magnitude, dz / magnitude)
 
-    return (
-        dx / magnitude,
-        dy / magnitude,
-        dz / magnitude,
-    )
 
 
 def angle_between_members(

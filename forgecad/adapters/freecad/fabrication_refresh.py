@@ -7,8 +7,9 @@ def refresh_fabrication_for_document(
     """
     Recalculate fabrication treatments on existing structural objects.
 
-    Existing member objects are retained. Cope, miter, and extension
-    metadata is recalculated from the current structural geometry.
+    Converted bent tubes participate through separate persistent start/end
+    fabrication identities rather than pretending the whole bend owns one
+    SourceLayoutID.
     """
 
     if document is None:
@@ -23,6 +24,9 @@ def refresh_fabrication_for_document(
     )
     from forgecad.adapters.freecad.renderer import (
         configure_saved_fabrication,
+    )
+    from forgecad.services.fabrication_identity import (
+        fabrication_endpoint_ids,
     )
 
     structural_objects = list(
@@ -39,20 +43,39 @@ def refresh_fabrication_for_document(
             structural_member_from_freecad_object(
                 obj
             )
-            for obj in structural_objects
+            for obj
+            in structural_objects
         ]
     )
 
-    source_layout_ids = [
-        str(
+    source_layout_ids = []
+
+    for obj in structural_objects:
+        straight_id = str(
             getattr(
                 obj,
                 "SourceLayoutID",
                 "",
             )
+            or ""
         ).strip()
-        for obj in structural_objects
-    ]
+
+        if straight_id:
+            source_layout_ids.append(
+                straight_id
+            )
+            continue
+
+        try:
+            source_layout_ids.append(
+                fabrication_endpoint_ids(
+                    obj
+                )
+            )
+        except ValueError:
+            source_layout_ids.append(
+                ""
+            )
 
     configure_saved_fabrication(
         document,

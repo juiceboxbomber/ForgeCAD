@@ -22,31 +22,36 @@ def _end_keys(obj, precision=6):
     }
 
 
-def selected_miter_request(objects, precision=6):
-    """Resolve two selected members and their one shared design endpoint.
+def selected_miter_request(
+    objects,
+    precision=6,
+):
+    """Resolve two straight-or-bent structural tubes at one shared endpoint."""
 
-    Selection is direct and intentionally ignores existing fabrication metadata.
-    The selected pair may belong to a larger three-, four-, or higher-member joint.
-    """
-    objects = list(objects or ())
-    if len(objects) != 2:
-        raise ValueError("Select exactly two tubes to miter together.")
+    objects = list(
+        objects
+        or ()
+    )
 
-    ids = []
-    common = None
-    for obj in objects:
-        ident = _layout_id(obj)
-        if not ident:
-            raise ValueError(
-                "Every selected tube must be a generated ForgeCAD member with a SourceLayoutID."
-            )
-        if ident in ids:
-            raise ValueError("Select two different tubes.")
-        ids.append(ident)
-        ends = _end_keys(obj, precision)
-        common = ends if common is None else common.intersection(ends)
+    if len(
+        objects
+    ) != 2:
+        raise ValueError(
+            "Select exactly two tubes to miter together."
+        )
 
-    if len(common or ()) != 1:
-        raise ValueError("The selected tubes must share exactly one joint endpoint.")
+    from forgecad.services.fabrication_identity import (
+        shared_structural_endpoint,
+    )
 
-    return next(iter(common)), tuple(ids)
+    node_xyz, member_ids = (
+        shared_structural_endpoint(
+            objects,
+            precision=precision,
+        )
+    )
+
+    return (
+        node_xyz,
+        member_ids,
+    )

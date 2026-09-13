@@ -1469,6 +1469,17 @@ class BentTubeProxy:
                 )
             )
 
+            from forgecad.adapters.freecad.bent_fabrication import (
+                apply_bent_miter_shape,
+            )
+
+            shape = apply_bent_miter_shape(
+                obj,
+                shape,
+                tube.profile,
+                centerline=centerline,
+            )
+
             obj.Shape = shape
 
             self._update_summary_properties(

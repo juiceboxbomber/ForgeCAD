@@ -922,6 +922,97 @@ def store_bend_design_references(
     return bent_object
 
 
+
+def ensure_bent_fabrication_identity_properties(
+    bent_object,
+):
+    """Ensure a converted bent tube stores endpoint-aware layout identities."""
+
+    if bent_object is None:
+        raise ValueError(
+            "A ForgeCAD bent tube is required."
+        )
+
+    for property_name in (
+        "StartFabricationLayoutID",
+        "EndFabricationLayoutID",
+    ):
+        if not hasattr(
+            bent_object,
+            property_name,
+        ):
+            add_property = getattr(
+                bent_object,
+                "addProperty",
+                None,
+            )
+
+            if add_property is not None:
+                add_property(
+                    "App::PropertyString",
+                    property_name,
+                    "ForgeCAD Bend",
+                )
+            else:
+                setattr(
+                    bent_object,
+                    property_name,
+                    "",
+                )
+
+        try:
+            bent_object.setEditorMode(
+                property_name,
+                1,
+            )
+        except Exception:
+            pass
+
+    return bent_object
+
+
+def set_bent_fabrication_endpoint_ids(
+    bent_object,
+    start_layout_id=None,
+    end_layout_id=None,
+):
+    """Persist the source-layout identity represented at either bent-tube end."""
+
+    ensure_bent_fabrication_identity_properties(
+        bent_object
+    )
+
+    if start_layout_id is not None:
+        start_layout_id = str(
+            start_layout_id
+        ).strip()
+
+        if not start_layout_id:
+            raise ValueError(
+                "Bent-tube start fabrication identity cannot be empty."
+            )
+
+        bent_object.StartFabricationLayoutID = (
+            start_layout_id
+        )
+
+    if end_layout_id is not None:
+        end_layout_id = str(
+            end_layout_id
+        ).strip()
+
+        if not end_layout_id:
+            raise ValueError(
+                "Bent-tube end fabrication identity cannot be empty."
+            )
+
+        bent_object.EndFabricationLayoutID = (
+            end_layout_id
+        )
+
+    return bent_object
+
+
 def remove_straight_member_object(
     document,
     member_object,
@@ -1129,6 +1220,11 @@ def extend_existing_bent_object(
             "The extended bent tube requires a new endpoint node."
         )
 
+    set_bent_fabrication_endpoint_ids(
+        bent_object,
+        end_layout_id=layout_id,
+    )
+
     bent_object.EndNode = (
         new_end_node
     )
@@ -1307,6 +1403,11 @@ def prepend_existing_bent_object(
         raise ValueError(
             "The bent tube has no persistent EndNode."
         )
+
+    set_bent_fabrication_endpoint_ids(
+        bent_object,
+        start_layout_id=layout_id,
+    )
 
     ensure_bent_tube_node_links(
         bent_object,
@@ -1897,6 +1998,24 @@ def create_bent_tube_from_joint(
         bent_object,
         layout_objects,
         design_node,
+    )
+
+    set_bent_fabrication_endpoint_ids(
+        bent_object,
+        start_layout_id=str(
+            getattr(
+                member_objects[0],
+                "SourceLayoutID",
+                "",
+            )
+        ).strip(),
+        end_layout_id=str(
+            getattr(
+                member_objects[1],
+                "SourceLayoutID",
+                "",
+            )
+        ).strip(),
     )
 
     tree = initialize_project_tree(

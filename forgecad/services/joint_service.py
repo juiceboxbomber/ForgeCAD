@@ -18,131 +18,46 @@ def node_on_member(
     tolerance: float = POINT_TOLERANCE,
 ) -> bool:
     """Return True when a node lies on a structural member."""
+    from forgecad.services.node_proximity import nodes_coincident
 
-    # Bent members are currently considered connected only
-    # at their explicit structural endpoints.
-    #
-    # We intentionally do not use the straight chord between
-    # start and end because that chord is not the bent tube path.
-    if isinstance(
-        member,
-        BentMember,
-    ):
+    if isinstance(member, BentMember):
         return (
-            member.start == node
-            or member.end == node
+            nodes_coincident(member.start, node, tolerance=tolerance)
+            or nodes_coincident(member.end, node, tolerance=tolerance)
         )
 
     if (
-        member.start == node
-        or member.end == node
+        nodes_coincident(member.start, node, tolerance=tolerance)
+        or nodes_coincident(member.end, node, tolerance=tolerance)
     ):
         return True
 
-    ax = float(
-        member.start.x
-    )
-    ay = float(
-        member.start.y
-    )
-    az = float(
-        member.start.z
-    )
+    ax, ay, az = float(member.start.x), float(member.start.y), float(member.start.z)
+    bx, by, bz = float(member.end.x), float(member.end.y), float(member.end.z)
+    px, py, pz = float(node.x), float(node.y), float(node.z)
 
-    bx = float(
-        member.end.x
-    )
-    by = float(
-        member.end.y
-    )
-    bz = float(
-        member.end.z
-    )
+    ab_x, ab_y, ab_z = bx - ax, by - ay, bz - az
+    ap_x, ap_y, ap_z = px - ax, py - ay, pz - az
 
-    px = float(
-        node.x
-    )
-    py = float(
-        node.y
-    )
-    pz = float(
-        node.z
-    )
-
-    ab_x = bx - ax
-    ab_y = by - ay
-    ab_z = bz - az
-
-    ap_x = px - ax
-    ap_y = py - ay
-    ap_z = pz - az
-
-    length_squared = (
-        ab_x * ab_x
-        + ab_y * ab_y
-        + ab_z * ab_z
-    )
-
+    length_squared = ab_x * ab_x + ab_y * ab_y + ab_z * ab_z
     if length_squared <= 1e-12:
         return False
 
     parameter = (
-        ap_x * ab_x
-        + ap_y * ab_y
-        + ap_z * ab_z
+        ap_x * ab_x + ap_y * ab_y + ap_z * ab_z
     ) / length_squared
 
-    if (
-        parameter < -tolerance
-        or parameter > 1.0 + tolerance
-    ):
+    if parameter < -tolerance or parameter > 1.0 + tolerance:
         return False
 
-    parameter = max(
-        0.0,
-        min(
-            1.0,
-            parameter,
-        ),
-    )
+    parameter = max(0.0, min(1.0, parameter))
+    nearest_x = ax + parameter * ab_x
+    nearest_y = ay + parameter * ab_y
+    nearest_z = az + parameter * ab_z
 
-    nearest_x = (
-        ax
-        + parameter * ab_x
-    )
+    dx, dy, dz = px - nearest_x, py - nearest_y, pz - nearest_z
+    return dx * dx + dy * dy + dz * dz <= tolerance * tolerance
 
-    nearest_y = (
-        ay
-        + parameter * ab_y
-    )
-
-    nearest_z = (
-        az
-        + parameter * ab_z
-    )
-
-    dx = (
-        px - nearest_x
-    )
-
-    dy = (
-        py - nearest_y
-    )
-
-    dz = (
-        pz - nearest_z
-    )
-
-    distance_squared = (
-        dx * dx
-        + dy * dy
-        + dz * dz
-    )
-
-    return (
-        distance_squared
-        <= tolerance * tolerance
-    )
 
 
 def member_touches_node(
@@ -176,25 +91,20 @@ def connected_members(
 def frame_connection_nodes(
     frame: Frame,
 ) -> list[Node]:
-    """
-    Return unique nodes referenced by frame members.
-
-    Nodes are returned in first-seen member order.
-    """
+    """Return unique structural connection nodes in first-seen order."""
+    from forgecad.services.node_proximity import nodes_coincident
 
     nodes = []
-
     for member in frame.members:
-        for node in (
-            member.start,
-            member.end,
-        ):
-            if node not in nodes:
-                nodes.append(
-                    node
-                )
-
+        for node in (member.start, member.end):
+            if any(
+                nodes_coincident(node, existing, tolerance=POINT_TOLERANCE)
+                for existing in nodes
+            ):
+                continue
+            nodes.append(node)
     return nodes
+
 
 
 def detect_joints(
