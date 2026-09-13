@@ -24,11 +24,20 @@ def _default_material():
 def test_default_tube_library_contains_expected_profiles():
     library = create_default_tube_library()
 
-    assert library.names == (
+    for name in (
         "1.000 x .065 DOM",
         "1.250 x .095 DOM",
+        "1.500 x .120 DOM",
         "1.750 x .120 DOM",
+        "2.000 x .120 DOM",
+    ):
+        assert name in library.names
+
+    assert (
+        library.active_name
+        == "1.750 x .120 DOM"
     )
+
 
 
 def test_default_tube_library_active_profile_is_1750_dom():

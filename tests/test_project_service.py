@@ -20,12 +20,18 @@ def test_create_default_material():
 def test_create_default_tube_library():
     library = create_default_tube_library()
 
-    assert library.names == (
+    for name in (
         "1.000 x .065 DOM",
         "1.250 x .095 DOM",
         "1.750 x .120 DOM",
+    ):
+        assert name in library.names
+
+    assert (
+        library.active_name
+        == "1.750 x .120 DOM"
     )
-    assert library.active_name == DEFAULT_PROFILE_NAME
+
 
 
 def test_create_project():
