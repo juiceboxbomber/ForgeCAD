@@ -211,9 +211,10 @@ def cut_list_from_rows(rows):
                 member_id=row[
                     "member_id"
                 ],
-                member_name=row[
-                    "member_name"
-                ],
+                member_name=row.get(
+                    "member_name",
+                    "",
+                ),
                 tube_profile=row[
                     "tube_profile"
                 ],
@@ -238,6 +239,7 @@ def cut_list_from_rows(rows):
     return CutList(
         items=items
     )
+
 
 
 class CutListDialog(QtGui.QDialog):
@@ -382,6 +384,16 @@ class CutListDialog(QtGui.QDialog):
         # Buttons
         # -----------------------------------------------------
 
+        stock_plan_button = (
+            QtGui.QPushButton(
+                "Stock Plan"
+            )
+        )
+
+        stock_plan_button.clicked.connect(
+            self.open_stock_plan
+        )
+
         export_button = (
             QtGui.QPushButton(
                 "Export CSV"
@@ -408,6 +420,10 @@ class CutListDialog(QtGui.QDialog):
 
         button_layout.addWidget(
             export_button
+        )
+
+        button_layout.addWidget(
+            stock_plan_button
         )
 
         button_layout.addStretch()
@@ -534,6 +550,20 @@ class CutListDialog(QtGui.QDialog):
                 f"{self.cut_list.total_weight_kg:.3f} kg"
             )
         )
+
+    def open_stock_plan(self):
+        """Open stock planning for the displayed cut list."""
+
+        from forgecad.adapters.freecad.dialogs.tube_stock_plan import (
+            TubeStockPlanDialog,
+        )
+
+        dialog = TubeStockPlanDialog(
+            self.cut_list,
+            self,
+        )
+
+        dialog.exec_()
 
     def export_csv(self):
         """Export the displayed cut list to a CSV file."""
