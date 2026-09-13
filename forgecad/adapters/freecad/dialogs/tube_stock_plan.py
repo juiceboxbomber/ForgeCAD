@@ -7,6 +7,9 @@ from forgecad.services.tube_stock import (
     DEFAULT_STOCK_LENGTH_MM,
     plan_tube_stock,
 )
+from forgecad.services.tube_stock_export import (
+    tube_stock_plan_to_csv,
+)
 
 
 class TubeStockPlanDialog(QtGui.QDialog):
@@ -152,6 +155,13 @@ class TubeStockPlanDialog(QtGui.QDialog):
             True
         )
 
+        export_button = QtGui.QPushButton(
+            "Export CSV"
+        )
+        export_button.clicked.connect(
+            self.export_csv
+        )
+
         close_button = QtGui.QPushButton(
             "Close"
         )
@@ -160,6 +170,9 @@ class TubeStockPlanDialog(QtGui.QDialog):
         )
 
         buttons = QtGui.QHBoxLayout()
+        buttons.addWidget(
+            export_button
+        )
         buttons.addStretch()
         buttons.addWidget(
             close_button
@@ -283,6 +296,94 @@ class TubeStockPlanDialog(QtGui.QDialog):
                     row_index += 1
 
         self.table.resizeColumnsToContents()
+
+    def export_csv(self):
+        """Export the current stock plan to a CSV file."""
+
+        if self.plan is None:
+            self.recalculate()
+
+        if self.plan is None:
+            return
+
+        default_name = (
+            "ForgeCAD_stock_plan.csv"
+        )
+
+        try:
+            import FreeCAD
+
+            document = (
+                FreeCAD.ActiveDocument
+            )
+
+            if document is not None:
+                label = str(
+                    getattr(
+                        document,
+                        "Label",
+                        "",
+                    )
+                ).strip()
+
+                if label:
+                    default_name = (
+                        f"{label}_stock_plan.csv"
+                    )
+
+        except ImportError:
+            pass
+
+        file_path, _ = (
+            QtGui.QFileDialog.getSaveFileName(
+                self,
+                "Export ForgeCAD Tube Stock Plan",
+                default_name,
+                "CSV Files (*.csv)",
+            )
+        )
+
+        if not file_path:
+            return
+
+        if not file_path.lower().endswith(".csv"):
+            file_path += ".csv"
+
+        csv_text = (
+            tube_stock_plan_to_csv(
+                self.plan
+            )
+        )
+
+        try:
+            with open(
+                file_path,
+                "w",
+                encoding="utf-8",
+                newline="",
+            ) as output_file:
+                output_file.write(
+                    csv_text
+                )
+
+        except OSError as error:
+            QtGui.QMessageBox.critical(
+                self,
+                "Export Failed",
+                str(
+                    error
+                ),
+            )
+            return
+
+        QtGui.QMessageBox.information(
+            self,
+            "Export Complete",
+            (
+                "ForgeCAD tube stock plan exported to:\n"
+                f"{file_path}"
+            ),
+        )
 
     def update_summary(self):
         """Show overall stock requirements."""
