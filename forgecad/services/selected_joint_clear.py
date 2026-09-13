@@ -7,25 +7,134 @@ def _layout_id(obj):
     return str(getattr(obj, "SourceLayoutID", "") or "").strip()
 
 
-def selected_clear_request(objects, precision=6):
-    """Resolve two to four selected members and their physical joint point."""
-    objects = list(objects or ())
-    if len(objects) not in (2, 3, 4):
+def selected_clear_request(
+    objects,
+    precision=6,
+):
+    """
+    Resolve two/three selected structural tubes and their fabrication joint.
+
+    Endpoint-based selections are resolved first through ForgeCAD's
+    endpoint-aware fabrication identity service. That allows converted bent
+    tubes to participate without pretending the chord between their endpoints
+    is a real member.
+
+    If the selection is straight-only and does not share one endpoint, retain
+    the existing endpoint-to-interior path used by Through Selected clearing.
+    """
+
+    objects = list(
+        objects
+        or ()
+    )
+
+    if len(
+        objects
+    ) not in (
+        2,
+        3,
+    ):
         raise ValueError(
             "Select two tubes to clear a miter/cope/through operation, or select "
-            "one source/through tube plus up to three related tubes to clear both relationships."
+            "one source/through tube plus two related tubes to clear both relationships."
         )
+
+    from forgecad.services.fabrication_identity import (
+        shared_structural_endpoint,
+    )
+
+    try:
+        return shared_structural_endpoint(
+            objects,
+            precision=precision,
+        )
+    except ValueError as endpoint_error:
+        # Bent tubes currently participate in fabrication only at their true
+        # solved endpoints. Never fall back to the straight-segment/chord
+        # resolver for a converted bent member.
+        has_bent_member = any(
+            (
+                not str(
+                    getattr(
+                        obj,
+                        "SourceLayoutID",
+                        "",
+                    )
+                    or ""
+                ).strip()
+                and (
+                    bool(
+                        str(
+                            getattr(
+                                obj,
+                                "StartFabricationLayoutID",
+                                "",
+                            )
+                            or ""
+                        ).strip()
+                    )
+                    or bool(
+                        str(
+                            getattr(
+                                obj,
+                                "EndFabricationLayoutID",
+                                "",
+                            )
+                            or ""
+                        ).strip()
+                    )
+                    or bool(
+                        getattr(
+                            obj,
+                            "SourceLayoutLines",
+                            (),
+                        )
+                    )
+                )
+            )
+            for obj in objects
+        )
+
+        if has_bent_member:
+            raise endpoint_error
+
     ids = []
+
     for obj in objects:
-        ident = _layout_id(obj)
+        ident = str(
+            getattr(
+                obj,
+                "SourceLayoutID",
+                "",
+            )
+            or ""
+        ).strip()
+
         if not ident:
             raise ValueError(
-                "Every selected tube must be a generated ForgeCAD member with a SourceLayoutID."
+                "Every selected straight tube must be a generated ForgeCAD "
+                "member with a SourceLayoutID."
             )
+
         if ident in ids:
-            raise ValueError("Select each tube only once.")
-        ids.append(ident)
-    return selected_joint_point(objects, precision=precision), tuple(ids)
+            raise ValueError(
+                "Select each tube only once."
+            )
+
+        ids.append(
+            ident
+        )
+
+    return (
+        selected_joint_point(
+            objects,
+            precision=precision,
+        ),
+        tuple(
+            ids
+        ),
+    )
+
 
 
 def _normalized_pairs(pairs, label):
