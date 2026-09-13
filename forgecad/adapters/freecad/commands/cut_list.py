@@ -60,92 +60,112 @@ def member_weight_kg(
 
 
 def frame_member_objects(document):
-    """Return generated ForgeCAD members from the Frame group."""
-
-    frame_group = document.getObject(
-        "ForgeCADFrame"
-    )
-
-    if frame_group is None:
-        return []
+    """Return straight and bent ForgeCAD structural members."""
 
     members = []
+    seen = set()
 
-    for obj in frame_group.Group:
-        if not hasattr(
-            obj,
-            "MemberID",
-        ):
-            continue
+    frame_group = document.getObject("ForgeCADFrame")
 
-        if not hasattr(
-            obj,
-            "TubeProfile",
-        ):
-            continue
+    if frame_group is not None:
+        for obj in frame_group.Group:
+            if not all(
+                hasattr(obj, property_name)
+                for property_name in (
+                    "MemberID",
+                    "TubeProfile",
+                    "MemberLength",
+                )
+            ):
+                continue
 
-        if not hasattr(
-            obj,
-            "MemberLength",
-        ):
-            continue
+            object_key = id(obj)
+            if object_key not in seen:
+                members.append(obj)
+                seen.add(object_key)
 
-        members.append(
-            obj
-        )
+    bent_group = document.getObject("ForgeCADBentTubes")
+
+    if bent_group is not None:
+        for obj in bent_group.Group:
+            if not all(
+                hasattr(obj, property_name)
+                for property_name in (
+                    "TubeName",
+                    "TubeProfile",
+                    "DevelopedLength",
+                )
+            ):
+                continue
+
+            object_key = id(obj)
+            if object_key not in seen:
+                members.append(obj)
+                seen.add(object_key)
 
     return members
 
 
+
 def cut_list_rows(document):
-    """Return fabrication data for generated FreeCAD members."""
+    """Return fabrication data for straight and bent ForgeCAD members."""
 
-    members = frame_member_objects(
-        document
-    )
-
+    members = frame_member_objects(document)
     library = create_default_tube_library()
     default_material = create_default_material()
-
     rows = []
 
     for obj in members:
-        profile_name = str(
-            obj.TubeProfile
-        )
-
-        member_name = str(
-            getattr(
-                obj,
-                "MemberName",
-                "",
-            )
-        ).strip()
+        profile_name = str(obj.TubeProfile)
 
         try:
-            profile = library.get(
-                profile_name
-            )
-
-            outside_diameter = (
-                profile.outside_diameter
-            )
-
-            wall_thickness = (
-                profile.wall_thickness
-            )
-
+            profile = library.get(profile_name)
+            outside_diameter = profile.outside_diameter
+            wall_thickness = profile.wall_thickness
         except KeyError:
+            if (
+                not hasattr(obj, "OutsideDiameter")
+                or not hasattr(obj, "WallThickness")
+            ):
+                raise ValueError(
+                    "Cut List cannot resolve tube profile "
+                    f"{profile_name!r}."
+                )
+
             outside_diameter = float(
-                obj.OutsideDiameter
+                getattr(
+                    obj.OutsideDiameter,
+                    "Value",
+                    obj.OutsideDiameter,
+                )
+            )
+            wall_thickness = float(
+                getattr(
+                    obj.WallThickness,
+                    "Value",
+                    obj.WallThickness,
+                )
             )
 
-            wall_thickness = float(
-                obj.WallThickness
-            )
+        if hasattr(obj, "MemberLength"):
+            length_value = obj.MemberLength
+            member_id = str(obj.MemberID).strip()
+            member_name = str(
+                getattr(obj, "MemberName", "")
+            ).strip()
+        elif hasattr(obj, "DevelopedLength"):
+            length_value = obj.DevelopedLength
+            member_id = str(
+                getattr(obj, "Name", "")
+            ).strip() or "Bent Tube"
+            member_name = str(
+                getattr(obj, "TubeName", "")
+            ).strip()
+        else:
+            continue
 
         length_mm = float(
-            obj.MemberLength
+            getattr(length_value, "Value", length_value)
         )
 
         material_name = str(
@@ -165,9 +185,7 @@ def cut_list_rows(document):
 
         rows.append(
             {
-                "member_id": str(
-                    obj.MemberID
-                ),
+                "member_id": member_id,
                 "member_name": member_name,
                 "tube_profile": profile_name,
                 "material": material_name,
@@ -179,6 +197,7 @@ def cut_list_rows(document):
         )
 
     return rows
+
 
 
 def cut_list_from_rows(rows):
