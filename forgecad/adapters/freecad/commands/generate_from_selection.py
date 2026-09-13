@@ -558,6 +558,11 @@ def regenerate_frame(
     is regenerated regardless of the current GUI selection.
     """
 
+    from forgecad.adapters.freecad.fabrication_refresh import (
+        refresh_fabrication_for_document,
+    )
+
+
     if document is None:
         raise ValueError(
             "No active FreeCAD document."
@@ -676,6 +681,15 @@ def regenerate_frame(
         ].addObject(
             obj
         )
+
+    # The renderer above only knows about the layout-derived straight
+    # replacement frame. Converted bent tubes live outside the Frame
+    # group, so saved treatments involving a bent endpoint must be
+    # resolved once more against the complete structural document after
+    # the new straight members have been installed.
+    refresh_fabrication_for_document(
+        document
+    )
 
     if clear_selection:
         FreeCADGui.Selection.clearSelection()

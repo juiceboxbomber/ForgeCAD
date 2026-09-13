@@ -80,68 +80,134 @@ class MiterSpecification:
     ]
 
 
-def member_end_at_joint(
-    member: Member,
-    joint: Joint,
-) -> str:
-    """Return which member end lies at the supplied joint."""
+def member_end_at_joint(member, joint) -> str:
+    """Return which structural-member end occupies a joint."""
+    from forgecad.services.node_proximity import nodes_coincident
 
-    if member.start == joint.node:
+    if nodes_coincident(member.start, joint.node):
         return MITER_END_START
-
-    if member.end == joint.node:
+    if nodes_coincident(member.end, joint.node):
         return MITER_END_END
-
-    raise ValueError(
-        "Member does not touch the supplied joint."
-    )
+    raise ValueError("Member does not touch the supplied joint.")
 
 
-def member_direction_from_joint(
-    member: Member,
-    joint: Joint,
-) -> Vector3:
-    """Return member direction pointing away from the joint."""
 
-    if member.start == joint.node:
-        other = member.end
+def member_direction_from_joint(member, joint) -> Vector3:
+    """Return the unit direction from a joint into a member."""
+    from forgecad.services.joint_geometry import member_direction_from_node
 
-    elif member.end == joint.node:
-        other = member.start
+    x, y, z = member_direction_from_node(member, joint.node)
+    return Vector3(float(x), float(y), float(z)).normalized()
 
-    else:
-        raise ValueError(
-            "Member does not touch the supplied joint."
-        )
-
-    return Vector3(
-        float(
-            other.x - joint.node.x
-        ),
-        float(
-            other.y - joint.node.y
-        ),
-        float(
-            other.z - joint.node.z
-        ),
-    ).normalized()
 
 
 def member_keep_point(
-    member: Member,
-    joint: Joint,
+    member,
+    joint,
 ) -> tuple[
     float,
     float,
     float,
 ]:
-    """Return the member endpoint away from the joint."""
+    """
+    Return a point on the member side that must survive a miter cut.
 
-    if member.start == joint.node:
-        node = member.end
+    Straight members may safely use the opposite endpoint because their whole
+    centerline stays on one side of an endpoint miter plane.
 
-    elif member.end == joint.node:
-        node = member.start
+    Bent members must NOT use the opposite endpoint: after one or more bends
+    that distant endpoint may lie on the other side of the local miter plane.
+    Use a short point along the true inward endpoint tangent instead.
+    """
+
+    from forgecad.fabrication import (
+        BentMember,
+    )
+    from forgecad.services.node_proximity import (
+        nodes_coincident,
+    )
+
+    if isinstance(
+        member,
+        BentMember,
+    ):
+        direction = (
+            member_direction_from_joint(
+                member,
+                joint,
+            )
+        )
+
+        outside_diameter = float(
+            member.profile.outside_diameter
+        )
+
+        if nodes_coincident(
+            member.start,
+            joint.node,
+        ):
+            run_length = float(
+                member.tube.straight_runs[
+                    0
+                ].length_mm
+            )
+        elif nodes_coincident(
+            member.end,
+            joint.node,
+        ):
+            run_length = float(
+                member.tube.straight_runs[
+                    -1
+                ].length_mm
+            )
+        else:
+            raise ValueError(
+                "Member does not touch the supplied joint."
+            )
+
+        # Any positive distance chooses the correct half-space. Keep it local
+        # to the endpoint so the point still describes this end even on a
+        # short terminal straight run.
+        local_distance = min(
+            max(
+                outside_diameter,
+                1.0,
+            ),
+            max(
+                run_length * 0.5,
+                1.0,
+            ),
+        )
+
+        return (
+            float(
+                joint.node.x
+            )
+            + direction.x
+            * local_distance,
+            float(
+                joint.node.y
+            )
+            + direction.y
+            * local_distance,
+            float(
+                joint.node.z
+            )
+            + direction.z
+            * local_distance,
+        )
+
+    if nodes_coincident(
+        member.start,
+        joint.node,
+    ):
+        keep = member.end
+
+    elif nodes_coincident(
+        member.end,
+        joint.node,
+    ):
+        keep = member.start
 
     else:
         raise ValueError(
@@ -149,10 +215,12 @@ def member_keep_point(
         )
 
     return (
-        float(node.x),
-        float(node.y),
-        float(node.z),
+        float(keep.x),
+        float(keep.y),
+        float(keep.z),
     )
+
+
 
 
 def equal_miter_plane_normal(

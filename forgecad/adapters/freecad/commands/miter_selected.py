@@ -5,6 +5,9 @@ import FreeCADGui
 from PySide import QtGui
 
 from forgecad.adapters.freecad.commands.generate_from_selection import regenerate_frame
+from forgecad.adapters.freecad.fabrication_refresh import (
+    refresh_fabrication_for_document,
+)
 from forgecad.adapters.freecad.commands.inspect_joint import (
     InspectionNode,
     connected_member_objects,
@@ -43,62 +46,156 @@ def _warn(title, message):
     )
 
 
-def _joint_context(document, node_xyz):
-    position = FreeCAD.Vector(*node_xyz)
-    node_object = node_object_at_position(document, position)
+def _joint_context(
+    document,
+    node_xyz,
+):
+    position = FreeCAD.Vector(
+        *node_xyz
+    )
+
+    node_object = (
+        node_object_at_position(
+            document,
+            position,
+        )
+    )
+
     if node_object is None:
-        node_object = InspectionNode("Joint", position)
-
-    detected = joint_from_node_object(document, node_object)
-    if detected.member_count < 2:
-        raise ValueError("No ForgeCAD joint exists at the shared endpoint.")
-
-    objects = connected_member_objects(document, node_object)
-    domain_members = []
-    by_id = {}
-    for obj in objects:
-        ident = _layout_id(obj)
-        if not ident:
-            continue
-        member = structural_member_from_freecad_object(obj)
-        domain_members.append(member)
-        by_id[ident] = member
-
-    joint = Joint(node=detected.node, members=domain_members)
-    return joint, by_id, position
-
-
-def _preflight(document, node_xyz, member_ids):
-    joint, by_id, position = _joint_context(document, node_xyz)
-    missing = [ident for ident in member_ids if ident not in by_id]
-    if missing:
-        raise ValueError(
-            "One selected tube was not resolved as a member of this joint. "
-            "Select the generated frame members themselves."
+        node_object = InspectionNode(
+            "Joint",
+            position,
         )
 
-    first = by_id[member_ids[0]]
-    second = by_id[member_ids[1]]
-    treatment = JointTreatment.both_coped(joint, first, second)
+    detected = joint_from_node_object(
+        document,
+        node_object,
+    )
 
-    # Use the same fabrication services as regeneration. This rejects collinear
-    # or otherwise invalid pairs before anything is written to the document.
+    if detected.member_count < 2:
+        raise ValueError(
+            "No ForgeCAD joint exists at the shared endpoint."
+        )
+
+    objects = connected_member_objects(
+        document,
+        node_object,
+    )
+
+    domain_members = []
+    by_id = {}
+
+    from forgecad.services.fabrication_identity import (
+        fabrication_layout_id_at_point,
+    )
+
+    for obj in objects:
+        try:
+            ident = (
+                fabrication_layout_id_at_point(
+                    obj,
+                    position,
+                )
+            )
+        except ValueError:
+            continue
+
+        member = (
+            structural_member_from_freecad_object(
+                obj
+            )
+        )
+
+        domain_members.append(
+            member
+        )
+        by_id[
+            ident
+        ] = member
+
+    joint = Joint(
+        node=detected.node,
+        members=domain_members,
+    )
+
+    return (
+        joint,
+        by_id,
+        position,
+    )
+
+
+
+def _preflight(
+    document,
+    node_xyz,
+    member_ids,
+    selection,
+):
+    """Validate the explicitly selected pair without global joint lookup."""
+    from forgecad.fabrication import Joint, Node
+
+    selection = list(selection or ())
+    if len(selection) != 2:
+        raise ValueError("Select exactly two tubes to miter together.")
+    if len(member_ids) != 2:
+        raise ValueError("Miter Selected requires exactly two persistent member identities.")
+
+    domain_members = [
+        structural_member_from_freecad_object(obj)
+        for obj in selection
+    ]
+
+    node = Node(
+        float(node_xyz[0]),
+        float(node_xyz[1]),
+        float(node_xyz[2]),
+    )
+    joint = Joint(
+        node=node,
+        members=domain_members,
+    )
+    treatment = JointTreatment.both_coped(
+        joint,
+        domain_members[0],
+        domain_members[1],
+    )
+
     specifications = miter_specifications_for_treatment(treatment)
     if len(specifications) != 2:
         raise ValueError("The selected pair cannot produce a two-member miter.")
-    extension_specifications_for_treatment(treatment)
 
+    extension_specifications_for_treatment(treatment)
+    position = FreeCAD.Vector(*node_xyz)
     return vector_key(position)
 
 
-def apply_selected_miter(document, selection):
-    """Save one explicit miter pair and regenerate in one FreeCAD transaction.
 
-    save_joint_treatment updates only the primary treatment fields. Existing
-    ExplicitCopePairs on the same persistent treatment object are preserved.
-    """
+def apply_selected_miter(
+    document,
+    selection,
+):
+    """Save one explicit miter pair and update its structural objects."""
+    selection = list(selection or ())
     node_xyz, member_ids = selected_miter_request(selection)
-    node_key_value = _preflight(document, node_xyz, member_ids)
+    node_key_value = _preflight(
+        document,
+        node_xyz,
+        member_ids,
+        selection,
+    )
+
+    has_bent_member = any(
+        (
+            not str(getattr(obj, "SourceLayoutID", "") or "").strip()
+            and (
+                bool(str(getattr(obj, "StartFabricationLayoutID", "") or "").strip())
+                or bool(str(getattr(obj, "EndFabricationLayoutID", "") or "").strip())
+                or bool(getattr(obj, "SourceLayoutLines", ()))
+            )
+        )
+        for obj in selection
+    )
 
     started = False
     try:
@@ -111,7 +208,15 @@ def apply_selected_miter(document, selection):
             member_ids,
         )
         FreeCADGui.Selection.clearSelection()
-        regenerate_frame(document)
+
+        if has_bent_member:
+            # Do not regenerate consumed layout lines back into straight tubes.
+            refresh_fabrication_for_document(document)
+        else:
+            # Preserve the proven straight-member path.
+            regenerate_frame(document)
+            refresh_fabrication_for_document(document)
+
         document.commitTransaction()
         started = False
     except Exception:
@@ -120,6 +225,7 @@ def apply_selected_miter(document, selection):
         raise
 
     return member_ids
+
 
 
 class MiterSelectedCommand:

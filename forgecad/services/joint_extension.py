@@ -35,17 +35,15 @@ def member_end_at_joint(
     member: Member,
     joint: Joint,
 ) -> str:
-    """Return which member end lies at the joint."""
+    """Return which structural-member end occupies a joint."""
+    from forgecad.services.node_proximity import nodes_coincident
 
-    if member.start == joint.node:
+    if nodes_coincident(member.start, joint.node):
         return MEMBER_END_START
-
-    if member.end == joint.node:
+    if nodes_coincident(member.end, joint.node):
         return MEMBER_END_END
+    raise ValueError("Member does not touch the supplied joint.")
 
-    raise ValueError(
-        "Member does not touch the supplied joint."
-    )
 
 
 def fabrication_angle(

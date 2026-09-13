@@ -276,7 +276,12 @@ def member_layout_id_map(
     frame,
     source_layout_ids,
 ):
-    """Map domain-member identity to persistent layout ID."""
+    """
+    Map domain-member identity to one or more persistent layout IDs.
+
+    Straight members keep the legacy scalar string value. A converted bent
+    member may supply a tuple containing its start/end fabrication identities.
+    """
 
     if source_layout_ids is None:
         source_layout_ids = [
@@ -285,24 +290,71 @@ def member_layout_id_map(
         ]
 
     if (
-        len(source_layout_ids)
-        != len(frame.members)
+        len(
+            source_layout_ids
+        )
+        != len(
+            frame.members
+        )
     ):
         raise ValueError(
             "Layout identity count does not match "
             "the number of frame members."
         )
 
-    return {
-        id(member): str(
-            source_layout_id
-        ).strip()
-        for member, source_layout_id
-        in zip(
-            frame.members,
-            source_layout_ids,
-        )
-    }
+    result = {}
+
+    for (
+        member,
+        source_layout_id,
+    ) in zip(
+        frame.members,
+        source_layout_ids,
+    ):
+        if isinstance(
+            source_layout_id,
+            (
+                tuple,
+                list,
+                set,
+                frozenset,
+            ),
+        ):
+            values = []
+
+            for value in source_layout_id:
+                value = str(
+                    value
+                ).strip()
+
+                if (
+                    value
+                    and value
+                    not in values
+                ):
+                    values.append(
+                        value
+                    )
+
+            result[
+                id(
+                    member
+                )
+            ] = tuple(
+                values
+            )
+
+        else:
+            result[
+                id(
+                    member
+                )
+            ] = str(
+                source_layout_id
+            ).strip()
+
+    return result
+
 
 
 def member_for_layout_id(
@@ -310,7 +362,7 @@ def member_for_layout_id(
     layout_id,
     layout_ids_by_member,
 ):
-    """Return the joint member associated with a persistent layout ID."""
+    """Return the joint member associated with one persistent layout ID."""
 
     requested_id = str(
         layout_id
@@ -320,22 +372,44 @@ def member_for_layout_id(
         return None
 
     for member in joint.members:
-        member_layout_id = (
+        member_layout_ids = (
             layout_ids_by_member.get(
-                id(member),
+                id(
+                    member
+                ),
                 "",
             )
         )
 
-        if (
-            str(
-                member_layout_id
-            ).strip()
-            == requested_id
+        if isinstance(
+            member_layout_ids,
+            (
+                tuple,
+                list,
+                set,
+                frozenset,
+            ),
         ):
+            candidates = tuple(
+                str(
+                    value
+                ).strip()
+                for value
+                in member_layout_ids
+            )
+
+        else:
+            candidates = (
+                str(
+                    member_layout_ids
+                ).strip(),
+            )
+
+        if requested_id in candidates:
             return member
 
     return None
+
 
 
 def saved_treatment_for_joint(
