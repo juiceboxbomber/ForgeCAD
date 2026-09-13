@@ -226,20 +226,29 @@ def both_mitered_specifications(
 
     joint = treatment.joint
 
-    if joint.member_count != 2:
+    miter_members = (
+        treatment.coped_members
+    )
+
+    if (
+        len(
+            miter_members
+        )
+        != 2
+    ):
         raise ValueError(
             "A both-mitered treatment requires "
-            "exactly two members."
+            "exactly two selected members."
         )
 
     first_member = (
-        joint.members[
+        miter_members[
             0
         ]
     )
 
     second_member = (
-        joint.members[
+        miter_members[
             1
         ]
     )

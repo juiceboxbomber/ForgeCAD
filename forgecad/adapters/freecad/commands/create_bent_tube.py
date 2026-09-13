@@ -332,6 +332,64 @@ def ensure_bent_tube_endpoint_nodes(
     )
 
 
+def begin_create_bent_tube_transaction(
+    document,
+):
+    """Open one Undo transaction for a complete bent-tube creation."""
+
+    if (
+        document is None
+        or not hasattr(
+            document,
+            "openTransaction",
+        )
+    ):
+        return False
+
+    document.openTransaction(
+        "Create ForgeCAD Bent Tube"
+    )
+
+    return True
+
+
+def finish_create_bent_tube_transaction(
+    document,
+    transaction_started,
+):
+    """Commit a bent-tube creation Undo transaction."""
+
+    if (
+        transaction_started
+        and hasattr(
+            document,
+            "commitTransaction",
+        )
+    ):
+        document.commitTransaction()
+
+
+def abort_create_bent_tube_transaction(
+    document,
+    transaction_started,
+):
+    """Abort a failed bent-tube creation Undo transaction."""
+
+    if (
+        not transaction_started
+        or not hasattr(
+            document,
+            "abortTransaction",
+        )
+    ):
+        return
+
+    try:
+        document.abortTransaction()
+    except Exception:
+        pass
+
+
 class CreateBentTubeCommand:
     """Create one editable physical bent tube."""
 
@@ -383,6 +441,8 @@ class CreateBentTubeCommand:
         ):
             return
 
+        transaction_started = False
+
         try:
             tube = create_tube_from_dialog(
                 dialog
@@ -396,6 +456,12 @@ class CreateBentTubeCommand:
             tooling_result = attach_tooling(
                 tube,
                 tooling,
+            )
+
+            transaction_started = (
+                begin_create_bent_tube_transaction(
+                    document
+                )
             )
 
             obj = create_bent_tube_object(
@@ -441,11 +507,23 @@ class CreateBentTubeCommand:
 
             document.recompute()
 
+            finish_create_bent_tube_transaction(
+                document,
+                transaction_started,
+            )
+
         except (
             KeyError,
             TypeError,
             ValueError,
+            RuntimeError,
+            AttributeError,
         ) as error:
+            abort_create_bent_tube_transaction(
+                document,
+                transaction_started,
+            )
+
             QtGui.QMessageBox.warning(
                 FreeCADGui.getMainWindow(),
                 "Cannot Create Bent Tube",

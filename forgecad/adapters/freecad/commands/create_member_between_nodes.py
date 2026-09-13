@@ -21,6 +21,12 @@ from forgecad.adapters.freecad.document_tree import (
 from forgecad.adapters.freecad.member_object import (
     ensure_member_node_links,
 )
+from forgecad.adapters.freecad.topology_refresh import (
+    refresh_joint_topology,
+)
+from forgecad.adapters.freecad.fabrication_refresh import (
+    refresh_fabrication_for_document,
+)
 
 
 COMMAND_NAME = "ForgeCAD_CreateMemberBetweenNodes"
@@ -303,12 +309,25 @@ def create_member_between_nodes(
     document,
     start_node_object,
     end_node_object,
+    profile=None,
+    material=None,
+    refresh=True,
 ):
     """
     Create a rendered tube between two ForgeCAD node objects.
 
     Existing matching layout geometry is reused so the command cannot
     create duplicate layout lines for the same physical connection.
+
+    Optional profile/material arguments allow callers such as Mirror
+    Members to preserve source-member properties. When omitted, the
+    project active profile and default material are used exactly as
+    before.
+
+    refresh=False allows compound edit operations such as Split Member
+    to create intermediate geometry without refreshing fabrication
+    against a temporarily invalid topology. Normal callers retain the
+    original refresh behavior.
     """
 
     start_node = node_from_object(
@@ -332,13 +351,20 @@ def create_member_between_nodes(
         document
     )
 
-    profile = (
-        project.tube_library.active_profile
-    )
+    if profile is None:
+        profile = (
+            project.tube_library.active_profile
+        )
 
-    material = (
-        project.default_material
-    )
+    if material is None:
+        material = (
+            project.default_material
+        )
+
+    if profile is None:
+        raise ValueError(
+            "ForgeCAD project has no active tube profile."
+        )
 
     if material is None:
         raise ValueError(
@@ -416,6 +442,15 @@ def create_member_between_nodes(
 
     document.recompute()
 
+    if refresh:
+        refresh_joint_topology(
+            document
+        )
+
+        refresh_fabrication_for_document(
+            document
+        )
+
     return (
         layout_object,
         rendered_object,
@@ -479,7 +514,19 @@ class CreateMemberBetweenNodesCommand:
             )
             return
 
+        transaction_started = False
+
         try:
+            if hasattr(
+                document,
+                "openTransaction",
+            ):
+                document.openTransaction(
+                    "Create ForgeCAD Member"
+                )
+
+                transaction_started = True
+
             layout_object, member_object = (
                 create_member_between_nodes(
                     document,
@@ -487,6 +534,40 @@ class CreateMemberBetweenNodesCommand:
                     selection[1],
                 )
             )
+
+            if (
+                transaction_started
+                and hasattr(
+                    document,
+                    "commitTransaction",
+                )
+            ):
+                document.commitTransaction()
+
+        except (
+            ValueError,
+            KeyError,
+            RuntimeError,
+            AttributeError,
+        ) as error:
+            if (
+                transaction_started
+                and hasattr(
+                    document,
+                    "abortTransaction",
+                )
+            ):
+                try:
+                    document.abortTransaction()
+                except Exception:
+                    pass
+
+            QtGui.QMessageBox.warning(
+                FreeCADGui.getMainWindow(),
+                "Member Creation Failed",
+                str(error),
+            )
+            return
 
         except (
             ValueError,

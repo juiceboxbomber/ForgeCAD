@@ -283,6 +283,22 @@ def ensure_notch_properties(
         obj.EndCope2TargetMember = None
 
     # ---------------------------------------------------------
+    # Tertiary start/end cylindrical cope
+    # ---------------------------------------------------------
+    for side in ("Start","End"):
+        p=side+"Cope3"; group="ForgeCAD "+side+" Cope"
+        if not hasattr(obj,p+"Enabled"):
+            obj.addProperty("App::PropertyBool",p+"Enabled",group); setattr(obj,p+"Enabled",False)
+        if not hasattr(obj,p+"ThroughStart"):
+            obj.addProperty("App::PropertyVector",p+"ThroughStart",group); setattr(obj,p+"ThroughStart",zero_vector())
+        if not hasattr(obj,p+"ThroughEnd"):
+            obj.addProperty("App::PropertyVector",p+"ThroughEnd",group); setattr(obj,p+"ThroughEnd",zero_vector())
+        if not hasattr(obj,p+"ThroughDiameter"):
+            obj.addProperty("App::PropertyLength",p+"ThroughDiameter",group); setattr(obj,p+"ThroughDiameter",0.0)
+        if not hasattr(obj,p+"TargetMember"):
+            obj.addProperty("App::PropertyLink",p+"TargetMember",group); setattr(obj,p+"TargetMember",None)
+
+    # ---------------------------------------------------------
     # Physical fabrication extension
     # ---------------------------------------------------------
 
@@ -468,6 +484,12 @@ def ensure_notch_properties(
         "EndCope2ThroughStart",
         "EndCope2ThroughEnd",
         "EndCope2ThroughDiameter",
+        "StartCope3ThroughStart",
+        "StartCope3ThroughEnd",
+        "StartCope3ThroughDiameter",
+        "EndCope3ThroughStart",
+        "EndCope3ThroughEnd",
+        "EndCope3ThroughDiameter",
         "StartExtension",
         "EndExtension",
         "StartMiterPlanePoint",
@@ -491,46 +513,28 @@ def ensure_notch_properties(
     return obj
 
 
-def clear_start_cope(
-    obj,
-):
-    """Disable the cylindrical cope at the member start."""
-
-    ensure_notch_properties(
-        obj
-    )
-
-    obj.StartCopeEnabled = False
-    obj.StartCopeThroughStart = zero_vector()
-    obj.StartCopeThroughEnd = zero_vector()
-    obj.StartCopeThroughDiameter = 0.0
-    obj.StartCope2Enabled = False
-    obj.StartCope2ThroughStart = zero_vector()
-    obj.StartCope2ThroughEnd = zero_vector()
-    obj.StartCope2ThroughDiameter = 0.0
-    obj.StartCopeTargetMember = None
-    obj.StartCope2TargetMember = None
+def clear_start_cope(obj):
+    ensure_notch_properties(obj)
+    for p in ("StartCope","StartCope2","StartCope3"):
+        setattr(obj,p+"Enabled",False)
+        setattr(obj,p+"ThroughStart",zero_vector())
+        setattr(obj,p+"ThroughEnd",zero_vector())
+        setattr(obj,p+"ThroughDiameter",0.0)
+        setattr(obj,p+"TargetMember",None)
 
 
-def clear_end_cope(
-    obj,
-):
-    """Disable the cylindrical cope at the member end."""
 
-    ensure_notch_properties(
-        obj
-    )
 
-    obj.EndCopeEnabled = False
-    obj.EndCopeThroughStart = zero_vector()
-    obj.EndCopeThroughEnd = zero_vector()
-    obj.EndCopeThroughDiameter = 0.0
-    obj.EndCope2Enabled = False
-    obj.EndCope2ThroughStart = zero_vector()
-    obj.EndCope2ThroughEnd = zero_vector()
-    obj.EndCope2ThroughDiameter = 0.0
-    obj.EndCopeTargetMember = None
-    obj.EndCope2TargetMember = None
+def clear_end_cope(obj):
+    ensure_notch_properties(obj)
+    for p in ("EndCope","EndCope2","EndCope3"):
+        setattr(obj,p+"Enabled",False)
+        setattr(obj,p+"ThroughStart",zero_vector())
+        setattr(obj,p+"ThroughEnd",zero_vector())
+        setattr(obj,p+"ThroughDiameter",0.0)
+        setattr(obj,p+"TargetMember",None)
+
+
 
 
 def clear_notch(
@@ -792,109 +796,38 @@ def configure_end_cope_secondary(
     obj.EndCope2Enabled = True
 
 
-def sync_cope_axes_from_target_members(
-    obj,
-):
-    """
-    Refresh enabled cope cutter axes from linked target members.
+def configure_start_cope_tertiary(obj, through_start, through_end, through_outside_diameter):
+    ensure_notch_properties(obj)
+    diameter=validate_cope_diameter(through_outside_diameter)
+    obj.StartCope3ThroughStart=FreeCAD.Vector(through_start.x,through_start.y,through_start.z)
+    obj.StartCope3ThroughEnd=FreeCAD.Vector(through_end.x,through_end.y,through_end.z)
+    obj.StartCope3ThroughDiameter=diameter
+    obj.StartCope3Enabled=True
 
-    Each cope slot may retain an App::PropertyLink to the rendered
-    member whose current centerline defines the cylindrical cutter
-    axis. This keeps saved cope geometry parametric when the target
-    member moves.
-    """
+def configure_end_cope_tertiary(obj, through_start, through_end, through_outside_diameter):
+    ensure_notch_properties(obj)
+    diameter=validate_cope_diameter(through_outside_diameter)
+    obj.EndCope3ThroughStart=FreeCAD.Vector(through_start.x,through_start.y,through_start.z)
+    obj.EndCope3ThroughEnd=FreeCAD.Vector(through_end.x,through_end.y,through_end.z)
+    obj.EndCope3ThroughDiameter=diameter
+    obj.EndCope3Enabled=True
 
-    ensure_notch_properties(
-        obj
-    )
-
-    cope_slots = (
-        (
-            "StartCopeEnabled",
-            "StartCopeTargetMember",
-            "StartCopeThroughStart",
-            "StartCopeThroughEnd",
-        ),
-        (
-            "EndCopeEnabled",
-            "EndCopeTargetMember",
-            "EndCopeThroughStart",
-            "EndCopeThroughEnd",
-        ),
-        (
-            "StartCope2Enabled",
-            "StartCope2TargetMember",
-            "StartCope2ThroughStart",
-            "StartCope2ThroughEnd",
-        ),
-        (
-            "EndCope2Enabled",
-            "EndCope2TargetMember",
-            "EndCope2ThroughStart",
-            "EndCope2ThroughEnd",
-        ),
-    )
-
-    refreshed = 0
-
-    for (
-        enabled_property,
-        target_property,
-        through_start_property,
-        through_end_property,
-    ) in cope_slots:
-        if not bool(
-            getattr(
-                obj,
-                enabled_property,
-            )
-        ):
+def sync_cope_axes_from_target_members(obj):
+    ensure_notch_properties(obj)
+    refreshed=0
+    for p in ("StartCope","EndCope","StartCope2","EndCope2","StartCope3","EndCope3"):
+        if not bool(getattr(obj,p+"Enabled",False)):
             continue
-
-        target_member = getattr(
-            obj,
-            target_property,
-            None,
-        )
-
-        if target_member is None:
+        target=getattr(obj,p+"TargetMember",None)
+        if target is None or not hasattr(target,"StartPoint") or not hasattr(target,"EndPoint"):
             continue
-
-        if not hasattr(
-            target_member,
-            "StartPoint",
-        ) or not hasattr(
-            target_member,
-            "EndPoint",
-        ):
-            continue
-
-        target_start = target_member.StartPoint
-        target_end = target_member.EndPoint
-
-        setattr(
-            obj,
-            through_start_property,
-            FreeCAD.Vector(
-                target_start.x,
-                target_start.y,
-                target_start.z,
-            ),
-        )
-
-        setattr(
-            obj,
-            through_end_property,
-            FreeCAD.Vector(
-                target_end.x,
-                target_end.y,
-                target_end.z,
-            ),
-        )
-
-        refreshed += 1
-
+        a=target.StartPoint; b=target.EndPoint
+        setattr(obj,p+"ThroughStart",FreeCAD.Vector(a.x,a.y,a.z))
+        setattr(obj,p+"ThroughEnd",FreeCAD.Vector(b.x,b.y,b.z))
+        refreshed+=1
     return refreshed
+
+
 
 
 def configure_notch(
@@ -1119,117 +1052,31 @@ def vector_between(
     )
 
 
-def extended_for_dual_copes(
-    physical_start,
-    physical_end,
-    profile,
-    obj,
-):
-    """
-    Add temporary Boolean stock at each coped end.
-
-    These are not physical ForgeCAD extensions. They exist only
-    while building the Boolean result and are consumed/discarded
-    by the cope cuts.
-    """
-
-    direction = vector_between(
-        physical_start,
-        physical_end,
-    )
-
-    length = direction.Length
-
+def extended_for_dual_copes(physical_start, physical_end, profile, obj):
+    direction=vector_between(physical_start,physical_end)
+    length=direction.Length
     if length <= 0:
-        raise ValueError(
-            "Cannot cope a zero-length member."
-        )
-
-    unit = FreeCAD.Vector(
-        direction.x / length,
-        direction.y / length,
-        direction.z / length,
-    )
-
-    start_extra = 0.0
-    end_extra = 0.0
-
-    if bool(
-        obj.StartCopeEnabled
-    ):
-        start_extra = temporary_cope_extension(
-            physical_start,
-            physical_end,
-            profile,
-            obj.StartCopeThroughStart,
-            obj.StartCopeThroughEnd,
-            float(
-                obj.StartCopeThroughDiameter
-            ),
-        )
-
-    if bool(obj.StartCope2Enabled):
-        start_extra = max(
-            start_extra,
-            temporary_cope_extension(
-                physical_start,
-                physical_end,
-                profile,
-                obj.StartCope2ThroughStart,
-                obj.StartCope2ThroughEnd,
-                float(obj.StartCope2ThroughDiameter),
-            ),
-        )
-
-    if bool(
-        obj.EndCopeEnabled
-    ):
-        end_extra = temporary_cope_extension(
-            physical_start,
-            physical_end,
-            profile,
-            obj.EndCopeThroughStart,
-            obj.EndCopeThroughEnd,
-            float(
-                obj.EndCopeThroughDiameter
-            ),
-        )
-
-    if bool(obj.EndCope2Enabled):
-        end_extra = max(
-            end_extra,
-            temporary_cope_extension(
-                physical_start,
-                physical_end,
-                profile,
-                obj.EndCope2ThroughStart,
-                obj.EndCope2ThroughEnd,
-                float(obj.EndCope2ThroughDiameter),
-            ),
-        )
-
-    temporary_start = FreeCAD.Vector(
-        physical_start.x
-        - unit.x * start_extra,
-        physical_start.y
-        - unit.y * start_extra,
-        physical_start.z
-        - unit.z * start_extra,
-    )
-
-    temporary_end = FreeCAD.Vector(
-        physical_end.x
-        + unit.x * end_extra,
-        physical_end.y
-        + unit.y * end_extra,
-        physical_end.z
-        + unit.z * end_extra,
-    )
-
+        raise ValueError("Cannot cope a zero-length member.")
+    unit=FreeCAD.Vector(direction.x/length,direction.y/length,direction.z/length)
+    start_extra=0.0; end_extra=0.0
+    for p in ("StartCope","StartCope2","StartCope3"):
+        if bool(getattr(obj,p+"Enabled",False)):
+            start_extra=max(start_extra,temporary_cope_extension(
+                physical_start,physical_end,profile,
+                getattr(obj,p+"ThroughStart"),getattr(obj,p+"ThroughEnd"),
+                float(getattr(obj,p+"ThroughDiameter"))))
+    for p in ("EndCope","EndCope2","EndCope3"):
+        if bool(getattr(obj,p+"Enabled",False)):
+            end_extra=max(end_extra,temporary_cope_extension(
+                physical_start,physical_end,profile,
+                getattr(obj,p+"ThroughStart"),getattr(obj,p+"ThroughEnd"),
+                float(getattr(obj,p+"ThroughDiameter"))))
     return (
-        temporary_start,
-        temporary_end,
+        FreeCAD.Vector(physical_start.x-unit.x*start_extra,physical_start.y-unit.y*start_extra,physical_start.z-unit.z*start_extra),
+        FreeCAD.Vector(physical_end.x+unit.x*end_extra,physical_end.y+unit.y*end_extra,physical_end.z+unit.z*end_extra),
     )
+
+
 
 
 def apply_cope_to_existing_shape(
@@ -1260,6 +1107,59 @@ def apply_cope_to_existing_shape(
         keep_point,
     )
 
+
+def bounded_cope_target_axis(
+    target_member,
+    fallback_start,
+    fallback_end,
+):
+    """Return the finite physical axis of a secondary cope target.
+
+    Primary fishmouth cutters intentionally extend beyond the target axis so a
+    complete saddle can form. A secondary branch-to-branch cope at a compound
+    corner must not extend the target through the joint: doing so mirrors the
+    inside relief onto the outside of the corner.
+    """
+    if (
+        target_member is not None
+        and hasattr(target_member, "StartPoint")
+        and hasattr(target_member, "EndPoint")
+    ):
+        try:
+            return physical_member_endpoints(target_member)
+        except Exception:
+            pass
+
+    return (fallback_start, fallback_end)
+
+
+def apply_bounded_cope_to_existing_shape(
+    shape,
+    through_start,
+    through_end,
+    through_outside_diameter,
+    keep_point,
+):
+    """Subtract only the finite physical target cylinder from a tube shape."""
+    diameter = validate_cope_diameter(
+        through_outside_diameter
+    )
+
+    cutter = build_through_tube_cutting_tool(
+        through_start,
+        through_end,
+        diameter,
+        extension=0.0,
+    )
+
+    cut_shape = shape.cut(
+        cutter
+    )
+
+    return primary_cope_component(
+        cut_shape,
+        keep_point,
+    )
 
 def build_member_shape(
     obj,
@@ -1308,6 +1208,12 @@ def build_member_shape(
         or bool(
             obj.EndCope2Enabled
         )
+        or bool(
+            obj.StartCope3Enabled
+        )
+        or bool(
+            obj.EndCope3Enabled
+        )
     )
 
     if has_end_specific_cope:
@@ -1338,11 +1244,29 @@ def build_member_shape(
             )
 
         if bool(obj.StartCope2Enabled):
-            shape = apply_cope_to_existing_shape(
-                shape,
+            secondary_start, secondary_end = bounded_cope_target_axis(
+                getattr(obj, "StartCope2TargetMember", None),
                 obj.StartCope2ThroughStart,
                 obj.StartCope2ThroughEnd,
+            )
+            shape = apply_bounded_cope_to_existing_shape(
+                shape,
+                secondary_start,
+                secondary_end,
                 obj.StartCope2ThroughDiameter,
+                physical_end,
+            )
+        if bool(obj.StartCope3Enabled):
+            tertiary_start, tertiary_end = bounded_cope_target_axis(
+                getattr(obj, "StartCope3TargetMember", None),
+                obj.StartCope3ThroughStart,
+                obj.StartCope3ThroughEnd,
+            )
+            shape = apply_bounded_cope_to_existing_shape(
+                shape,
+                tertiary_start,
+                tertiary_end,
+                obj.StartCope3ThroughDiameter,
                 physical_end,
             )
 
@@ -1358,11 +1282,29 @@ def build_member_shape(
             )
 
         if bool(obj.EndCope2Enabled):
-            shape = apply_cope_to_existing_shape(
-                shape,
+            secondary_start, secondary_end = bounded_cope_target_axis(
+                getattr(obj, "EndCope2TargetMember", None),
                 obj.EndCope2ThroughStart,
                 obj.EndCope2ThroughEnd,
+            )
+            shape = apply_bounded_cope_to_existing_shape(
+                shape,
+                secondary_start,
+                secondary_end,
                 obj.EndCope2ThroughDiameter,
+                physical_start,
+            )
+        if bool(obj.EndCope3Enabled):
+            tertiary_start, tertiary_end = bounded_cope_target_axis(
+                getattr(obj, "EndCope3TargetMember", None),
+                obj.EndCope3ThroughStart,
+                obj.EndCope3ThroughEnd,
+            )
+            shape = apply_bounded_cope_to_existing_shape(
+                shape,
+                tertiary_start,
+                tertiary_end,
+                obj.EndCope3ThroughDiameter,
                 physical_start,
             )
 

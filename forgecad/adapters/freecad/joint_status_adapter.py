@@ -8,11 +8,16 @@ from forgecad.fabrication import (
 from forgecad.services import (
     detect_joints,
 )
+from forgecad.services.joint_decision import (
+    decision_for_joint,
+)
 from forgecad.services.joint_review_summary import (
     JointReviewSummary,
     summarize_joint_statuses,
 )
 from forgecad.services.joint_status import (
+    AUTOMATIC_STATUS,
+    NEEDS_DECISION_STATUS,
     JointStatus,
     joint_status_from_saved_treatment,
 )
@@ -90,11 +95,31 @@ def frame_from_document(
     )
 
 
+def status_for_unreviewed_joint(
+    joint,
+) -> JointStatus:
+    """
+    Return builder-facing status for a joint without a saved treatment.
+
+    ForgeCAD handles obvious joints automatically. Ambiguous joints are
+    surfaced as needing a simple builder decision rather than guessed.
+    """
+
+    decision = decision_for_joint(
+        joint
+    )
+
+    if decision.needs_decision:
+        return NEEDS_DECISION_STATUS
+
+    return AUTOMATIC_STATUS
+
+
 def joint_status_for_document_joint(
     document,
     joint,
 ) -> DocumentJointStatus:
-    """Return persistent review status for one detected joint."""
+    """Return persistent or automatic review status for one detected joint."""
 
     key = node_key(
         joint.node
@@ -107,11 +132,16 @@ def joint_status_for_document_joint(
         )
     )
 
-    status = (
-        joint_status_from_saved_treatment(
-            saved_treatment
+    if saved_treatment is None:
+        status = status_for_unreviewed_joint(
+            joint
         )
-    )
+    else:
+        status = (
+            joint_status_from_saved_treatment(
+                saved_treatment
+            )
+        )
 
     return DocumentJointStatus(
         joint=joint,

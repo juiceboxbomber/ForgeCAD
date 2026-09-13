@@ -1,6 +1,28 @@
 """Regression tests for topology-aware Joint Inspector treatment options."""
 
+import sys
+import types
 from types import SimpleNamespace
+
+
+sys.modules[
+    "FreeCAD"
+] = types.ModuleType(
+    "FreeCAD"
+)
+
+sys.modules[
+    "FreeCADGui"
+] = types.ModuleType(
+    "FreeCADGui"
+)
+
+sys.modules[
+    "Part"
+] = types.ModuleType(
+    "Part"
+)
+
 
 from forgecad.adapters.freecad.joint_treatment_options import (
     treatment_options_for_members,
@@ -55,7 +77,7 @@ def test_three_member_branch_joint_only_offers_natural_through_member():
     ]
 
 
-def test_ambiguous_three_member_joint_keeps_complete_fallback_options():
+def test_ambiguous_three_member_joint_excludes_invalid_through_pairs():
     first = member(
         "M001",
         "layout-1",
@@ -84,7 +106,4 @@ def test_ambiguous_three_member_joint_keeps_complete_fallback_options():
         "M001 Through",
         "M002 Through",
         "M003 Through",
-        "M001 + M002 Through Pair",
-        "M001 + M003 Through Pair",
-        "M002 + M003 Through Pair",
     ]

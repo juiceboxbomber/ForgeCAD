@@ -252,6 +252,64 @@ def create_layout_line_object(
     return obj
 
 
+def begin_draw_layout_line_transaction(
+    document,
+):
+    """Open one Undo transaction for creating a layout line."""
+
+    if (
+        document is None
+        or not hasattr(
+            document,
+            "openTransaction",
+        )
+    ):
+        return False
+
+    document.openTransaction(
+        "Draw ForgeCAD Layout Line"
+    )
+
+    return True
+
+
+def finish_draw_layout_line_transaction(
+    document,
+    transaction_started,
+):
+    """Commit a layout-line creation transaction."""
+
+    if (
+        transaction_started
+        and hasattr(
+            document,
+            "commitTransaction",
+        )
+    ):
+        document.commitTransaction()
+
+
+def abort_draw_layout_line_transaction(
+    document,
+    transaction_started,
+):
+    """Abort a failed layout-line creation transaction."""
+
+    if (
+        not transaction_started
+        or not hasattr(
+            document,
+            "abortTransaction",
+        )
+    ):
+        return
+
+    try:
+        document.abortTransaction()
+    except Exception:
+        pass
+
+
 class DrawLayoutLineCommand:
     """Create a layout line from entered coordinates."""
 
@@ -300,22 +358,56 @@ class DrawLayoutLineCommand:
                 )
             )
 
-        groups = (
-            initialize_project_tree(
-                document
-            )
-        )
+        transaction_started = False
 
-        layout_object = (
-            create_layout_line_object(
+        try:
+            transaction_started = (
+                begin_draw_layout_line_transaction(
+                    document
+                )
+            )
+
+            groups = (
+                initialize_project_tree(
+                    document
+                )
+            )
+
+            layout_object = (
+                create_layout_line_object(
+                    document,
+                    layout_line,
+                )
+            )
+
+            groups["Layout"].addObject(
+                layout_object
+            )
+
+            document.recompute()
+
+            finish_draw_layout_line_transaction(
                 document,
-                layout_line,
+                transaction_started,
             )
-        )
 
-        groups["Layout"].addObject(
-            layout_object
-        )
+        except (
+            ValueError,
+            RuntimeError,
+            KeyError,
+            AttributeError,
+        ) as error:
+            abort_draw_layout_line_transaction(
+                document,
+                transaction_started,
+            )
+
+            QtGui.QMessageBox.warning(
+                FreeCADGui.getMainWindow(),
+                "Layout Line Creation Failed",
+                str(error),
+            )
+            return
 
         FreeCADGui.activeDocument().activeView().fitAll()
 

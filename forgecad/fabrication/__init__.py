@@ -5,6 +5,10 @@ from .bender_library import BenderLibrary
 from .bender_tooling import BendMarkReference, BenderTooling
 from .frame import Frame
 from .joint import Joint
+from .joint_constraint import (
+    CollinearThroughConstraint,
+    JointConstraintKind,
+)
 from .material import Material
 from .member import Member
 from .node import Node
@@ -21,8 +25,10 @@ __all__ = [
     "BenderLibrary",
     "BenderTooling",
     "BentTube",
+    "CollinearThroughConstraint",
     "Frame",
     "Joint",
+    "JointConstraintKind",
     "Material",
     "Member",
     "Node",

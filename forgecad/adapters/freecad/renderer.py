@@ -29,9 +29,14 @@ from forgecad.services.joint_miter import (
 from forgecad.services.notch_analysis import (
     BRANCH_END_END,
     BRANCH_END_START,
+    build_cope_specification,
     cope_specifications_for_treatment,
 )
+from forgecad.services.joint_treatment_resolver import (
+    CopeInstruction,
+)
 from forgecad.adapters.freecad.joint_treatment_store import (
+    load_joint_cope_pairs,
     load_joint_treatment,
     node_key,
 )
@@ -45,10 +50,12 @@ from forgecad.adapters.freecad.member_notch import (
     clear_notch,
     configure_end_cope,
     configure_end_cope_secondary,
+    configure_end_cope_tertiary,
     configure_end_extension,
     configure_end_miter,
     configure_start_cope,
     configure_start_cope_secondary,
+    configure_start_cope_tertiary,
     configure_start_extension,
     configure_start_miter,
 )
@@ -383,6 +390,51 @@ def saved_treatment_for_joint(
         == JointTreatmentMode.BOTH_COPED
     ):
         if (
+            len(
+                through_layout_ids
+            )
+            == 2
+        ):
+            first_member = (
+                member_for_layout_id(
+                    joint,
+                    through_layout_ids[
+                        0
+                    ],
+                    layout_ids_by_member,
+                )
+            )
+
+            second_member = (
+                member_for_layout_id(
+                    joint,
+                    through_layout_ids[
+                        1
+                    ],
+                    layout_ids_by_member,
+                )
+            )
+
+            if (
+                first_member is None
+                or second_member is None
+                or first_member
+                is second_member
+            ):
+                return automatic
+
+            return JointTreatment.both_coped(
+                joint,
+                first_member,
+                second_member,
+            )
+
+        if through_layout_ids:
+            return automatic
+
+        # Legacy Both Mitered records did not persist member IDs. They remain
+        # unambiguous only while the joint still contains exactly two members.
+        if (
             joint.member_count
             != 2
         ):
@@ -503,29 +555,118 @@ def treatments_for_frame(
     )
 
 
-def cope_specifications_for_frame(
+
+def explicit_cope_specifications_for_joint(
     document,
-    frame,
-    source_layout_ids=None,
+    joint,
+    layout_ids_by_member,
 ):
-    """Return all cylindrical cope specifications for a frame."""
+    """Return valid persisted additive cope specifications for one joint."""
 
     specifications = []
 
-    for treatment in treatments_for_frame(
+    for (
+        coped_layout_id,
+        target_layout_id,
+    ) in load_joint_cope_pairs(
         document,
-        frame,
-        source_layout_ids=source_layout_ids,
+        node_key(
+            joint.node
+        ),
     ):
-        specifications.extend(
-            cope_specifications_for_treatment(
-                treatment
+        coped_member = (
+            member_for_layout_id(
+                joint,
+                coped_layout_id,
+                layout_ids_by_member,
             )
+        )
+
+        target_member = (
+            member_for_layout_id(
+                joint,
+                target_layout_id,
+                layout_ids_by_member,
+            )
+        )
+
+        if (
+            coped_member is None
+            or target_member is None
+            or coped_member
+            is target_member
+        ):
+            continue
+
+        try:
+            specification = (
+                build_cope_specification(
+                    CopeInstruction(
+                        joint=joint,
+                        coped_member=(
+                            coped_member
+                        ),
+                        target_member=(
+                            target_member
+                        ),
+                    )
+                )
+            )
+        except ValueError:
+            continue
+
+        specifications.append(
+            specification
         )
 
     return tuple(
         specifications
     )
+
+
+
+def cope_specifications_for_frame(
+    document,
+    frame,
+    source_layout_ids=None,
+):
+    """Return primary/automatic copes plus direct selection-first overrides."""
+    from forgecad.services.cope_override import merge_direct_cope_specifications
+
+    layout_ids_by_member = member_layout_id_map(
+        frame,
+        source_layout_ids,
+    )
+    specifications = []
+
+    for joint in detect_joints(frame):
+        treatment = saved_treatment_for_joint(
+            document,
+            joint,
+            layout_ids_by_member,
+        )
+        primary = cope_specifications_for_treatment(treatment)
+        direct_copes = explicit_cope_specifications_for_joint(
+            document,
+            joint,
+            layout_ids_by_member,
+        )
+        through_copes = explicit_through_cope_specifications_for_joint(
+            document,
+            joint,
+            layout_ids_by_member,
+        )
+        specifications.extend(
+            merge_direct_cope_specifications(
+                primary,
+                tuple(direct_copes) + tuple(through_copes),
+            )
+        )
+
+    return tuple(specifications)
+
+
+
 
 
 def extension_specifications_for_frame(
@@ -533,8 +674,7 @@ def extension_specifications_for_frame(
     frame,
     source_layout_ids=None,
 ):
-    """Return all physical member extensions required by treatments."""
-
+    """Return primary extensions plus selection-first Through extensions."""
     specifications = []
 
     for treatment in treatments_for_frame(
@@ -543,14 +683,24 @@ def extension_specifications_for_frame(
         source_layout_ids=source_layout_ids,
     ):
         specifications.extend(
-            extension_specifications_for_treatment(
-                treatment
+            extension_specifications_for_treatment(treatment)
+        )
+
+    layout_ids_by_member = member_layout_id_map(
+        frame,
+        source_layout_ids,
+    )
+    for joint in detect_joints(frame):
+        specifications.extend(
+            explicit_through_extension_specifications_for_joint(
+                document,
+                joint,
+                layout_ids_by_member,
             )
         )
 
-    return tuple(
-        specifications
-    )
+    return tuple(specifications)
+
 
 
 def miter_specifications_for_frame(
@@ -605,168 +755,53 @@ def automatic_cope_specifications(
     )
 
 
-def configure_cope_specifications(
-    frame,
-    rendered_objects,
-    specifications,
-    clear_existing=True,
-):
-    """
-    Apply cylindrical cope specifications by member end.
-
-    A member may have up to two sequential cylindrical copes at
-    its start and up to two at its end. The first specification
-    uses the primary cope slot and the second uses the secondary
-    cope slot.
-    """
-
-    if (
-        len(rendered_objects)
-        != len(frame.members)
-    ):
-        raise ValueError(
-            "Rendered member count does not match "
-            "the domain frame."
-        )
-
-    object_by_member_identity = {
-        id(member): obj
-        for member, obj in zip(
-            frame.members,
-            rendered_objects,
-        )
-    }
-
+def configure_cope_specifications(frame, rendered_objects, specifications, clear_existing=True):
+    if len(rendered_objects) != len(frame.members):
+        raise ValueError("Rendered member count does not match the domain frame.")
+    by_member={id(m):o for m,o in zip(frame.members,rendered_objects)}
     if clear_existing:
         for obj in rendered_objects:
-            clear_notch(
-                obj
-            )
-
-    configured_member_end_counts = {}
-
+            clear_notch(obj)
+    counts={}
     for specification in specifications:
-        coped_key = id(
-            specification.coped_member
-        )
-
-        coped_object = (
-            object_by_member_identity.get(
-                coped_key
-            )
-        )
-
-        if coped_object is None:
+        key=id(specification.coped_member)
+        obj=by_member.get(key)
+        if obj is None:
             continue
-
-        target_object = (
-            object_by_member_identity.get(
-                id(
-                    specification.target_member
-                )
-            )
-        )
-
-        coped_end = (
-            specification.coped_end
-        )
-
-        configuration_key = (
-            coped_key,
-            coped_end,
-        )
-
-        cope_index = (
-            configured_member_end_counts.get(
-                configuration_key,
-                0,
-            )
-        )
-
-        if cope_index >= 2:
-            raise ValueError(
-                "Cope generation received more than "
-                "two treatments for the same member end."
-            )
-
-        target_start, target_end = (
-            target_axis_for_cope_specification(
-                specification
-            )
-        )
-
-        if (
-            coped_end
-            == BRANCH_END_START
-        ):
-            if cope_index == 0:
-                configure_start_cope(
-                    coped_object,
-                    target_start,
-                    target_end,
-                    specification.target_outside_diameter,
-                )
-
-                if target_object is not None:
-                    coped_object.StartCopeTargetMember = (
-                        target_object
-                    )
-
+        target_obj=by_member.get(id(specification.target_member))
+        end=specification.coped_end
+        ckey=(key,end)
+        idx=counts.get(ckey,0)
+        if idx >= 3:
+            raise ValueError("Cope generation received more than three treatments for the same member end.")
+        a,b=target_axis_for_cope_specification(specification)
+        d=specification.target_outside_diameter
+        if end == BRANCH_END_START:
+            if idx==0:
+                configure_start_cope(obj,a,b,d)
+                if target_obj is not None: obj.StartCopeTargetMember=target_obj
+            elif idx==1:
+                configure_start_cope_secondary(obj,a,b,d)
+                if target_obj is not None: obj.StartCope2TargetMember=target_obj
             else:
-                configure_start_cope_secondary(
-                    coped_object,
-                    target_start,
-                    target_end,
-                    specification.target_outside_diameter,
-                )
-
-                if target_object is not None:
-                    coped_object.StartCope2TargetMember = (
-                        target_object
-                    )
-
-        elif (
-            coped_end
-            == BRANCH_END_END
-        ):
-            if cope_index == 0:
-                configure_end_cope(
-                    coped_object,
-                    target_start,
-                    target_end,
-                    specification.target_outside_diameter,
-                )
-
-                if target_object is not None:
-                    coped_object.EndCopeTargetMember = (
-                        target_object
-                    )
-
+                configure_start_cope_tertiary(obj,a,b,d)
+                if target_obj is not None: obj.StartCope3TargetMember=target_obj
+        elif end == BRANCH_END_END:
+            if idx==0:
+                configure_end_cope(obj,a,b,d)
+                if target_obj is not None: obj.EndCopeTargetMember=target_obj
+            elif idx==1:
+                configure_end_cope_secondary(obj,a,b,d)
+                if target_obj is not None: obj.EndCope2TargetMember=target_obj
             else:
-                configure_end_cope_secondary(
-                    coped_object,
-                    target_start,
-                    target_end,
-                    specification.target_outside_diameter,
-                )
-
-                if target_object is not None:
-                    coped_object.EndCope2TargetMember = (
-                        target_object
-                    )
-
+                configure_end_cope_tertiary(obj,a,b,d)
+                if target_obj is not None: obj.EndCope3TargetMember=target_obj
         else:
-            raise ValueError(
-                "Unknown cope member end."
-            )
-
-        configured_member_end_counts[
-            configuration_key
-        ] = (
-            cope_index + 1
-        )
-
+            raise ValueError("Unknown cope member end.")
+        counts[ckey]=idx+1
     return rendered_objects
+
+
 
 
 def configure_extension_specifications(
@@ -1315,3 +1350,167 @@ class FrameRenderer:
         document.recompute()
 
         return rendered_objects
+
+def explicit_through_cope_specifications_for_joint(
+    document,
+    joint,
+    layout_ids_by_member,
+):
+    """Return cope cuts belonging specifically to Through Selected.
+
+    Saved branch->through relationships that share one through member are
+    resolved as one member-through joint. This preserves the established
+    compound-corner rule: with exactly two branches, the second branch also
+    receives a secondary cope against the first branch.
+    """
+    from forgecad.adapters.freecad.joint_treatment_store import (
+        load_joint_through_pairs,
+    )
+    from forgecad.fabrication import Joint
+    from forgecad.services.joint_treatment_resolver import (
+        member_through_cope_instructions,
+    )
+    from forgecad.services.notch_analysis import (
+        build_cope_specification,
+    )
+
+    grouped = {}
+
+    for (
+        branch_layout_id,
+        through_layout_id,
+    ) in load_joint_through_pairs(
+        document,
+        node_key(joint.node),
+    ):
+        branch_member = member_for_layout_id(
+            joint,
+            branch_layout_id,
+            layout_ids_by_member,
+        )
+        through_member = member_for_layout_id(
+            joint,
+            through_layout_id,
+            layout_ids_by_member,
+        )
+
+        if (
+            branch_member is None
+            or through_member is None
+            or branch_member is through_member
+        ):
+            continue
+
+        group = grouped.setdefault(
+            through_layout_id,
+            [
+                through_member,
+                [],
+            ],
+        )
+
+        if branch_member not in group[1]:
+            group[1].append(
+                branch_member
+            )
+
+    specifications = []
+
+    for (
+        through_member,
+        branch_members,
+    ) in grouped.values():
+        selected_joint = Joint(
+            node=joint.node,
+            members=(
+                [through_member]
+                + list(branch_members)
+            ),
+        )
+
+        instructions = (
+            member_through_cope_instructions(
+                selected_joint,
+                through_member,
+                branch_members,
+            )
+        )
+
+        for instruction in instructions:
+            try:
+                specification = (
+                    build_cope_specification(
+                        instruction
+                    )
+                )
+            except ValueError:
+                continue
+
+            specifications.append(
+                specification
+            )
+
+    return tuple(
+        specifications
+    )
+
+
+
+def explicit_through_extension_specifications_for_joint(
+    document,
+    joint,
+    layout_ids_by_member,
+):
+    """Return the physical extension required by Through Selected.
+
+    Endpoint through tubes extend to the far outside wall of selected branch
+    tube(s). A through tube that already crosses the joint in its interior
+    requires no extension.
+    """
+    from forgecad.adapters.freecad.joint_treatment_store import load_joint_through_pairs
+    from forgecad.fabrication import Joint
+    from forgecad.fabrication.joint_treatment import JointTreatment
+    from forgecad.services.joint_extension import member_through_extensions
+
+    grouped = {}
+    for branch_layout_id, through_layout_id in load_joint_through_pairs(
+        document,
+        node_key(joint.node),
+    ):
+        branch_member = member_for_layout_id(
+            joint,
+            branch_layout_id,
+            layout_ids_by_member,
+        )
+        through_member = member_for_layout_id(
+            joint,
+            through_layout_id,
+            layout_ids_by_member,
+        )
+        if (
+            branch_member is None
+            or through_member is None
+            or branch_member is through_member
+        ):
+            continue
+        group = grouped.setdefault(
+            through_layout_id,
+            [through_member, []],
+        )
+        if branch_member not in group[1]:
+            group[1].append(branch_member)
+
+    specifications = []
+    for through_member, branch_members in grouped.values():
+        selected_joint = Joint(
+            node=joint.node,
+            members=[through_member] + branch_members,
+        )
+        treatment = JointTreatment.member_through(
+            selected_joint,
+            through_member,
+        )
+        specifications.extend(
+            member_through_extensions(treatment)
+        )
+    return tuple(specifications)

@@ -1,4 +1,10 @@
-"""Post-Undo/Redo refresh support for parametric ForgeCAD objects."""
+"""Undo/Redo observer for ForgeCAD FreeCAD documents.
+
+FreeCAD transactions own model restoration. The observer deliberately does
+not touch, recompute, create, delete, or rebuild document objects after an
+Undo or Redo because any post-transaction document mutation can invalidate
+FreeCAD's Redo stack.
+"""
 
 import FreeCAD
 
@@ -42,97 +48,47 @@ def refresh_parametric_members(
     document,
 ):
     """
-    Touch node-linked straight members and run one normal recompute.
+    Compatibility no-op for the former post-Undo/Redo member refresh.
 
-    Shape is never rebuilt directly here. TubeMemberProxy.execute() owns
-    synchronization from StartNode/EndNode and rebuilding of member Shape.
+    FreeCAD transactions restore member state. Touching or recomputing here
+    would create a new document modification after Undo and can clear Redo.
     """
 
-    if document is None:
-        return ()
-
-    touched = []
-
-    for obj in getattr(
-        document,
-        "Objects",
-        (),
-    ):
-        if not is_parametric_tube_member(
-            obj
-        ):
-            continue
-
-        try:
-            obj.touch()
-        except Exception:
-            continue
-
-        touched.append(
-            obj
-        )
-
-    if touched:
-        try:
-            document.recompute()
-        except Exception:
-            pass
-
-    return tuple(
-        touched
-    )
+    return ()
 
 
 def rebuild_disposable_joint_markers(
     document,
 ):
     """
-    Rebuild ForgeCAD joint-status marker objects from current frame state.
+    Compatibility no-op for the former post-Undo/Redo marker rebuild.
 
-    Joint markers are disposable Part::Feature objects. They are rebuilt
-    only after member geometry has finished its normal post-Undo/Redo
-    recompute.
+    Joint marker changes must be included in the user transaction that
+    created or modified the topology. Rebuilding document objects after
+    Undo/Redo can invalidate FreeCAD's Redo history.
     """
 
-    if document is None:
-        return ()
-
-    try:
-        from forgecad.adapters.freecad.joint_status_objects import (
-            rebuild_joint_status_objects,
-        )
-
-        return rebuild_joint_status_objects(
-            document
-        )
-
-    except Exception:
-        return ()
+    return ()
 
 
 def refresh_after_undo_redo(
     document,
 ):
     """
-    Restore parametric members first, then rebuild disposable joint markers.
+    Perform no document mutation after FreeCAD Undo or Redo.
+
+    The return shape is retained for compatibility with existing callers
+    and tests while transaction-owned restoration remains authoritative.
     """
 
-    touched = refresh_parametric_members(
-        document
-    )
-
-    markers = rebuild_disposable_joint_markers(
-        document
-    )
-
     return (
-        touched,
-        markers,
+        (),
+        (),
     )
 
 
 class ForgeCADUndoRedoObserver:
-    """Refresh ForgeCAD dependencies after FreeCAD Undo or Redo."""
+    """Observe Undo/Redo without modifying the document history."""
 
     def __init__(
         self,

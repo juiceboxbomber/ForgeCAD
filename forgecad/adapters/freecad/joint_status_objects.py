@@ -241,6 +241,13 @@ def configure_joint_marker(
 
     try:
         obj.ViewObject.Visibility = True
+        obj.ViewObject.Transparency = 75
+
+        # Joint spheres are status/display markers, not editable geometry.
+        # Keep them visible but do not let them intercept 3D picks intended
+        # for the real ForgeCAD node occupying the same location.
+        obj.ViewObject.Selectable = False
+
     except Exception:
         pass
 

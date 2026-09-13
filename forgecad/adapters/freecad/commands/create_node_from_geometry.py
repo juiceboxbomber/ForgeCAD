@@ -107,6 +107,64 @@ def create_node_from_point(
     return node_object, True
 
 
+def begin_create_node_transaction(
+    document,
+):
+    """Open one Undo transaction for creating a node from geometry."""
+
+    if (
+        document is None
+        or not hasattr(
+            document,
+            "openTransaction",
+        )
+    ):
+        return False
+
+    document.openTransaction(
+        "Create ForgeCAD Node"
+    )
+
+    return True
+
+
+def finish_create_node_transaction(
+    document,
+    transaction_started,
+):
+    """Commit a node-creation Undo transaction."""
+
+    if (
+        transaction_started
+        and hasattr(
+            document,
+            "commitTransaction",
+        )
+    ):
+        document.commitTransaction()
+
+
+def abort_create_node_transaction(
+    document,
+    transaction_started,
+):
+    """Abort a failed node-creation Undo transaction."""
+
+    if (
+        not transaction_started
+        or not hasattr(
+            document,
+            "abortTransaction",
+        )
+    ):
+        return
+
+    try:
+        document.abortTransaction()
+    except Exception:
+        pass
+
+
 class CreateNodeFromGeometryCommand:
     """Create a ForgeCAD node from one selected FreeCAD vertex."""
 
@@ -162,21 +220,58 @@ class CreateNodeFromGeometryCommand:
             )
             return
 
-        try:
-            node_object, created = (
-                create_node_from_point(
-                    document,
-                    points[0],
-                )
-            )
+        point = points[
+            0
+        ]
 
-        except ValueError as error:
-            QtGui.QMessageBox.warning(
-                FreeCADGui.getMainWindow(),
-                "Node Creation Failed",
-                str(error),
-            )
-            return
+        existing = existing_node_at_point(
+            document,
+            point,
+        )
+
+        if existing is not None:
+            node_object = existing
+            created = False
+
+        else:
+            transaction_started = False
+
+            try:
+                transaction_started = (
+                    begin_create_node_transaction(
+                        document
+                    )
+                )
+
+                node_object, created = (
+                    create_node_from_point(
+                        document,
+                        point,
+                    )
+                )
+
+                finish_create_node_transaction(
+                    document,
+                    transaction_started,
+                )
+
+            except (
+                ValueError,
+                RuntimeError,
+                KeyError,
+                AttributeError,
+            ) as error:
+                abort_create_node_transaction(
+                    document,
+                    transaction_started,
+                )
+
+                QtGui.QMessageBox.warning(
+                    FreeCADGui.getMainWindow(),
+                    "Node Creation Failed",
+                    str(error),
+                )
+                return
 
         FreeCADGui.Selection.clearSelection()
 
@@ -210,4 +305,3 @@ def register_command() -> None:
         COMMAND_NAME,
         CreateNodeFromGeometryCommand(),
     )
-    

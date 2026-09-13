@@ -444,24 +444,82 @@ class CreateOffsetNodeCommand:
         ):
             return
 
-        try:
-            node_object, created = (
-                create_offset_node(
-                    document,
-                    source_node,
-                    dialog.x_offset.value(),
-                    dialog.y_offset.value(),
-                    dialog.z_offset.value(),
-                )
-            )
+        # Resolve the requested point before opening a transaction.
+        # Reusing an existing node does not modify the document and should
+        # therefore not create an empty Undo/Redo history entry.
+        target_point = offset_point(
+            source_node.Position,
+            dialog.x_offset.value(),
+            dialog.y_offset.value(),
+            dialog.z_offset.value(),
+        )
 
-        except ValueError as error:
-            QtGui.QMessageBox.warning(
-                FreeCADGui.getMainWindow(),
-                "Node Creation Failed",
-                str(error),
-            )
-            return
+        existing = existing_node_at_point(
+            document,
+            target_point,
+        )
+
+        if existing is not None:
+            node_object = existing
+            created = False
+
+        else:
+            transaction_started = False
+
+            try:
+                if hasattr(
+                    document,
+                    "openTransaction",
+                ):
+                    document.openTransaction(
+                        "Create ForgeCAD Offset Node"
+                    )
+
+                    transaction_started = True
+
+                node_object, created = (
+                    create_offset_node(
+                        document,
+                        source_node,
+                        dialog.x_offset.value(),
+                        dialog.y_offset.value(),
+                        dialog.z_offset.value(),
+                    )
+                )
+
+                if (
+                    transaction_started
+                    and hasattr(
+                        document,
+                        "commitTransaction",
+                    )
+                ):
+                    document.commitTransaction()
+
+            except (
+                ValueError,
+                RuntimeError,
+                KeyError,
+                AttributeError,
+            ) as error:
+                if (
+                    transaction_started
+                    and hasattr(
+                        document,
+                        "abortTransaction",
+                    )
+                ):
+                    try:
+                        document.abortTransaction()
+                    except Exception:
+                        pass
+
+                QtGui.QMessageBox.warning(
+                    FreeCADGui.getMainWindow(),
+                    "Node Creation Failed",
+                    str(error),
+                )
+                return
 
         FreeCADGui.Selection.clearSelection()
 

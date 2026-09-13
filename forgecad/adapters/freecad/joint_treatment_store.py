@@ -1,5 +1,7 @@
 """Persistent FreeCAD storage for ForgeCAD joint treatments."""
 
+import json
+
 from forgecad.adapters.freecad.document_tree import (
     initialize_project_tree,
 )
@@ -109,6 +111,82 @@ def decode_layout_ids(
     )
 
 
+
+def normalize_cope_pairs(
+    cope_pairs,
+):
+    """Return unique valid member-to-member cope layout-ID pairs."""
+
+    normalized = []
+
+    for pair in cope_pairs:
+        try:
+            coped_layout_id, target_layout_id = pair
+        except (TypeError, ValueError):
+            continue
+
+        coped_layout_id = str(coped_layout_id).strip()
+        target_layout_id = str(target_layout_id).strip()
+
+        if (
+            not coped_layout_id
+            or not target_layout_id
+            or coped_layout_id == target_layout_id
+        ):
+            continue
+
+        value = (
+            coped_layout_id,
+            target_layout_id,
+        )
+
+        if value not in normalized:
+            normalized.append(value)
+
+    return tuple(normalized)
+
+
+def encode_cope_pairs(
+    cope_pairs,
+):
+    """Serialize explicit cope pairs for persistent storage."""
+
+    return json.dumps(
+        [
+            [coped_layout_id, target_layout_id]
+            for (
+                coped_layout_id,
+                target_layout_id,
+            ) in normalize_cope_pairs(cope_pairs)
+        ],
+        separators=(",", ":"),
+    )
+
+
+def decode_cope_pairs(
+    value,
+):
+    """Deserialize explicit cope pairs, safely tolerating stale data."""
+
+    if value is None:
+        return ()
+
+    text = str(value).strip()
+
+    if not text:
+        return ()
+
+    try:
+        raw_pairs = json.loads(text)
+    except (TypeError, ValueError):
+        return ()
+
+    if not isinstance(raw_pairs, list):
+        return ()
+
+    return normalize_cope_pairs(raw_pairs)
+
+
 def ensure_treatment_properties(
     obj,
 ):
@@ -144,10 +222,21 @@ def ensure_treatment_properties(
             PROPERTY_GROUP,
         )
 
+    if not hasattr(
+        obj,
+        "ExplicitCopePairs",
+    ):
+        obj.addProperty(
+            "App::PropertyString",
+            "ExplicitCopePairs",
+            PROPERTY_GROUP,
+        )
+
     for property_name in (
         "NodeKey",
         "TreatmentMode",
         "ThroughLayoutIDs",
+        "ExplicitCopePairs",
     ):
         try:
             obj.setEditorMode(
@@ -404,6 +493,171 @@ def load_joint_treatment(
     )
 
 
+
+def load_joint_cope_pairs(
+    document,
+    requested_node_key,
+):
+    """
+    Return explicit member-to-member cope pairs stored for one joint.
+
+    Older treatment objects naturally load as an empty tuple.
+    """
+
+    obj = find_joint_treatment(
+        document,
+        requested_node_key,
+    )
+
+    if (
+        obj is None
+        or not hasattr(
+            obj,
+            "ExplicitCopePairs",
+        )
+    ):
+        return ()
+
+    return decode_cope_pairs(
+        obj.ExplicitCopePairs
+    )
+
+
+def save_joint_cope_pair(
+    document,
+    requested_node_key,
+    coped_layout_id,
+    target_layout_id,
+):
+    """Add one explicit cope without replacing the primary treatment."""
+
+    requested_node_key = str(
+        requested_node_key
+    ).strip()
+
+    if not requested_node_key:
+        raise ValueError(
+            "Explicit cope requires a node key."
+        )
+
+    normalized_pair = normalize_cope_pairs(
+        [
+            (
+                coped_layout_id,
+                target_layout_id,
+            )
+        ]
+    )
+
+    if len(
+        normalized_pair
+    ) != 1:
+        raise ValueError(
+            "Explicit cope requires two different "
+            "non-empty member layout IDs."
+        )
+
+    obj = find_joint_treatment(
+        document,
+        requested_node_key,
+    )
+
+    if obj is None:
+        obj = create_joint_treatment_object(
+            document
+        )
+
+    ensure_treatment_properties(
+        obj
+    )
+
+    obj.NodeKey = requested_node_key
+
+    if not str(
+        obj.TreatmentMode
+    ).strip():
+        obj.TreatmentMode = "auto"
+
+    existing_pairs = (
+        load_joint_cope_pairs(
+            document,
+            requested_node_key,
+        )
+    )
+
+    obj.ExplicitCopePairs = (
+        encode_cope_pairs(
+            existing_pairs
+            + normalized_pair
+        )
+    )
+
+    obj.Label = (
+        f"Joint Treatment "
+        f"{requested_node_key}"
+    )
+
+    document.recompute()
+
+    return obj
+
+
+def remove_joint_cope_pair(
+    document,
+    requested_node_key,
+    coped_layout_id,
+    target_layout_id,
+):
+    """Remove one explicit cope while preserving the primary treatment."""
+
+    obj = find_joint_treatment(
+        document,
+        requested_node_key,
+    )
+
+    if (
+        obj is None
+        or not hasattr(
+            obj,
+            "ExplicitCopePairs",
+        )
+    ):
+        return False
+
+    requested_pair = (
+        str(
+            coped_layout_id
+        ).strip(),
+        str(
+            target_layout_id
+        ).strip(),
+    )
+
+    existing_pairs = list(
+        load_joint_cope_pairs(
+            document,
+            requested_node_key,
+        )
+    )
+
+    if requested_pair not in existing_pairs:
+        return False
+
+    existing_pairs.remove(
+        requested_pair
+    )
+
+    obj.ExplicitCopePairs = (
+        encode_cope_pairs(
+            existing_pairs
+        )
+    )
+
+    document.recompute()
+
+    return True
+
+
 def remove_joint_treatment(
     document,
     requested_node_key,
@@ -437,3 +691,99 @@ def remove_joint_treatment(
     document.recompute()
 
     return True
+
+def replace_joint_cope_pairs(document, requested_node_key, cope_pairs):
+    """Atomically replace only the additive operations on one joint record.
+
+    The caller owns the FreeCAD transaction and regeneration. Primary mode,
+    miter identities, and other joint records are never changed here.
+    """
+    import json
+    from forgecad.adapters.freecad.joint_pair_validation import normalized_pairs
+
+    key = str(requested_node_key or "").strip()
+    if not key:
+        raise ValueError("A joint node key is required.")
+    pairs = normalized_pairs(cope_pairs)
+    obj = find_joint_treatment(document, key)
+    if obj is not None:
+        raw = str(getattr(obj, "ExplicitCopePairs", "") or "").strip()
+        if raw:
+            try:
+                old = json.loads(raw)
+                if not isinstance(old, list):
+                    raise ValueError("Expected a list of cope pairs.")
+                normalized_pairs(old)
+            except (TypeError, ValueError) as error:
+                raise ValueError("The stored cope list is malformed; refusing to overwrite it.") from error
+    if obj is None:
+        obj = create_joint_treatment_object(document)
+    ensure_treatment_properties(obj)
+    obj.NodeKey = key
+    if not str(obj.TreatmentMode or "").strip():
+        obj.TreatmentMode = "auto"
+        obj.ThroughLayoutIDs = ""
+    obj.ExplicitCopePairs = encode_cope_pairs(pairs)
+    obj.Label = "Joint Treatment " + key
+    document.recompute()
+    return obj
+
+def _ensure_explicit_through_pairs_property(obj):
+    """Ensure one treatment object can persist selection-first Through pairs."""
+    if not hasattr(obj, "ExplicitThroughPairs"):
+        obj.addProperty(
+            "App::PropertyString",
+            "ExplicitThroughPairs",
+            PROPERTY_GROUP,
+        )
+    try:
+        obj.setEditorMode("ExplicitThroughPairs", 1)
+    except Exception:
+        pass
+
+
+def load_joint_through_pairs(document, requested_node_key):
+    """Return persisted branch->through pairs for one joint."""
+    obj = find_joint_treatment(document, str(requested_node_key or "").strip())
+    if obj is None or not hasattr(obj, "ExplicitThroughPairs"):
+        return ()
+    return decode_cope_pairs(obj.ExplicitThroughPairs)
+
+
+def replace_joint_through_pairs(document, requested_node_key, through_pairs):
+    """Replace only selection-first Through relationships for one joint.
+
+    Primary treatment and ordinary ExplicitCopePairs are preserved.
+    """
+    import json
+    from forgecad.adapters.freecad.joint_pair_validation import normalized_pairs
+
+    key = str(requested_node_key or "").strip()
+    if not key:
+        raise ValueError("A joint node key is required.")
+    pairs = normalized_pairs(through_pairs)
+    obj = find_joint_treatment(document, key)
+    if obj is not None and hasattr(obj, "ExplicitThroughPairs"):
+        raw = str(getattr(obj, "ExplicitThroughPairs", "") or "").strip()
+        if raw:
+            try:
+                old = json.loads(raw)
+                if not isinstance(old, list):
+                    raise ValueError("Expected a list of through pairs.")
+                normalized_pairs(old)
+            except (TypeError, ValueError) as error:
+                raise ValueError(
+                    "The stored through list is malformed; refusing to overwrite it."
+                ) from error
+    if obj is None:
+        obj = create_joint_treatment_object(document)
+    ensure_treatment_properties(obj)
+    _ensure_explicit_through_pairs_property(obj)
+    obj.NodeKey = key
+    if not str(obj.TreatmentMode or "").strip():
+        obj.TreatmentMode = "auto"
+        obj.ThroughLayoutIDs = ""
+    obj.ExplicitThroughPairs = encode_cope_pairs(pairs)
+    obj.Label = "Joint Treatment " + key
+    document.recompute()
+    return obj

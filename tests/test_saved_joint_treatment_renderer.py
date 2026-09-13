@@ -44,6 +44,7 @@ from forgecad.fabrication.joint_treatment import (
     JointTreatmentMode,
 )
 from forgecad.adapters.freecad.renderer import (
+    explicit_cope_specifications_for_joint,
     member_for_layout_id,
     saved_treatment_for_joint,
 )
@@ -558,4 +559,170 @@ def test_unknown_mode_falls_back_to_auto():
         treatment.mode
         == JointTreatmentMode.AUTO
     )
-    
+
+
+def test_saved_both_coped_pair_survives_additional_member():
+    (
+        joint,
+        left,
+        right,
+        branch,
+    ) = make_t_joint()
+
+    document = FakeDocument(
+        [
+            FakeTreatmentObject(
+                "0.000000,0.000000,0.000000",
+                "both_coped",
+                "L001|L003",
+            )
+        ]
+    )
+
+    mapping = {
+        id(left): "L001",
+        id(right): "L002",
+        id(branch): "L003",
+    }
+
+    treatment = saved_treatment_for_joint(
+        document,
+        joint,
+        mapping,
+    )
+
+    assert treatment.mode == JointTreatmentMode.BOTH_COPED
+    assert treatment.through_members == (
+        left,
+        branch,
+    )
+
+
+def test_legacy_both_coped_without_pair_is_ambiguous_after_member_added():
+    (
+        joint,
+        left,
+        right,
+        branch,
+    ) = make_t_joint()
+
+    document = FakeDocument(
+        [
+            FakeTreatmentObject(
+                "0.000000,0.000000,0.000000",
+                "both_coped",
+            )
+        ]
+    )
+
+    mapping = {
+        id(left): "L001",
+        id(right): "L002",
+        id(branch): "L003",
+    }
+
+    treatment = saved_treatment_for_joint(
+        document,
+        joint,
+        mapping,
+    )
+
+    assert treatment.mode == JointTreatmentMode.AUTO
+
+
+def test_stale_both_coped_pair_falls_back_to_auto():
+    (
+        joint,
+        left,
+        right,
+        branch,
+    ) = make_t_joint()
+
+    document = FakeDocument(
+        [
+            FakeTreatmentObject(
+                "0.000000,0.000000,0.000000",
+                "both_coped",
+                "L001|L999",
+            )
+        ]
+    )
+
+    mapping = {
+        id(left): "L001",
+        id(right): "L002",
+        id(branch): "L003",
+    }
+
+    treatment = saved_treatment_for_joint(
+        document,
+        joint,
+        mapping,
+    )
+
+    assert treatment.mode == JointTreatmentMode.AUTO
+
+
+def test_saved_miter_and_explicit_cope_can_coexist():
+    (
+        joint,
+        left,
+        right,
+        branch,
+    ) = make_t_joint()
+
+    treatment_object = (
+        FakeTreatmentObject(
+            "0.000000,0.000000,0.000000",
+            "both_coped",
+            "L001|L003",
+        )
+    )
+    treatment_object.ExplicitCopePairs = (
+        '[["L002","L003"]]'
+    )
+
+    document = FakeDocument(
+        [
+            treatment_object
+        ]
+    )
+
+    mapping = {
+        id(left): "L001",
+        id(right): "L002",
+        id(branch): "L003",
+    }
+
+    treatment = (
+        saved_treatment_for_joint(
+            document,
+            joint,
+            mapping,
+        )
+    )
+
+    assert treatment.through_members == (
+        left,
+        branch,
+    )
+
+    cope_specs = (
+        explicit_cope_specifications_for_joint(
+            document,
+            joint,
+            mapping,
+        )
+    )
+
+    assert len(
+        cope_specs
+    ) == 1
+
+    assert cope_specs[
+        0
+    ].coped_member is right
+
+    assert cope_specs[
+        0
+    ].target_member is branch

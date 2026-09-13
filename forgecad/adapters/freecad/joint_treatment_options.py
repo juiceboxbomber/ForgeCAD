@@ -10,6 +10,7 @@ from forgecad.fabrication.joint_treatment import (
 
 
 DEFAULT_RIGHT_ANGLE_TOLERANCE_DEGREES = 3.0
+DEFAULT_COLLINEAR_TOLERANCE_DEGREES = 3.0
 
 
 @dataclass(frozen=True, slots=True)
@@ -485,6 +486,38 @@ def is_right_angle_corner(
     )
 
 
+
+def is_collinear_through_pair(
+    first_member,
+    second_member,
+    tolerance_degrees=(
+        DEFAULT_COLLINEAR_TOLERANCE_DEGREES
+    ),
+):
+    """
+    Return True when two connected members form one straight through path.
+
+    Through-pair choices are useful only when the two members are
+    geometrically collinear at the joint. This prevents the Joint
+    Inspector from offering arbitrary member combinations that cannot
+    represent one continuous tube path.
+    """
+
+    angle = two_member_angle_degrees(
+        first_member,
+        second_member,
+    )
+
+    if angle is None:
+        return False
+
+    return (
+        angle
+        <= float(
+            tolerance_degrees
+        )
+    )
+
 def automatic_treatment_option():
     """Return the default automatic treatment option."""
 
@@ -525,13 +558,69 @@ def member_through_option(
     )
 
 
-def both_mitered_option():
-    """Return the two-member shared-miter option."""
+def both_mitered_option(
+    first_member_object=None,
+    second_member_object=None,
+    pair_label=False,
+):
+    """
+    Return the shared-miter option.
+
+    When both member objects are supplied, persist their SourceLayoutID
+    values so the same physical pair can be recovered after the joint grows
+    from two members to three or more.
+    """
+
+    through_layout_ids = ()
+    label = "Both Mitered"
+
+    if (
+        first_member_object is not None
+        or second_member_object is not None
+    ):
+        if (
+            first_member_object is None
+            or second_member_object is None
+        ):
+            raise ValueError(
+                "Both Mitered requires either two members "
+                "or no explicit members."
+            )
+
+        first_layout_id = (
+            member_layout_id(
+                first_member_object
+            )
+        )
+        second_layout_id = (
+            member_layout_id(
+                second_member_object
+            )
+        )
+
+        if (
+            first_layout_id
+            and second_layout_id
+        ):
+            through_layout_ids = (
+                first_layout_id,
+                second_layout_id,
+            )
+
+        if pair_label:
+            label = (
+                f"{member_display_name(first_member_object)} + "
+                f"{member_display_name(second_member_object)} "
+                f"Mitered"
+            )
 
     return JointTreatmentOption(
-        label="Both Mitered",
+        label=label,
         mode=(
             JointTreatmentMode.BOTH_COPED
+        ),
+        through_layout_ids=(
+            through_layout_ids
         ),
     )
 
@@ -706,7 +795,10 @@ def treatment_options_for_members(
                 )
 
         options.append(
-            both_mitered_option()
+            both_mitered_option(
+                first_member,
+                second_member,
+            )
         )
 
         return tuple(
@@ -754,19 +846,86 @@ def treatment_options_for_members(
             )
         )
 
-    for (
-        first_member,
-        second_member,
-    ) in combinations(
-        persistent_members,
-        2,
-    ):
-        options.append(
-            through_pair_option(
+    member_pairs = tuple(
+        combinations(
+            persistent_members,
+            2,
+        )
+    )
+
+    collinear_pairs = tuple(
+        (
+            first_member,
+            second_member,
+        )
+        for (
+            first_member,
+            second_member,
+        )
+        in member_pairs
+        if is_collinear_through_pair(
+            first_member,
+            second_member,
+        )
+    )
+
+    # A joint containing a valid straight-through pair is treated as a
+    # branch/T-junction. Preserve the existing through-pair choices and do
+    # not offer corner-miter pairs that would compete with that topology.
+    if collinear_pairs:
+        for (
+            first_member,
+            second_member,
+        ) in collinear_pairs:
+            options.append(
+                through_pair_option(
+                    first_member,
+                    second_member,
+                )
+            )
+
+        return tuple(
+            options
+        )
+
+    # No straight-through relationship exists. Only treat this as a
+    # multi-member corner when every member pair is approximately a right
+    # angle. This covers the common chassis corner of two base rails plus
+    # an upright without exposing unsafe miter choices on an arbitrary
+    # three-member fan-out.
+    is_orthogonal_corner = (
+        len(
+            members
+        )
+        == 3
+        and all(
+            is_right_angle_corner(
+                first_member,
+                second_member,
+                tolerance_degrees=(
+                    right_angle_tolerance_degrees
+                ),
+            )
+            for (
                 first_member,
                 second_member,
             )
+            in member_pairs
         )
+    )
+
+    if is_orthogonal_corner:
+        for (
+            first_member,
+            second_member,
+        ) in member_pairs:
+            options.append(
+                both_mitered_option(
+                    first_member,
+                    second_member,
+                    pair_label=True,
+                )
+            )
 
     return tuple(
         options
@@ -799,10 +958,24 @@ def option_matches_saved_treatment(
         ).strip()
     )
 
-    return (
+    if (
         option.mode.value
-        == mode_value
-        and option.through_layout_ids
+        != mode_value
+    ):
+        return False
+
+    # Backward compatibility: older two-member Both Mitered records did not
+    # store member IDs. On a two-member corner there is only one possible pair,
+    # so the new ID-bearing option still represents that legacy treatment.
+    if (
+        mode_value
+        == JointTreatmentMode.BOTH_COPED.value
+        and not saved_ids
+    ):
+        return True
+
+    return (
+        option.through_layout_ids
         == saved_ids
     )
 

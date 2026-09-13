@@ -198,6 +198,15 @@ class FakeNodesGroup:
             objects or []
         )
 
+    def removeObject(
+        self,
+        obj,
+    ):
+        if obj in self.Group:
+            self.Group.remove(
+                obj
+            )
+
 
 def coordinates(
     points,
@@ -675,4 +684,649 @@ def test_manual_node_at_layout_coordinate_is_not_reclassified():
         node.SourceType
         == SOURCE_MANUAL
     )
-    
+
+    # ---------------------------------------------------------
+# Layout ownership
+# ---------------------------------------------------------
+
+def test_layout_objects_for_point_returns_all_connected_lines():
+    from forgecad.adapters.freecad.commands.generate_nodes import (
+        layout_objects_for_point,
+    )
+
+    through_line = FakeLayoutObject(
+        (0, 0, 0),
+        (1000, 0, 0),
+    )
+
+    branch_line = FakeLayoutObject(
+        (500, 0, 0),
+        (500, 500, 0),
+    )
+
+    result = layout_objects_for_point(
+        FakeVector(
+            500,
+            0,
+            0,
+        ),
+        [
+            through_line,
+            branch_line,
+        ],
+    )
+
+    assert result == [
+        through_line,
+        branch_line,
+    ]
+
+
+def test_ensure_source_layout_objects_stores_connected_layout_objects():
+    from forgecad.adapters.freecad.commands.generate_nodes import (
+        ensure_source_layout_objects,
+    )
+
+    node = FakeNodeObject(
+        "N001",
+        (500, 0, 0),
+        SOURCE_LAYOUT,
+    )
+
+    through_line = FakeLayoutObject(
+        (0, 0, 0),
+        (1000, 0, 0),
+    )
+
+    branch_line = FakeLayoutObject(
+        (500, 0, 0),
+        (500, 500, 0),
+    )
+
+    result = ensure_source_layout_objects(
+        node,
+        [
+            through_line,
+            branch_line,
+        ],
+    )
+
+    assert result == [
+        through_line,
+        branch_line,
+    ]
+
+    assert node.SourceLayoutLines == [
+        through_line,
+        branch_line,
+    ]
+
+def test_layout_node_source_ownership_can_be_replaced():
+    from forgecad.adapters.freecad.commands.generate_nodes import (
+        ensure_source_layout_objects,
+    )
+
+    node = FakeNodeObject(
+        "N001",
+        (500, 0, 0),
+        SOURCE_LAYOUT,
+    )
+
+    old_line = FakeLayoutObject(
+        (0, 0, 0),
+        (1000, 0, 0),
+    )
+
+    new_line = FakeLayoutObject(
+        (500, 0, 0),
+        (500, 500, 0),
+    )
+
+    ensure_source_layout_objects(
+        node,
+        [old_line],
+    )
+
+    ensure_source_layout_objects(
+        node,
+        [new_line],
+    )
+
+    assert node.SourceLayoutLines == [
+        new_line,
+    ]
+
+
+def test_generate_nodes_assigns_layout_ownership_to_reused_layout_node(
+    monkeypatch,
+):
+    import forgecad.adapters.freecad.commands.generate_nodes as module
+
+    through_line = FakeLayoutObject(
+        (0, 0, 0),
+        (1000, 0, 0),
+    )
+
+    branch_line = FakeLayoutObject(
+        (500, 0, 0),
+        (500, 500, 0),
+    )
+
+    existing_node = FakeNodeObject(
+        "N001",
+        (500, 0, 0),
+        SOURCE_LAYOUT,
+    )
+
+    nodes_group = FakeNodesGroup(
+        [existing_node]
+    )
+
+    class FakeDocument:
+        def recompute(self):
+            pass
+
+    document = FakeDocument()
+
+    monkeypatch.setattr(
+        module,
+        "initialize_project_tree",
+        lambda document: {
+            "Nodes": nodes_group,
+        },
+    )
+
+    monkeypatch.setattr(
+    module,
+    "ensure_node_proxy",
+    lambda obj: obj,
+    )
+
+    monkeypatch.setattr(
+    module,
+    "unique_layout_points",
+    lambda layout_objects: [
+        FakeVector(
+            500,
+            0,
+            0,
+        )
+    ],
+    )
+
+    monkeypatch.setattr(
+        module,
+        "remove_obsolete_layout_nodes",
+        lambda *args, **kwargs: None,
+    )
+
+    result = module.generate_nodes_from_layout(
+        document,
+        [
+            through_line,
+            branch_line,
+        ],
+    )
+
+    assert existing_node in result
+
+    assert existing_node.SourceLayoutLines == [
+        through_line,
+        branch_line,
+    ]
+
+
+def test_generate_nodes_does_not_assign_layout_ownership_to_manual_node(
+    monkeypatch,
+):
+    import forgecad.adapters.freecad.commands.generate_nodes as module
+
+    layout_line = FakeLayoutObject(
+        (0, 0, 0),
+        (1000, 0, 0),
+    )
+
+    manual_node = FakeNodeObject(
+        "N001",
+        (0, 0, 0),
+        SOURCE_MANUAL,
+    )
+
+    nodes_group = FakeNodesGroup(
+        [manual_node]
+    )
+
+    class FakeDocument:
+        def recompute(self):
+            pass
+
+    document = FakeDocument()
+
+    monkeypatch.setattr(
+        module,
+        "initialize_project_tree",
+        lambda document: {
+            "Nodes": nodes_group,
+        },
+    )
+
+    monkeypatch.setattr(
+        module,
+        "ensure_node_proxy",
+        lambda obj: obj,
+    )
+
+    monkeypatch.setattr(
+        module,
+        "unique_layout_points",
+        lambda layout_objects: [
+            FakeVector(
+                0,
+                0,
+                0,
+            )
+        ],
+    )
+
+    monkeypatch.setattr(
+        module,
+        "remove_obsolete_layout_nodes",
+        lambda *args, **kwargs: None,
+    )
+
+    result = module.generate_nodes_from_layout(
+        document,
+        [layout_line],
+    )
+
+    assert result == [
+        manual_node,
+    ]
+
+    assert manual_node.SourceType == SOURCE_MANUAL
+
+    assert not hasattr(
+        manual_node,
+        "SourceLayoutLines",
+    )
+
+def test_generate_nodes_adds_ownership_to_legacy_layout_node(
+    monkeypatch,
+):
+    import forgecad.adapters.freecad.commands.generate_nodes as module
+
+    layout_line = FakeLayoutObject(
+        (0, 0, 0),
+        (1000, 0, 0),
+    )
+
+    legacy_node = FakeNodeObject(
+        "N001",
+        (0, 0, 0),
+    )
+
+    nodes_group = FakeNodesGroup(
+        [legacy_node]
+    )
+
+    class FakeDocument:
+        def recompute(self):
+            pass
+
+    document = FakeDocument()
+
+    monkeypatch.setattr(
+        module,
+        "initialize_project_tree",
+        lambda document: {
+            "Nodes": nodes_group,
+        },
+    )
+
+    monkeypatch.setattr(
+        module,
+        "ensure_node_proxy",
+        lambda obj: obj,
+    )
+
+    monkeypatch.setattr(
+        module,
+        "unique_layout_points",
+        lambda layout_objects: [
+            FakeVector(
+                0,
+                0,
+                0,
+            )
+        ],
+    )
+
+    monkeypatch.setattr(
+        module,
+        "remove_obsolete_layout_nodes",
+        lambda *args, **kwargs: None,
+    )
+
+    result = module.generate_nodes_from_layout(
+        document,
+        [layout_line],
+    )
+
+    assert result == [
+        legacy_node,
+    ]
+
+    assert legacy_node.SourceType == SOURCE_LAYOUT
+
+    assert legacy_node.SourceLayoutLines == [
+        layout_line,
+    ]
+
+
+def test_generate_nodes_refreshes_layout_ownership_on_regeneration(
+    monkeypatch,
+):
+    import forgecad.adapters.freecad.commands.generate_nodes as module
+
+    through_line = FakeLayoutObject(
+        (0, 0, 0),
+        (1000, 0, 0),
+    )
+
+    branch_line = FakeLayoutObject(
+        (500, 0, 0),
+        (500, 500, 0),
+    )
+
+    node = FakeNodeObject(
+        "N001",
+        (500, 0, 0),
+        SOURCE_LAYOUT,
+    )
+
+    nodes_group = FakeNodesGroup(
+        [node]
+    )
+
+    class FakeDocument:
+        def recompute(self):
+            pass
+
+    document = FakeDocument()
+
+    monkeypatch.setattr(
+        module,
+        "initialize_project_tree",
+        lambda document: {
+            "Nodes": nodes_group,
+        },
+    )
+
+    monkeypatch.setattr(
+        module,
+        "ensure_node_proxy",
+        lambda obj: obj,
+    )
+
+    monkeypatch.setattr(
+        module,
+        "unique_layout_points",
+        lambda layout_objects: [
+            FakeVector(
+                500,
+                0,
+                0,
+            )
+        ],
+    )
+
+    monkeypatch.setattr(
+        module,
+        "remove_obsolete_layout_nodes",
+        lambda *args, **kwargs: None,
+    )
+
+    module.generate_nodes_from_layout(
+        document,
+        [
+            through_line,
+            branch_line,
+        ],
+    )
+
+    assert node.SourceLayoutLines == [
+        through_line,
+        branch_line,
+    ]
+
+    module.generate_nodes_from_layout(
+        document,
+        [
+            through_line,
+        ],
+    )
+
+    assert node.SourceLayoutLines == [
+        through_line,
+    ]
+
+def test_generate_nodes_t_junction_loses_branch_ownership_cleanly(
+    monkeypatch,
+):
+    import forgecad.adapters.freecad.commands.generate_nodes as module
+
+    through_line = FakeLayoutObject(
+        (0, 0, 0),
+        (1000, 0, 0),
+    )
+
+    branch_line = FakeLayoutObject(
+        (500, 0, 0),
+        (500, 500, 0),
+    )
+
+    node = FakeNodeObject(
+        "N001",
+        (500, 0, 0),
+        SOURCE_LAYOUT,
+    )
+
+    node.SourceLayoutLines = [
+        through_line,
+        branch_line,
+    ]
+
+    nodes_group = FakeNodesGroup(
+        [node]
+    )
+
+    class FakeDocument:
+        def recompute(self):
+            pass
+
+    document = FakeDocument()
+
+    monkeypatch.setattr(
+        module,
+        "initialize_project_tree",
+        lambda document: {
+            "Nodes": nodes_group,
+        },
+    )
+
+    monkeypatch.setattr(
+        module,
+        "ensure_node_proxy",
+        lambda obj: obj,
+    )
+
+    monkeypatch.setattr(
+        module,
+        "unique_layout_points",
+        lambda layout_objects: [
+            FakeVector(
+                500,
+                0,
+                0,
+            )
+        ],
+    )
+
+    monkeypatch.setattr(
+        module,
+        "remove_obsolete_layout_nodes",
+        lambda *args, **kwargs: None,
+    )
+
+    result = module.generate_nodes_from_layout(
+        document,
+        [
+            through_line,
+        ],
+    )
+
+    assert result == [
+        node,
+    ]
+
+    assert node.SourceLayoutLines == [
+        through_line,
+    ]
+
+    assert (
+        through_line.StartPoint.x,
+        through_line.StartPoint.y,
+        through_line.StartPoint.z,
+    ) == (
+        0,
+        0,
+        0,
+    )
+
+    assert (
+        through_line.EndPoint.x,
+        through_line.EndPoint.y,
+        through_line.EndPoint.z,
+    ) == (
+        1000,
+        0,
+        0,
+    )
+
+def test_generate_nodes_removes_deleted_line_from_node_ownership(
+    monkeypatch,
+):
+    import forgecad.adapters.freecad.commands.generate_nodes as module
+
+    horizontal_line = FakeLayoutObject(
+        (0, 0, 0),
+        (500, 0, 0),
+    )
+
+    vertical_line = FakeLayoutObject(
+        (500, 0, 0),
+        (500, 500, 0),
+    )
+
+    node = FakeNodeObject(
+        "N001",
+        (500, 0, 0),
+        SOURCE_LAYOUT,
+    )
+
+    node.SourceLayoutLines = [
+        horizontal_line,
+        vertical_line,
+    ]
+
+    nodes_group = FakeNodesGroup(
+        [node]
+    )
+
+    class FakeDocument:
+        def recompute(self):
+            pass
+
+    document = FakeDocument()
+
+    monkeypatch.setattr(
+        module,
+        "initialize_project_tree",
+        lambda document: {
+            "Nodes": nodes_group,
+        },
+    )
+
+    monkeypatch.setattr(
+        module,
+        "ensure_node_proxy",
+        lambda obj: obj,
+    )
+
+    # Simulate regeneration after vertical_line has been deleted.
+    monkeypatch.setattr(
+        module,
+        "unique_layout_points",
+        lambda layout_objects: [
+            FakeVector(
+                500,
+                0,
+                0,
+            )
+        ],
+    )
+
+    monkeypatch.setattr(
+        module,
+        "remove_obsolete_layout_nodes",
+        lambda *args, **kwargs: None,
+    )
+
+    result = module.generate_nodes_from_layout(
+        document,
+        [
+            horizontal_line,
+        ],
+    )
+
+    assert result == [
+        node,
+    ]
+
+    assert node.SourceType == SOURCE_LAYOUT
+
+    assert node.SourceLayoutLines == [
+        horizontal_line,
+    ]
+
+def test_remove_obsolete_layout_nodes_removes_unsupported_layout_node():
+    import forgecad.adapters.freecad.commands.generate_nodes as module
+
+    obsolete_node = FakeNodeObject(
+        "N001",
+        (500, 0, 0),
+        SOURCE_LAYOUT,
+    )
+
+    nodes_group = FakeNodesGroup(
+        [obsolete_node]
+    )
+
+    module.remove_obsolete_layout_nodes(
+        None,
+        nodes_group,
+        [
+            FakeVector(
+                0,
+                0,
+                0,
+            ),
+            FakeVector(
+                1000,
+                0,
+                0,
+            ),
+        ],
+    )
+
+    assert obsolete_node not in nodes_group.Group
