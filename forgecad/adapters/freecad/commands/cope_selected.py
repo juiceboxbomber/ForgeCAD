@@ -1,4 +1,4 @@
-"""FreeCAD command: cope one selected member to one or two selected targets."""
+"""FreeCAD command: cope one selected member to one to three selected targets."""
 
 import FreeCAD
 import FreeCADGui
@@ -128,7 +128,7 @@ class CopeSelectedCommand:
         return {
             "MenuText": "Cope Selected",
             "ToolTip": (
-                "Select the tube to cope first, then one or two target tubes. "
+                "Select the tube to cope first, then one to three target tubes. "
                 "Existing target miters are preserved."
             ),
         }

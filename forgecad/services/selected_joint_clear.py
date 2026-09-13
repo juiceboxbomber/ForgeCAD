@@ -8,12 +8,12 @@ def _layout_id(obj):
 
 
 def selected_clear_request(objects, precision=6):
-    """Resolve two/three selected members and their physical joint point."""
+    """Resolve two to four selected members and their physical joint point."""
     objects = list(objects or ())
-    if len(objects) not in (2, 3):
+    if len(objects) not in (2, 3, 4):
         raise ValueError(
             "Select two tubes to clear a miter/cope/through operation, or select "
-            "one source/through tube plus two related tubes to clear both relationships."
+            "one source/through tube plus up to three related tubes to clear both relationships."
         )
     ids = []
     for obj in objects:
@@ -60,8 +60,8 @@ def clear_selected_operation_plan(
         removed_through_pairs
     """
     selected_ids = tuple(str(value or "").strip() for value in selected_ids)
-    if len(selected_ids) not in (2, 3) or any(not value for value in selected_ids):
-        raise ValueError("Clear Selected requires two or three valid member IDs.")
+    if len(selected_ids) not in (2, 3, 4) or any(not value for value in selected_ids):
+        raise ValueError("Clear Selected requires two to four valid member IDs.")
     if len(set(selected_ids)) != len(selected_ids):
         raise ValueError("Clear Selected member IDs must be unique.")
 
