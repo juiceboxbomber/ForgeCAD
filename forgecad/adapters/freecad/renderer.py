@@ -256,20 +256,103 @@ def configure_automatic_notches(
 def target_axis_for_cope_specification(
     specification,
 ):
-    """Return the target member centerline for a cope cutter."""
+    """Return the target cutter axis, using a bent target's true local tangent."""
 
     target_member = (
         specification.target_member
     )
 
-    return (
-        node_vector(
-            target_member.start
-        ),
-        node_vector(
-            target_member.end
-        ),
+    from forgecad.fabrication import (
+        BentMember,
     )
+
+    if not isinstance(
+        target_member,
+        BentMember,
+    ):
+        return (
+            node_vector(
+                target_member.start
+            ),
+            node_vector(
+                target_member.end
+            ),
+        )
+
+    from forgecad.services.joint_geometry import (
+        member_direction_from_node,
+    )
+    from forgecad.services.node_proximity import (
+        nodes_coincident,
+    )
+
+    joint_node = (
+        specification.joint.node
+    )
+
+    (
+        dx,
+        dy,
+        dz,
+    ) = member_direction_from_node(
+        target_member,
+        joint_node,
+    )
+
+    if nodes_coincident(
+        target_member.start,
+        joint_node,
+    ):
+        run_length = float(
+            target_member.tube.straight_runs[
+                0
+            ].length_mm
+        )
+
+    elif nodes_coincident(
+        target_member.end,
+        joint_node,
+    ):
+        run_length = float(
+            target_member.tube.straight_runs[
+                -1
+            ].length_mm
+        )
+
+    else:
+        raise ValueError(
+            "Bent cope targets are currently supported only at physical endpoints."
+        )
+
+    axis_length = max(
+        run_length,
+        float(
+            target_member.profile.outside_diameter
+        ),
+        1.0,
+    )
+
+    target_start = node_vector(
+        joint_node
+    )
+
+    target_end = FreeCAD.Vector(
+        target_start.x
+        + dx
+        * axis_length,
+        target_start.y
+        + dy
+        * axis_length,
+        target_start.z
+        + dz
+        * axis_length,
+    )
+
+    return (
+        target_start,
+        target_end,
+    )
+
 
 
 def member_layout_id_map(
@@ -743,12 +826,133 @@ def cope_specifications_for_frame(
 
 
 
+def explicit_bent_target_extension_specifications_for_joint(
+    document,
+    joint,
+    layout_ids_by_member,
+):
+    """
+    Return physical endpoint stock for bent explicit cope targets.
+
+    The target extension must cover the complete cylindrical intersection.
+    For acute centerline angle A:
+
+        L = (Rs + Rt * cos(A)) / sin(A)
+
+    Rs is the coped/source outside radius and Rt is the target outside radius.
+    At 90 degrees this reduces to Rs.
+    """
+
+    from math import (
+        cos,
+        radians,
+        sin,
+    )
+
+    from forgecad.fabrication import (
+        BentMember,
+    )
+    from forgecad.services.joint_extension import (
+        MemberExtensionSpecification,
+        member_end_at_joint,
+    )
+
+    specifications = []
+
+    for cope_specification in (
+        explicit_cope_specifications_for_joint(
+            document,
+            joint,
+            layout_ids_by_member,
+        )
+    ):
+        target_member = (
+            cope_specification.target_member
+        )
+
+        if not isinstance(
+            target_member,
+            BentMember,
+        ):
+            continue
+
+        coped_member = (
+            cope_specification.coped_member
+        )
+
+        source_radius = (
+            float(
+                coped_member.profile.outside_diameter
+            )
+            / 2.0
+        )
+
+        target_radius = (
+            float(
+                cope_specification.target_outside_diameter
+            )
+            / 2.0
+        )
+
+        angle_radians = radians(
+            float(
+                cope_specification.angle_degrees
+            )
+        )
+
+        sine = abs(
+            sin(
+                angle_radians
+            )
+        )
+
+        if sine <= 1e-9:
+            raise ValueError(
+                "Cannot extend a bent cope target for collinear tube axes."
+            )
+
+        cosine = abs(
+            cos(
+                angle_radians
+            )
+        )
+
+        extension_mm = (
+            source_radius
+            + target_radius
+            * cosine
+        ) / sine
+
+        specifications.append(
+            MemberExtensionSpecification(
+                joint=joint,
+                member=target_member,
+                member_end=member_end_at_joint(
+                    target_member,
+                    joint,
+                ),
+                extension_mm=extension_mm,
+            )
+        )
+
+    return tuple(
+        specifications
+    )
+
+
+
 def extension_specifications_for_frame(
     document,
     frame,
     source_layout_ids=None,
 ):
-    """Return primary extensions plus selection-first Through extensions."""
+    """
+    Return all physical member extensions required by treatments.
+
+    Explicit Cope Selected operations targeting a bent tube also require
+    physical endpoint stock beyond that bent tube's selected endpoint.
+    """
+
     specifications = []
 
     for treatment in treatments_for_frame(
@@ -757,23 +961,33 @@ def extension_specifications_for_frame(
         source_layout_ids=source_layout_ids,
     ):
         specifications.extend(
-            extension_specifications_for_treatment(treatment)
+            extension_specifications_for_treatment(
+                treatment
+            )
         )
 
-    layout_ids_by_member = member_layout_id_map(
-        frame,
-        source_layout_ids,
+    layout_ids_by_member = (
+        member_layout_id_map(
+            frame,
+            source_layout_ids,
+        )
     )
-    for joint in detect_joints(frame):
+
+    for joint in detect_joints(
+        frame
+    ):
         specifications.extend(
-            explicit_through_extension_specifications_for_joint(
+            explicit_bent_target_extension_specifications_for_joint(
                 document,
                 joint,
                 layout_ids_by_member,
             )
         )
 
-    return tuple(specifications)
+    return tuple(
+        specifications
+    )
+
 
 
 

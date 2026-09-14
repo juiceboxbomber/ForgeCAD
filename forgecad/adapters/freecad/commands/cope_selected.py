@@ -44,25 +44,84 @@ def _warn(title, message):
     )
 
 
-def _joint_context(document, node_xyz):
-    position = FreeCAD.Vector(*node_xyz)
-    node_object = node_object_at_position(document, position)
+def _joint_context(
+    document,
+    node_xyz,
+):
+    """Build one endpoint-aware joint context for straight and bent members."""
+
+    position = FreeCAD.Vector(
+        *node_xyz
+    )
+
+    node_object = (
+        node_object_at_position(
+            document,
+            position,
+        )
+    )
+
     if node_object is None:
-        node_object = InspectionNode("Joint", position)
-    joint = joint_from_node_object(document, node_object)
-    if joint.member_count < 2:
-        raise ValueError("No ForgeCAD joint exists at the shared endpoint.")
-    objects = connected_member_objects(document, node_object)
+        node_object = InspectionNode(
+            "Joint",
+            position,
+        )
+
+    detected = joint_from_node_object(
+        document,
+        node_object,
+    )
+
+    if detected.member_count < 2:
+        raise ValueError(
+            "No ForgeCAD joint exists at the shared endpoint."
+        )
+
+    objects = connected_member_objects(
+        document,
+        node_object,
+    )
+
+    from forgecad.services.fabrication_identity import (
+        fabrication_layout_id_at_point,
+    )
+
     by_id = {}
     domain_members = []
+
     for obj in objects:
-        ident = _layout_id(obj)
-        if not ident:
+        try:
+            ident = (
+                fabrication_layout_id_at_point(
+                    obj,
+                    position,
+                )
+            )
+        except ValueError:
             continue
-        member = structural_member_from_freecad_object(obj)
-        by_id[ident] = member
-        domain_members.append(member)
-    return Joint(node=joint.node, members=domain_members), by_id
+
+        member = (
+            structural_member_from_freecad_object(
+                obj
+            )
+        )
+
+        by_id[
+            ident
+        ] = member
+
+        domain_members.append(
+            member
+        )
+
+    return (
+        Joint(
+            node=detected.node,
+            members=domain_members,
+        ),
+        by_id,
+    )
+
 
 
 def _preflight(document, node_xyz, source_id, target_ids):
@@ -100,27 +159,136 @@ def _preflight(document, node_xyz, source_id, target_ids):
     return node_key_value
 
 
-def apply_selected_cope(document, selection):
-    """Apply one direct selection-driven cope plan in a single transaction."""
-    node_xyz, source_id, target_ids = selected_cope_request(selection)
-    node_key_value = _preflight(document, node_xyz, source_id, target_ids)
-    current = load_joint_cope_pairs(document, node_key_value)
-    updated = replace_source_pairs(current, source_id, target_ids)
+def apply_selected_cope(
+    document,
+    selection,
+):
+    """Persist one direct cope plan and refresh bent targets in place."""
+
+    selection = list(
+        selection
+        or ()
+    )
+
+    (
+        node_xyz,
+        source_id,
+        target_ids,
+    ) = selected_cope_request(
+        selection
+    )
+
+    node_key_value = _preflight(
+        document,
+        node_xyz,
+        source_id,
+        target_ids,
+    )
+
+    current = load_joint_cope_pairs(
+        document,
+        node_key_value,
+    )
+
+    updated = replace_source_pairs(
+        current,
+        source_id,
+        target_ids,
+    )
+
+    has_bent_target = any(
+        (
+            not str(
+                getattr(
+                    obj,
+                    "SourceLayoutID",
+                    "",
+                )
+                or ""
+            ).strip()
+            and (
+                bool(
+                    str(
+                        getattr(
+                            obj,
+                            "StartFabricationLayoutID",
+                            "",
+                        )
+                        or ""
+                    ).strip()
+                )
+                or bool(
+                    str(
+                        getattr(
+                            obj,
+                            "EndFabricationLayoutID",
+                            "",
+                        )
+                        or ""
+                    ).strip()
+                )
+                or bool(
+                    getattr(
+                        obj,
+                        "SourceLayoutLines",
+                        (),
+                    )
+                )
+            )
+        )
+        for obj in selection[
+            1:
+        ]
+    )
 
     started = False
+
     try:
-        document.openTransaction("Cope Selected ForgeCAD Member")
+        document.openTransaction(
+            "Cope Selected ForgeCAD Member"
+        )
         started = True
-        replace_joint_cope_pairs(document, node_key_value, updated)
+
+        replace_joint_cope_pairs(
+            document,
+            node_key_value,
+            updated,
+        )
+
         FreeCADGui.Selection.clearSelection()
-        regenerate_frame(document)
+
+        if has_bent_target:
+            # A converted bent tube owns consumed layout members. Re-rendering
+            # the layout here could recreate those consumed members as straight
+            # tubes. Reapply fabrication against the existing mixed structural
+            # model instead.
+            from forgecad.adapters.freecad.fabrication_refresh import (
+                refresh_fabrication_for_document,
+            )
+
+            refresh_fabrication_for_document(
+                document
+            )
+
+        else:
+            # Preserve the proven straight-member behavior.
+            regenerate_frame(
+                document
+            )
+
         document.commitTransaction()
         started = False
+
     except Exception:
         if started:
             document.abortTransaction()
         raise
-    return source_id, target_ids
+
+    return (
+        source_id,
+        target_ids,
+    )
+
 
 
 class CopeSelectedCommand:
