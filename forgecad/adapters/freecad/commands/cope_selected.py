@@ -163,7 +163,7 @@ def apply_selected_cope(
     document,
     selection,
 ):
-    """Persist one direct cope plan and refresh bent targets in place."""
+    """Persist one direct cope plan and preserve converted bent members in place."""
 
     selection = list(
         selection
@@ -196,7 +196,7 @@ def apply_selected_cope(
         target_ids,
     )
 
-    has_bent_target = any(
+    has_bent_member = any(
         (
             not str(
                 getattr(
@@ -236,9 +236,7 @@ def apply_selected_cope(
                 )
             )
         )
-        for obj in selection[
-            1:
-        ]
+        for obj in selection
     )
 
     started = False
@@ -257,11 +255,7 @@ def apply_selected_cope(
 
         FreeCADGui.Selection.clearSelection()
 
-        if has_bent_target:
-            # A converted bent tube owns consumed layout members. Re-rendering
-            # the layout here could recreate those consumed members as straight
-            # tubes. Reapply fabrication against the existing mixed structural
-            # model instead.
+        if has_bent_member:
             from forgecad.adapters.freecad.fabrication_refresh import (
                 refresh_fabrication_for_document,
             )
@@ -271,7 +265,6 @@ def apply_selected_cope(
             )
 
         else:
-            # Preserve the proven straight-member behavior.
             regenerate_frame(
                 document
             )
@@ -288,6 +281,7 @@ def apply_selected_cope(
         source_id,
         target_ids,
     )
+
 
 
 

@@ -85,17 +85,28 @@ def member_end_at_node(
     member: Member,
     node: Node,
 ) -> str:
-    """Return which end of a member terminates at the node."""
+    """Return which structural-member end terminates at the node."""
 
-    if member.start == node:
+    from forgecad.services.node_proximity import (
+        nodes_coincident,
+    )
+
+    if nodes_coincident(
+        member.start,
+        node,
+    ):
         return BRANCH_END_START
 
-    if member.end == node:
+    if nodes_coincident(
+        member.end,
+        node,
+    ):
         return BRANCH_END_END
 
     raise ValueError(
         "The member does not touch the supplied node."
     )
+
 
 
 def through_outside_diameter(

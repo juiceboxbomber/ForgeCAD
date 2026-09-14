@@ -26,7 +26,7 @@ def selected_cope_request(
     objects,
     precision=6,
 ):
-    """Resolve one straight cope source plus straight-or-bent endpoint targets."""
+    """Resolve a straight-or-bent cope source plus supported endpoint targets."""
 
     objects = list(
         objects
@@ -41,27 +41,51 @@ def selected_cope_request(
         <= 4
     ):
         raise ValueError(
-            "Select the straight tube to cope first, then one to three target tubes."
+            "Select the tube to cope first, then one to three target tubes."
         )
 
-    source = objects[
-        0
-    ]
+    source = objects[0]
 
-    source_id = str(
-        getattr(
-            source,
-            "SourceLayoutID",
-            "",
-        )
+    source_layout_id = str(
+        getattr(source, "SourceLayoutID", "")
         or ""
     ).strip()
 
-    if not source_id:
+    source_start_id = str(
+        getattr(source, "StartFabricationLayoutID", "")
+        or ""
+    ).strip()
+
+    source_end_id = str(
+        getattr(source, "EndFabricationLayoutID", "")
+        or ""
+    ).strip()
+
+    source_is_bent = (
+        not source_layout_id
+        and bool(source_start_id or source_end_id)
+    )
+
+    if (
+        not source_layout_id
+        and not source_is_bent
+    ):
         raise ValueError(
-            "The tube being coped must currently be a straight generated "
-            "ForgeCAD member. Bent tubes are supported as cope targets first."
+            "The tube being coped must be a generated ForgeCAD structural member."
         )
+
+    if source_is_bent:
+        for target in objects[1:]:
+            target_layout_id = str(
+                getattr(target, "SourceLayoutID", "")
+                or ""
+            ).strip()
+
+            if not target_layout_id:
+                raise ValueError(
+                    "Bent-to-bent Cope Selected is not supported yet. "
+                    "For this phase, select a bent source first and straight targets after it."
+                )
 
     from forgecad.services.fabrication_identity import (
         shared_structural_endpoint,
@@ -76,19 +100,17 @@ def selected_cope_request(
 
     if (
         not member_ids
-        or member_ids[
-            0
-        ]
-        != source_id
+        or not str(member_ids[0] or "").strip()
     ):
         raise ValueError(
             "Could not resolve the selected cope source at the shared endpoint."
         )
 
+    source_id = str(member_ids[0]).strip()
+
     target_ids = tuple(
-        member_ids[
-            1:
-        ]
+        str(value).strip()
+        for value in member_ids[1:]
     )
 
     if not target_ids:
@@ -101,6 +123,7 @@ def selected_cope_request(
         source_id,
         target_ids,
     )
+
 
 
 

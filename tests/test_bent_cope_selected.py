@@ -118,18 +118,78 @@ def test_straight_source_can_cope_to_bent_end_endpoint():
     )
 
 
-def test_bent_source_is_not_enabled_in_target_only_phase():
+def test_bent_source_start_can_cope_to_straight_target():
+    source = bent()
+
+    target = straight(
+        "S",
+        (0.0, 0.0, 0.0),
+        (-500.0, 200.0, 0.0),
+    )
+
+    node_xyz, source_id, target_ids = (
+        selected_cope_request(
+            [
+                source,
+                target,
+            ]
+        )
+    )
+
+    assert node_xyz == (
+        0.0,
+        0.0,
+        0.0,
+    )
+    assert source_id == "B-START"
+    assert target_ids == (
+        "S",
+    )
+
+
+def test_bent_source_end_can_cope_to_straight_target():
+    source = bent()
+
+    target = straight(
+        "S",
+        (600.0, 600.0, 0.0),
+        (900.0, 900.0, 0.0),
+    )
+
+    node_xyz, source_id, target_ids = (
+        selected_cope_request(
+            [
+                source,
+                target,
+            ]
+        )
+    )
+
+    assert node_xyz == (
+        600.0,
+        600.0,
+        0.0,
+    )
+    assert source_id == "B-END"
+    assert target_ids == (
+        "S",
+    )
+
+
+def test_bent_source_to_bent_target_remains_out_of_scope():
     with pytest.raises(
         ValueError,
-        match="Bent tubes are supported as cope targets first",
+        match="Bent-to-bent Cope Selected is not supported yet",
     ):
         selected_cope_request(
             [
-                bent(),
-                straight(
-                    "S",
-                    (0.0, 0.0, 0.0),
-                    (-500.0, 0.0, 0.0),
+                bent(
+                    "SOURCE-START",
+                    "SOURCE-END",
+                ),
+                bent(
+                    "TARGET-START",
+                    "TARGET-END",
                 ),
             ]
         )
