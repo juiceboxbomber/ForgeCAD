@@ -812,20 +812,272 @@ def configure_end_cope_tertiary(obj, through_start, through_end, through_outside
     obj.EndCope3ThroughDiameter=diameter
     obj.EndCope3Enabled=True
 
-def sync_cope_axes_from_target_members(obj):
-    ensure_notch_properties(obj)
-    refreshed=0
-    for p in ("StartCope","EndCope","StartCope2","EndCope2","StartCope3","EndCope3"):
-        if not bool(getattr(obj,p+"Enabled",False)):
+def sync_cope_axes_from_target_members(
+    obj,
+):
+    """Refresh linked cope axes without replacing a bent tangent by its chord."""
+
+    ensure_notch_properties(
+        obj
+    )
+
+    cope_slots = (
+        (
+            "StartCope",
+            "start",
+        ),
+        (
+            "EndCope",
+            "end",
+        ),
+        (
+            "StartCope2",
+            "start",
+        ),
+        (
+            "EndCope2",
+            "end",
+        ),
+        (
+            "StartCope3",
+            "start",
+        ),
+        (
+            "EndCope3",
+            "end",
+        ),
+    )
+
+    refreshed = 0
+
+    for (
+        prefix,
+        coped_end,
+    ) in cope_slots:
+        if not bool(
+            getattr(
+                obj,
+                prefix
+                + "Enabled",
+                False,
+            )
+        ):
             continue
-        target=getattr(obj,p+"TargetMember",None)
-        if target is None or not hasattr(target,"StartPoint") or not hasattr(target,"EndPoint"):
+
+        target_member = getattr(
+            obj,
+            prefix
+            + "TargetMember",
+            None,
+        )
+
+        if target_member is None:
             continue
-        a=target.StartPoint; b=target.EndPoint
-        setattr(obj,p+"ThroughStart",FreeCAD.Vector(a.x,a.y,a.z))
-        setattr(obj,p+"ThroughEnd",FreeCAD.Vector(b.x,b.y,b.z))
-        refreshed+=1
+
+        bent_target = (
+            not str(
+                getattr(
+                    target_member,
+                    "SourceLayoutID",
+                    "",
+                )
+                or ""
+            ).strip()
+            and (
+                bool(
+                    str(
+                        getattr(
+                            target_member,
+                            "StartFabricationLayoutID",
+                            "",
+                        )
+                        or ""
+                    ).strip()
+                )
+                or bool(
+                    str(
+                        getattr(
+                            target_member,
+                            "EndFabricationLayoutID",
+                            "",
+                        )
+                        or ""
+                    ).strip()
+                )
+                or bool(
+                    getattr(
+                        target_member,
+                        "SourceLayoutLines",
+                        (),
+                    )
+                )
+            )
+        )
+
+        if bent_target:
+            # Use the same domain-level endpoint tangent already proven by
+            # bent-member miter geometry. If conversion ever fails, retain the
+            # last correctly configured axis rather than falling back to the
+            # geometrically false bent start-to-end chord.
+            try:
+                from forgecad.adapters.freecad.joint_inspector_adapter import (
+                    structural_member_from_freecad_object,
+                )
+                from forgecad.fabrication import (
+                    BentMember,
+                    Node,
+                )
+                from forgecad.services.joint_geometry import (
+                    member_direction_from_node,
+                )
+                from forgecad.services.node_proximity import (
+                    nodes_coincident,
+                )
+
+                domain_target = (
+                    structural_member_from_freecad_object(
+                        target_member
+                    )
+                )
+
+                if not isinstance(
+                    domain_target,
+                    BentMember,
+                ):
+                    continue
+
+                joint_point = (
+                    obj.StartPoint
+                    if coped_end
+                    == "start"
+                    else obj.EndPoint
+                )
+
+                joint_node = Node(
+                    float(
+                        joint_point.x
+                    ),
+                    float(
+                        joint_point.y
+                    ),
+                    float(
+                        joint_point.z
+                    ),
+                )
+
+                (
+                    dx,
+                    dy,
+                    dz,
+                ) = member_direction_from_node(
+                    domain_target,
+                    joint_node,
+                )
+
+                if nodes_coincident(
+                    domain_target.start,
+                    joint_node,
+                ):
+                    run_length = float(
+                        domain_target.tube.straight_runs[
+                            0
+                        ].length_mm
+                    )
+
+                elif nodes_coincident(
+                    domain_target.end,
+                    joint_node,
+                ):
+                    run_length = float(
+                        domain_target.tube.straight_runs[
+                            -1
+                        ].length_mm
+                    )
+
+                else:
+                    continue
+
+                axis_length = max(
+                    run_length,
+                    float(
+                        domain_target.profile.outside_diameter
+                    ),
+                    1.0,
+                )
+
+                target_start = FreeCAD.Vector(
+                    float(
+                        joint_point.x
+                    ),
+                    float(
+                        joint_point.y
+                    ),
+                    float(
+                        joint_point.z
+                    ),
+                )
+
+                target_end = FreeCAD.Vector(
+                    target_start.x
+                    + dx
+                    * axis_length,
+                    target_start.y
+                    + dy
+                    * axis_length,
+                    target_start.z
+                    + dz
+                    * axis_length,
+                )
+
+            except Exception:
+                continue
+
+        else:
+            if (
+                not hasattr(
+                    target_member,
+                    "StartPoint",
+                )
+                or not hasattr(
+                    target_member,
+                    "EndPoint",
+                )
+            ):
+                continue
+
+            target_start = (
+                target_member.StartPoint
+            )
+            target_end = (
+                target_member.EndPoint
+            )
+
+        setattr(
+            obj,
+            prefix
+            + "ThroughStart",
+            FreeCAD.Vector(
+                target_start.x,
+                target_start.y,
+                target_start.z,
+            ),
+        )
+
+        setattr(
+            obj,
+            prefix
+            + "ThroughEnd",
+            FreeCAD.Vector(
+                target_end.x,
+                target_end.y,
+                target_end.z,
+            ),
+        )
+
+        refreshed += 1
+
     return refreshed
+
 
 
 

@@ -22,23 +22,86 @@ def _end_keys(obj, precision=6):
     }
 
 
-def selected_cope_request(objects, precision=6):
-    objects=list(objects or ())
-    if not 2 <= len(objects) <= 4:
-        raise ValueError("Select the tube to cope first, then one to three target tubes.")
-    ids=[]; common=None
-    for obj in objects:
-        ident=_layout_id(obj)
-        if not ident:
-            raise ValueError("Every selected tube must be a generated ForgeCAD member with a SourceLayoutID.")
-        if ident in ids:
-            raise ValueError("Select each tube only once.")
-        ids.append(ident)
-        ends=_end_keys(obj, precision)
-        common=ends if common is None else common.intersection(ends)
-    if len(common or ()) != 1:
-        raise ValueError("The selected tubes must share exactly one joint endpoint.")
-    return next(iter(common)), ids[0], tuple(ids[1:])
+def selected_cope_request(
+    objects,
+    precision=6,
+):
+    """Resolve one straight cope source plus straight-or-bent endpoint targets."""
+
+    objects = list(
+        objects
+        or ()
+    )
+
+    if not (
+        2
+        <= len(
+            objects
+        )
+        <= 4
+    ):
+        raise ValueError(
+            "Select the straight tube to cope first, then one to three target tubes."
+        )
+
+    source = objects[
+        0
+    ]
+
+    source_id = str(
+        getattr(
+            source,
+            "SourceLayoutID",
+            "",
+        )
+        or ""
+    ).strip()
+
+    if not source_id:
+        raise ValueError(
+            "The tube being coped must currently be a straight generated "
+            "ForgeCAD member. Bent tubes are supported as cope targets first."
+        )
+
+    from forgecad.services.fabrication_identity import (
+        shared_structural_endpoint,
+    )
+
+    node_xyz, member_ids = (
+        shared_structural_endpoint(
+            objects,
+            precision=precision,
+        )
+    )
+
+    if (
+        not member_ids
+        or member_ids[
+            0
+        ]
+        != source_id
+    ):
+        raise ValueError(
+            "Could not resolve the selected cope source at the shared endpoint."
+        )
+
+    target_ids = tuple(
+        member_ids[
+            1:
+        ]
+    )
+
+    if not target_ids:
+        raise ValueError(
+            "Select at least one cope target."
+        )
+
+    return (
+        node_xyz,
+        source_id,
+        target_ids,
+    )
+
 
 
 
