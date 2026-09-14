@@ -48,13 +48,17 @@ def test_joint_context_resolves_endpoint_fabrication_identity():
     )
 
 
-def test_bent_target_path_refreshes_existing_structural_objects_in_place():
+def test_any_bent_selection_refreshes_existing_structural_objects_in_place():
     source = function_source(
         "apply_selected_cope"
     )
 
     assert (
-        "has_bent_target"
+        "has_bent_member"
+        in source
+    )
+    assert (
+        "for obj in selection"
         in source
     )
     assert (
@@ -62,6 +66,6 @@ def test_bent_target_path_refreshes_existing_structural_objects_in_place():
         in source
     )
     assert (
-        "if has_bent_target"
+        "if has_bent_member"
         in source
     )

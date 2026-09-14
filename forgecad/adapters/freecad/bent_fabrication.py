@@ -208,6 +208,191 @@ def _local_miter_cutter_size(
         ),
     )
 
+def _primary_bent_cope_component(
+    shape,
+):
+    """
+    Keep the main bent-tube body after a cylindrical cope cut.
+
+    A bent source can have a much larger center-of-mass distance from the
+    endpoint than the temporary stock fragment on the far side of the target.
+    Therefore the straight-member keep-point heuristic is not appropriate
+    here. The fabricated bent tube is the largest connected solid; temporary
+    cope remnants are smaller disconnected solids.
+    """
+
+    solids = list(
+        getattr(
+            shape,
+            "Solids",
+            (),
+        )
+    )
+
+    if len(solids) <= 1:
+        return shape
+
+    return max(
+        solids,
+        key=lambda solid: float(
+            getattr(
+                solid,
+                "Volume",
+                0.0,
+            )
+        ),
+    )
+
+def _apply_bent_endpoint_copes(
+    obj,
+    shape,
+    profile,
+    endpoint,
+    tangent,
+    straight_run_length,
+    prefixes,
+    outward_sign,
+):
+    """Apply saved cylindrical copes at one physical bent-tube endpoint."""
+
+    import FreeCAD
+
+    from forgecad.adapters.freecad.member_notch import (
+        validate_cope_diameter,
+    )
+    from forgecad.adapters.freecad.notch_geometry import (
+        build_through_tube_cutting_tool,
+        temporary_cope_extension,
+    )
+
+    enabled = tuple(
+        prefix
+        for prefix in prefixes
+        if bool(
+            getattr(
+                obj,
+                prefix + "Enabled",
+                False,
+            )
+        )
+    )
+
+    if not enabled:
+        return shape
+
+    point = _point_vector(
+        endpoint
+    )
+
+    dx, dy, dz = _normalized_xyz(
+        tangent
+    )
+
+    inward_sign = -float(
+        outward_sign
+    )
+
+    inward_x = dx * inward_sign
+    inward_y = dy * inward_sign
+    inward_z = dz * inward_sign
+
+    run_length = (
+        0.0
+        if straight_run_length is None
+        else max(
+            0.0,
+            float(
+                straight_run_length
+            ),
+        )
+    )
+
+    local_axis_length = max(
+        run_length,
+        float(
+            profile.outside_diameter
+        ),
+        1.0,
+    )
+
+    local_axis_end = FreeCAD.Vector(
+        point.x
+        + inward_x * local_axis_length,
+        point.y
+        + inward_y * local_axis_length,
+        point.z
+        + inward_z * local_axis_length,
+    )
+
+    temporary_stock = 0.0
+
+    for prefix in enabled:
+        temporary_stock = max(
+            temporary_stock,
+            temporary_cope_extension(
+                point,
+                local_axis_end,
+                profile,
+                getattr(
+                    obj,
+                    prefix + "ThroughStart",
+                ),
+                getattr(
+                    obj,
+                    prefix + "ThroughEnd",
+                ),
+                float(
+                    getattr(
+                        obj,
+                        prefix + "ThroughDiameter",
+                    )
+                ),
+            ),
+        )
+
+    if temporary_stock > 1e-9:
+        shape = _fuse_endpoint_extension(
+            shape,
+            endpoint,
+            tangent,
+            temporary_stock,
+            profile,
+            outward_sign=float(
+                outward_sign
+            ),
+        )
+
+    for prefix in enabled:
+        diameter = validate_cope_diameter(
+            getattr(
+                obj,
+                prefix + "ThroughDiameter",
+            )
+        )
+
+        cutter = build_through_tube_cutting_tool(
+            getattr(
+                obj,
+                prefix + "ThroughStart",
+            ),
+            getattr(
+                obj,
+                prefix + "ThroughEnd",
+            ),
+            diameter,
+        )
+
+        shape = shape.cut(
+            cutter
+        )
+
+        shape = _primary_bent_cope_component(
+            shape
+        )
+
+    return shape
+
+
 def apply_bent_miter_shape(
     obj,
     shape,
@@ -215,11 +400,11 @@ def apply_bent_miter_shape(
     centerline=None,
 ):
     """
-    Add endpoint stock and apply saved planar miters locally.
+    Add endpoint stock, cylindrical copes, and planar miters locally.
 
-    Bent members use an endpoint-local keep point and cutter. After each cut,
-    discard any disconnected outside fragment so temporary extension stock
-    cannot remain as a separate remnant.
+    Bent source copes use temporary straight stock along the true local
+    endpoint tangent. That temporary stock exists only for the Boolean cope
+    operation; the connected bent-tube body is retained afterward.
     """
 
     from forgecad.adapters.freecad.member_notch import (
@@ -300,6 +485,37 @@ def apply_bent_miter_shape(
             centerline.end_direction,
             end_extension,
             profile,
+            outward_sign=1.0,
+        )
+
+    shape = _apply_bent_endpoint_copes(
+        obj,
+        shape,
+        profile,
+        start_point,
+        start_direction,
+        start_run_length,
+        (
+            "StartCope",
+            "StartCope2",
+            "StartCope3",
+        ),
+        outward_sign=-1.0,
+    )
+
+    if has_solved_centerline:
+        shape = _apply_bent_endpoint_copes(
+            obj,
+            shape,
+            profile,
+            centerline.end_point,
+            centerline.end_direction,
+            end_run_length,
+            (
+                "EndCope",
+                "EndCope2",
+                "EndCope3",
+            ),
             outward_sign=1.0,
         )
 

@@ -832,15 +832,24 @@ def explicit_bent_target_extension_specifications_for_joint(
     layout_ids_by_member,
 ):
     """
-    Return physical endpoint stock for bent explicit cope targets.
+    Return physical target stock for explicit copes involving a bent member.
 
-    The target extension must cover the complete cylindrical intersection.
+    Existing behavior:
+        straight source -> bent target
+        extend the bent target through the fishmouth.
+
+    Bent-source behavior:
+        bent source -> straight target
+        extend the straight target through the fishmouth.
+
     For acute centerline angle A:
 
         L = (Rs + Rt * cos(A)) / sin(A)
 
     Rs is the coped/source outside radius and Rt is the target outside radius.
-    At 90 degrees this reduces to Rs.
+    At 90 degrees this reduces exactly to Rs.
+
+    Straight source -> straight target remains unchanged here.
     """
 
     from math import (
@@ -870,15 +879,25 @@ def explicit_bent_target_extension_specifications_for_joint(
             cope_specification.target_member
         )
 
-        if not isinstance(
-            target_member,
-            BentMember,
-        ):
-            continue
-
         coped_member = (
             cope_specification.coped_member
         )
+
+        target_is_bent = isinstance(
+            target_member,
+            BentMember,
+        )
+
+        source_is_bent = isinstance(
+            coped_member,
+            BentMember,
+        )
+
+        if (
+            not target_is_bent
+            and not source_is_bent
+        ):
+            continue
 
         source_radius = (
             float(
@@ -908,7 +927,7 @@ def explicit_bent_target_extension_specifications_for_joint(
 
         if sine <= 1e-9:
             raise ValueError(
-                "Cannot extend a bent cope target for collinear tube axes."
+                "Cannot extend an explicit cope target for collinear tube axes."
             )
 
         cosine = abs(
@@ -938,6 +957,7 @@ def explicit_bent_target_extension_specifications_for_joint(
     return tuple(
         specifications
     )
+
 
 
 

@@ -1437,6 +1437,14 @@ class BentTubeProxy:
                 obj
             )
 
+            from forgecad.adapters.freecad.member_notch import (
+                sync_cope_axes_from_target_members,
+            )
+
+            sync_cope_axes_from_target_members(
+                obj
+            )
+
             multi_joint_derived = (
                 self._refresh_multi_joint_derived_path(
                     obj
