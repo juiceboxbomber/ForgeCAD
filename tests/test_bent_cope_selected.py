@@ -176,20 +176,45 @@ def test_bent_source_end_can_cope_to_straight_target():
     )
 
 
-def test_bent_source_to_bent_target_remains_out_of_scope():
-    with pytest.raises(
-        ValueError,
-        match="Bent-to-bent Cope Selected is not supported yet",
-    ):
+def test_bent_source_can_cope_to_bent_target_at_shared_endpoint():
+    source = bent(
+        "SOURCE-START",
+        "SOURCE-END",
+    )
+
+    target = bent(
+        "TARGET-START",
+        "TARGET-END",
+    )
+
+    # The two bent tubes must share exactly one physical endpoint.
+    # bent() uses the same canonical start/end geometry for convenience,
+    # so move the target's far endpoint away from the source.
+    target.EndNode = node(
+        900.0,
+        -300.0,
+        0.0,
+    )
+
+    node_xyz, source_id, target_ids = (
         selected_cope_request(
             [
-                bent(
-                    "SOURCE-START",
-                    "SOURCE-END",
-                ),
-                bent(
-                    "TARGET-START",
-                    "TARGET-END",
-                ),
+                source,
+                target,
             ]
         )
+    )
+
+    assert node_xyz == (
+        0.0,
+        0.0,
+        0.0,
+    )
+
+    assert source_id == (
+        "SOURCE-START"
+    )
+
+    assert target_ids == (
+        "TARGET-START",
+    )

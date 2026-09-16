@@ -1382,7 +1382,6 @@ def configure_automatic_copes(
         ),
     )
 
-
 def configure_saved_fabrication(
     document,
     frame,
@@ -1464,6 +1463,8 @@ def configure_saved_fabrication(
     )
 
     return rendered_objects
+
+
 
 
 def configure_saved_copes(

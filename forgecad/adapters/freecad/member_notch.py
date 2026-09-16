@@ -623,7 +623,6 @@ def clear_miter(
     obj.MiterPlaneNormal = zero_vector()
     obj.MiterKeepPoint = zero_vector()
 
-
 def configure_start_extension(
     obj,
     extension,
@@ -915,10 +914,6 @@ def sync_cope_axes_from_target_members(
         )
 
         if bent_target:
-            # Use the same domain-level endpoint tangent already proven by
-            # bent-member miter geometry. If conversion ever fails, retain the
-            # last correctly configured axis rather than falling back to the
-            # geometrically false bent start-to-end chord.
             try:
                 from forgecad.adapters.freecad.joint_inspector_adapter import (
                     structural_member_from_freecad_object,
@@ -934,10 +929,8 @@ def sync_cope_axes_from_target_members(
                     nodes_coincident,
                 )
 
-                domain_target = (
-                    structural_member_from_freecad_object(
-                        target_member
-                    )
+                domain_target = structural_member_from_freecad_object(
+                    target_member
                 )
 
                 if not isinstance(
@@ -946,23 +939,61 @@ def sync_cope_axes_from_target_members(
                 ):
                     continue
 
-                joint_point = (
-                    obj.StartPoint
-                    if coped_end
-                    == "start"
-                    else obj.EndPoint
-                )
+                if coped_end == "start":
+                    joint_point = getattr(
+                        obj,
+                        "StartPoint",
+                        None,
+                    )
+
+                    if joint_point is None:
+                        source_node = getattr(
+                            obj,
+                            "StartNode",
+                            None,
+                        )
+                        joint_point = getattr(
+                            source_node,
+                            "Position",
+                            None,
+                        )
+
+                else:
+                    joint_point = getattr(
+                        obj,
+                        "EndPoint",
+                        None,
+                    )
+
+                    if joint_point is None:
+                        source_node = getattr(
+                            obj,
+                            "EndNode",
+                            None,
+                        )
+                        joint_point = getattr(
+                            source_node,
+                            "Position",
+                            None,
+                        )
+
+                if joint_point is None:
+                    domain_source = structural_member_from_freecad_object(
+                        obj
+                    )
+
+                    source_joint = (
+                        domain_source.start
+                        if coped_end == "start"
+                        else domain_source.end
+                    )
+
+                    joint_point = source_joint
 
                 joint_node = Node(
-                    float(
-                        joint_point.x
-                    ),
-                    float(
-                        joint_point.y
-                    ),
-                    float(
-                        joint_point.z
-                    ),
+                    float(joint_point.x),
+                    float(joint_point.y),
+                    float(joint_point.z),
                 )
 
                 (
@@ -1006,15 +1037,9 @@ def sync_cope_axes_from_target_members(
                 )
 
                 target_start = FreeCAD.Vector(
-                    float(
-                        joint_point.x
-                    ),
-                    float(
-                        joint_point.y
-                    ),
-                    float(
-                        joint_point.z
-                    ),
+                    float(joint_point.x),
+                    float(joint_point.y),
+                    float(joint_point.z),
                 )
 
                 target_end = FreeCAD.Vector(
@@ -1045,12 +1070,8 @@ def sync_cope_axes_from_target_members(
             ):
                 continue
 
-            target_start = (
-                target_member.StartPoint
-            )
-            target_end = (
-                target_member.EndPoint
-            )
+            target_start = target_member.StartPoint
+            target_end = target_member.EndPoint
 
         setattr(
             obj,
@@ -1077,6 +1098,7 @@ def sync_cope_axes_from_target_members(
         refreshed += 1
 
     return refreshed
+
 
 
 
