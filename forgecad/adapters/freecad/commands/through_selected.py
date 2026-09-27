@@ -39,80 +39,314 @@ def _warn(title, message):
     QtGui.QMessageBox.warning(FreeCADGui.getMainWindow(), title, str(message))
 
 
-def _preflight(document, selection, node_xyz, through_id, branch_ids):
-    position = FreeCAD.Vector(*node_xyz)
-    node_object = node_object_at_position(document, position)
-    if node_object is None:
-        node_object = InspectionNode("Joint", position)
-    detected = joint_from_node_object(document, node_object)
-    if detected.member_count < 2:
-        raise ValueError("No ForgeCAD joint exists at the selected connection point.")
+def _fabrication_id_at_joint(
+    obj,
+    position,
+    precision=6,
+):
+    """Return the persistent identity represented by an object at this joint."""
 
-    selected_by_id = {_layout_id(obj): obj for obj in selection}
-    needed = (through_id,) + tuple(branch_ids)
-    if any(ident not in selected_by_id for ident in needed):
-        raise ValueError("Could not resolve the selected ForgeCAD members.")
-
-    by_id = {
-        ident: structural_member_from_freecad_object(selected_by_id[ident])
-        for ident in needed
-    }
-    selected_joint = Joint(
-        node=detected.node,
-        members=[by_id[ident] for ident in needed],
+    straight_id = _layout_id(
+        obj
     )
 
-    node_key_value = vector_key(position)
+    if straight_id:
+        return straight_id
+
+    from forgecad.services.fabrication_identity import (
+        fabrication_layout_id_at_point,
+    )
+
+    return fabrication_layout_id_at_point(
+        obj,
+        position,
+        precision=precision,
+    )
+
+
+def _selection_has_bent_member(
+    selection,
+):
+    """Return True when selection contains a converted bent structural tube."""
+
+    return any(
+        (
+            not _layout_id(
+                obj
+            )
+            and (
+                bool(
+                    str(
+                        getattr(
+                            obj,
+                            "StartFabricationLayoutID",
+                            "",
+                        )
+                        or ""
+                    ).strip()
+                )
+                or bool(
+                    str(
+                        getattr(
+                            obj,
+                            "EndFabricationLayoutID",
+                            "",
+                        )
+                        or ""
+                    ).strip()
+                )
+                or bool(
+                    tuple(
+                        getattr(
+                            obj,
+                            "SourceLayoutLines",
+                            (),
+                        )
+                        or ()
+                    )
+                )
+            )
+        )
+        for obj in selection
+    )
+
+def _preflight(
+    document,
+    selection,
+    node_xyz,
+    through_id,
+    branch_ids,
+):
+    """Validate the selected Through plan against current structural objects."""
+
+    position = FreeCAD.Vector(
+        *node_xyz
+    )
+
+    node_object = node_object_at_position(
+        document,
+        position,
+    )
+
+    if node_object is None:
+        node_object = InspectionNode(
+            "Joint",
+            position,
+        )
+
+    detected = joint_from_node_object(
+        document,
+        node_object,
+    )
+
+    if detected.member_count < 2:
+        raise ValueError(
+            "No ForgeCAD joint exists at the selected connection point."
+        )
+
+    selected_by_id = {}
+
+    for obj in selection:
+        ident = _fabrication_id_at_joint(
+            obj,
+            position,
+        )
+
+        if not ident:
+            raise ValueError(
+                "Could not resolve one selected ForgeCAD member at the joint."
+            )
+
+        if ident in selected_by_id:
+            raise ValueError(
+                "Select each tube only once."
+            )
+
+        selected_by_id[
+            ident
+        ] = obj
+
+    needed = (
+        through_id,
+    ) + tuple(
+        branch_ids
+    )
+
+    if any(
+        ident not in selected_by_id
+        for ident in needed
+    ):
+        raise ValueError(
+            "Could not resolve the selected ForgeCAD members."
+        )
+
+    by_id = {
+        ident: structural_member_from_freecad_object(
+            selected_by_id[
+                ident
+            ]
+        )
+        for ident in needed
+    }
+
+    selected_joint = Joint(
+        node=detected.node,
+        members=[
+            by_id[
+                ident
+            ]
+            for ident in needed
+        ],
+    )
+
+    node_key_value = vector_key(
+        position
+    )
+
     validate_primary_compatibility(
-        load_joint_treatment(document, node_key_value),
+        load_joint_treatment(
+            document,
+            node_key_value,
+        ),
         needed,
     )
 
-    through_member = by_id[through_id]
+    through_member = by_id[
+        through_id
+    ]
+
     for branch_id in branch_ids:
         build_cope_specification(
             CopeInstruction(
                 joint=selected_joint,
-                coped_member=by_id[branch_id],
+                coped_member=by_id[
+                    branch_id
+                ],
                 target_member=through_member,
             )
         )
+
     return node_key_value
 
 
-def apply_selected_through(document, selection):
-    """Persist direct through relationships and regenerate atomically."""
-    selection = list(selection or ())
-    node_xyz, through_id, branch_ids = selected_through_request(selection)
+
+def apply_selected_through(
+    document,
+    selection,
+):
+    """
+    Persist direct Through relationships and update fabrication atomically.
+
+    Converted bent tubes are refreshed in place so consumed layout members are
+    not regenerated as straight tubes.
+    """
+
+    selection = list(
+        selection
+        or ()
+    )
+
+    (
+        node_xyz,
+        through_id,
+        branch_ids,
+    ) = selected_through_request(
+        selection
+    )
+
     node_key_value = _preflight(
-        document, selection, node_xyz, through_id, branch_ids
+        document,
+        selection,
+        node_xyz,
+        through_id,
+        branch_ids,
     )
 
     # Phase 3 stored Through as ordinary explicit cope pairs. Remove any
     # selected-source pairs there so rerunning this command migrates the joint
     # into the dedicated through store without leaving duplicate cuts.
-    generic_copes = load_joint_cope_pairs(document, node_key_value)
-    remaining_generic_copes = remove_source_pairs(generic_copes, branch_ids)
+    generic_copes = load_joint_cope_pairs(
+        document,
+        node_key_value,
+    )
 
-    existing_through = load_joint_through_pairs(document, node_key_value)
-    updated_through = replace_branch_pairs(existing_through, through_id, branch_ids)
+    remaining_generic_copes = remove_source_pairs(
+        generic_copes,
+        branch_ids,
+    )
+
+    existing_through = load_joint_through_pairs(
+        document,
+        node_key_value,
+    )
+
+    updated_through = replace_branch_pairs(
+        existing_through,
+        through_id,
+        branch_ids,
+    )
+
+    has_bent_member = (
+        _selection_has_bent_member(
+            selection
+        )
+    )
 
     started = False
+
     try:
-        document.openTransaction("Through Selected ForgeCAD Members")
+        document.openTransaction(
+            "Through Selected ForgeCAD Members"
+        )
         started = True
-        if remaining_generic_copes != tuple(generic_copes):
-            replace_joint_cope_pairs(document, node_key_value, remaining_generic_copes)
-        replace_joint_through_pairs(document, node_key_value, updated_through)
+
+        if (
+            remaining_generic_copes
+            != tuple(
+                generic_copes
+            )
+        ):
+            replace_joint_cope_pairs(
+                document,
+                node_key_value,
+                remaining_generic_copes,
+            )
+
+        replace_joint_through_pairs(
+            document,
+            node_key_value,
+            updated_through,
+        )
+
         FreeCADGui.Selection.clearSelection()
-        regenerate_frame(document)
+
+        if has_bent_member:
+            from forgecad.adapters.freecad.fabrication_refresh import (
+                refresh_fabrication_for_document,
+            )
+
+            refresh_fabrication_for_document(
+                document
+            )
+
+        else:
+            regenerate_frame(
+                document
+            )
+
         document.commitTransaction()
         started = False
+
     except Exception:
         if started:
             document.abortTransaction()
         raise
-    return through_id, branch_ids
+
+    return (
+        through_id,
+        branch_ids,
+    )
+
 
 
 class ThroughSelectedCommand:
