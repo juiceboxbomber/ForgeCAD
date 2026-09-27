@@ -75,45 +75,311 @@ def point_strictly_inside_segment(point, start, end, tolerance=DEFAULT_POINT_TOL
     )
 
 
-def branch_joint_point(through_obj, branch_obj, tolerance=DEFAULT_POINT_TOLERANCE):
-    """Return the branch endpoint that lands on the selected through tube.
+def _is_bent_structural_object(
+    obj,
+):
+    """Return True for a converted bent tube with endpoint fabrication identity."""
 
-    A branch must end at the through tube. The through tube may itself end at
-    that point (corner) or continue through it (interior T-joint).
+    if _layout_id(
+        obj
+    ):
+        return False
+
+    return bool(
+        str(
+            getattr(
+                obj,
+                "StartFabricationLayoutID",
+                "",
+            )
+            or ""
+        ).strip()
+        or str(
+            getattr(
+                obj,
+                "EndFabricationLayoutID",
+                "",
+            )
+            or ""
+        ).strip()
+        or tuple(
+            getattr(
+                obj,
+                "SourceLayoutLines",
+                (),
+            )
+            or ()
+        )
+    )
+
+
+def _structural_end_xyz(
+    obj,
+):
+    """Return true physical structural endpoints for straight or bent tubes."""
+
+    from forgecad.services.fabrication_identity import (
+        structural_endpoint_points,
+    )
+
+    start_point, end_point = (
+        structural_endpoint_points(
+            obj
+        )
+    )
+
+    return (
+        _xyz(
+            start_point
+        ),
+        _xyz(
+            end_point
+        ),
+    )
+
+
+def _fabrication_id_at_joint_xyz(
+    obj,
+    joint_xyz,
+    precision=6,
+):
     """
-    through_start, through_end = _end_xyz(through_obj)
-    branch_start, branch_end = _end_xyz(branch_obj)
-    candidates = []
-    for point in (branch_start, branch_end):
-        if point_on_segment(point, through_start, through_end, tolerance):
-            key = _point_key_xyz(point)
-            if all(_point_key_xyz(existing) != key for existing in candidates):
-                candidates.append(point)
+    Resolve the persistent member identity represented at one Through joint.
 
-    if len(candidates) == 1:
-        return candidates[0]
-    if len(candidates) > 1:
+    Straight members retain one SourceLayoutID even when the joint lies in
+    their interior. Converted bent tubes deliberately resolve identity only at
+    their true physical start/end points.
+    """
+
+    straight_id = _layout_id(
+        obj
+    )
+
+    if straight_id:
+        return straight_id
+
+    if not _is_bent_structural_object(
+        obj
+    ):
+        raise ValueError(
+            "Every selected tube must be a generated ForgeCAD structural "
+            "member; converted bent tubes need persistent fabrication "
+            "endpoint identities."
+        )
+
+    from forgecad.services.fabrication_identity import (
+        fabrication_layout_id_at_point,
+        structural_endpoint_points,
+    )
+
+    requested_key = _point_key_xyz(
+        joint_xyz,
+        precision,
+    )
+
+    for endpoint in structural_endpoint_points(
+        obj
+    ):
+        endpoint_xyz = _xyz(
+            endpoint
+        )
+
+        if (
+            _point_key_xyz(
+                endpoint_xyz,
+                precision,
+            )
+            == requested_key
+        ):
+            return fabrication_layout_id_at_point(
+                obj,
+                endpoint,
+                precision=precision,
+            )
+
+    raise ValueError(
+        "Converted bent tubes can participate in Through Selected only at "
+        "a true physical StartNode or EndNode."
+    )
+
+def branch_joint_point(
+    through_obj,
+    branch_obj,
+    tolerance=DEFAULT_POINT_TOLERANCE,
+):
+    """
+    Return the branch endpoint that lands on the selected through tube.
+
+    Straight through members retain endpoint-to-interior T-joint support.
+    Converted bent through members participate only at their true physical
+    endpoints; their start-to-end chord is never treated as tube geometry.
+    Bent branches likewise contribute only their true physical endpoints.
+    """
+
+    through_is_bent = (
+        _is_bent_structural_object(
+            through_obj
+        )
+    )
+
+    branch_is_bent = (
+        _is_bent_structural_object(
+            branch_obj
+        )
+    )
+
+    branch_start, branch_end = (
+        _structural_end_xyz(
+            branch_obj
+        )
+    )
+
+    if through_is_bent:
+        through_start, through_end = (
+            _structural_end_xyz(
+                through_obj
+            )
+        )
+
+        candidates = []
+
+        for through_point in (
+            through_start,
+            through_end,
+        ):
+            for branch_point in (
+                branch_start,
+                branch_end,
+            ):
+                if (
+                    _distance(
+                        through_point,
+                        branch_point,
+                    )
+                    <= tolerance
+                ):
+                    key = _point_key_xyz(
+                        through_point
+                    )
+
+                    if all(
+                        _point_key_xyz(
+                            existing
+                        )
+                        != key
+                        for existing in candidates
+                    ):
+                        candidates.append(
+                            through_point
+                        )
+
+        if len(
+            candidates
+        ) == 1:
+            return candidates[
+                0
+            ]
+
+        if len(
+            candidates
+        ) > 1:
+            raise ValueError(
+                "The selected bent through tube and branch share more than "
+                "one physical endpoint."
+            )
+
+        raise ValueError(
+            "A converted bent tube selected as the through member can "
+            "participate only at its true physical StartNode or EndNode; "
+            "its start-to-end chord is not tube geometry."
+        )
+
+    through_start, through_end = (
+        _end_xyz(
+            through_obj
+        )
+    )
+
+    candidates = []
+
+    for point in (
+        branch_start,
+        branch_end,
+    ):
+        if point_on_segment(
+            point,
+            through_start,
+            through_end,
+            tolerance,
+        ):
+            key = _point_key_xyz(
+                point
+            )
+
+            if all(
+                _point_key_xyz(
+                    existing
+                )
+                != key
+                for existing in candidates
+            ):
+                candidates.append(
+                    point
+                )
+
+    if len(
+        candidates
+    ) == 1:
+        return candidates[
+            0
+        ]
+
+    if len(
+        candidates
+    ) > 1:
+        if branch_is_bent:
+            raise ValueError(
+                "The selected bent branch has both physical endpoints on "
+                "the through tube; Through Selected requires one "
+                "unambiguous branch endpoint."
+            )
+
         raise ValueError(
             "The selected branch lies along the through tube. "
             "Through Selected requires a branch that ends at the through tube."
         )
 
-    # No branch endpoint lands on the through tube. If the through tube has an
-    # endpoint inside the branch, the requested ordering would require cutting
-    # the branch in its middle, which an end cope cannot represent.
-    for point in (through_start, through_end):
-        if point_strictly_inside_segment(point, branch_start, branch_end, tolerance):
+    if branch_is_bent:
+        raise ValueError(
+            "The selected bent branch must meet the straight through tube "
+            "at one true physical StartNode or EndNode."
+        )
+
+    # Preserve the proven straight/straight diagnostics and crossing behavior.
+    for point in (
+        through_start,
+        through_end,
+    ):
+        if point_strictly_inside_segment(
+            point,
+            branch_start,
+            branch_end,
+            tolerance,
+        ):
             raise ValueError(
                 "The second tube continues through the intersection instead of ending there. "
                 "If the first tube is to stay through, split the second tube at the joint "
                 "into branch pieces, then select the through tube first."
             )
 
-    # Also give the useful crossing message for two continuous segments that
-    # intersect away from all four endpoints.
     crossing = segment_intersection_point(
-        through_start, through_end, branch_start, branch_end, tolerance
+        through_start,
+        through_end,
+        branch_start,
+        branch_end,
+        tolerance,
     )
+
     if crossing is not None:
         raise ValueError(
             "Both selected tubes continue through the intersection. "
@@ -125,6 +391,7 @@ def branch_joint_point(through_obj, branch_obj, tolerance=DEFAULT_POINT_TOLERANC
         "The selected tubes must share exactly one valid joint; "
         "the selected branch does not end on the selected through tube."
     )
+
 
 
 def segment_intersection_point(a0, a1, b0, b1, tolerance=DEFAULT_POINT_TOLERANCE):
@@ -184,32 +451,112 @@ def selected_joint_point(objects, precision=6):
     return next(iter(keys))
 
 
-def selected_through_request(objects, precision=6):
-    """Resolve first-selected through tube, branch tubes, and their joint point."""
-    objects = list(objects or ())
-    if len(objects) < 2:
+def selected_through_request(
+    objects,
+    precision=6,
+):
+    """
+    Resolve first-selected through tube, branch tubes, and their joint point.
+
+    Straight through tubes may continue through an interior T-joint. Converted
+    bent tubes participate only through true structural endpoints and resolve
+    their endpoint-specific fabrication identity at that joint.
+    """
+
+    objects = list(
+        objects
+        or ()
+    )
+
+    if len(
+        objects
+    ) < 2:
         raise ValueError(
             "Select the tube that stays through first, then one or more branch tubes."
         )
 
-    ids = []
     for obj in objects:
-        ident = _layout_id(obj)
-        if not ident:
-            raise ValueError(
-                "Every selected tube must be a generated ForgeCAD member with a SourceLayoutID."
+        if (
+            not _layout_id(
+                obj
             )
-        if ident in ids:
-            raise ValueError("Select each tube only once.")
-        ids.append(ident)
+            and not _is_bent_structural_object(
+                obj
+            )
+        ):
+            raise ValueError(
+                "Every selected tube must be a generated ForgeCAD structural "
+                "member; converted bent tubes need persistent fabrication "
+                "endpoint identities."
+            )
 
-    through_obj = objects[0]
-    points = [branch_joint_point(through_obj, branch) for branch in objects[1:]]
-    keys = {_point_key_xyz(point, precision) for point in points}
-    if len(keys) != 1:
-        raise ValueError("All selected branch tubes must meet the through tube at the same joint.")
+    through_obj = objects[
+        0
+    ]
 
-    return next(iter(keys)), ids[0], tuple(ids[1:])
+    points = [
+        branch_joint_point(
+            through_obj,
+            branch,
+        )
+        for branch in objects[
+            1:
+        ]
+    ]
+
+    keys = {
+        _point_key_xyz(
+            point,
+            precision,
+        )
+        for point in points
+    }
+
+    if len(
+        keys
+    ) != 1:
+        raise ValueError(
+            "All selected branch tubes must meet the through tube at the same joint."
+        )
+
+    joint_xyz = next(
+        iter(
+            keys
+        )
+    )
+
+    ids = [
+        _fabrication_id_at_joint_xyz(
+            obj,
+            joint_xyz,
+            precision=precision,
+        )
+        for obj in objects
+    ]
+
+    if len(
+        set(
+            ids
+        )
+    ) != len(
+        ids
+    ):
+        raise ValueError(
+            "Select each tube only once."
+        )
+
+    return (
+        joint_xyz,
+        ids[
+            0
+        ],
+        tuple(
+            ids[
+                1:
+            ]
+        ),
+    )
+
 
 
 def replace_branch_pairs(existing_pairs, through_id, branch_ids):

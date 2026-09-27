@@ -967,10 +967,12 @@ def extension_specifications_for_frame(
     source_layout_ids=None,
 ):
     """
-    Return all physical member extensions required by treatments.
+    Return physical member extensions required by all saved treatments.
 
-    Explicit Cope Selected operations targeting a bent tube also require
-    physical endpoint stock beyond that bent tube's selected endpoint.
+    This includes:
+    - primary/automatic treatment extensions;
+    - dedicated Through Selected endpoint extensions;
+    - explicit Cope Selected target extensions when a bent member participates.
     """
 
     specifications = []
@@ -997,6 +999,14 @@ def extension_specifications_for_frame(
         frame
     ):
         specifications.extend(
+            explicit_through_extension_specifications_for_joint(
+                document,
+                joint,
+                layout_ids_by_member,
+            )
+        )
+
+        specifications.extend(
             explicit_bent_target_extension_specifications_for_joint(
                 document,
                 joint,
@@ -1007,6 +1017,7 @@ def extension_specifications_for_frame(
     return tuple(
         specifications
     )
+
 
 
 
