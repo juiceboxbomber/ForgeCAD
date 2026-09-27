@@ -1,10 +1,11 @@
-"""Interactive FreeCAD command for trimming/extending one straight member."""
+"""Interactive FreeCAD command for trimming/extending ForgeCAD structural members."""
 
 import FreeCAD
 import FreeCADGui
 from PySide import QtCore, QtGui
 
 from forgecad.adapters.freecad.joint_inspector_adapter import (
+    is_forgecad_bent_member,
     structural_member_from_freecad_object,
 )
 from forgecad.adapters.freecad.member_trim_extend_adapter import (
@@ -24,10 +25,15 @@ _active_tool = None
 def is_forgecad_member(
     obj,
 ):
-    """Return True for a generated ForgeCAD straight-member object."""
+    """Return True for a generated straight or converted bent ForgeCAD member."""
 
     if obj is None:
         return False
+
+    if is_forgecad_bent_member(
+        obj
+    ):
+        return True
 
     return all(
         hasattr(
@@ -42,8 +48,9 @@ def is_forgecad_member(
     )
 
 
+
 def selected_source_member():
-    """Return exactly one selected ForgeCAD straight member."""
+    """Return exactly one selected ForgeCAD structural member."""
 
     selection = list(
         FreeCADGui.Selection.getSelection()
@@ -466,6 +473,34 @@ class InteractiveTrimExtendTool:
             )
             return
 
+        if is_forgecad_bent_member(
+            target
+        ):
+            QtGui.QMessageBox.warning(
+                FreeCADGui.getMainWindow(),
+                "Trim / Extend Member",
+                (
+                    "Bent-member Trim / Extend currently uses a "
+                    "straight member as the target."
+                ),
+            )
+            return
+
+        if is_forgecad_bent_member(
+            self.source_object
+        ):
+            self.target_object = target
+
+            self.remove_selection_observer()
+            FreeCADGui.Selection.clearSelection()
+
+            self.add_trim_click_callback()
+            self.show_status(
+                "Bent Trim / Extend: target selected. Click the END of "
+                "the bent tube you want to move. Press Esc to cancel."
+            )
+            return
+
         try:
             target_member = (
                 structural_member_from_freecad_object(
@@ -518,9 +553,7 @@ class InteractiveTrimExtendTool:
         if kind == "extend":
             self.commit_pending = True
 
-            # Stop listening before the deferred document mutation.
             self.remove_selection_observer()
-
             self.show_status(
                 "Extend: target selected. ForgeCAD is extending the "
                 "highlighted member to the target and creating the "
@@ -534,19 +567,16 @@ class InteractiveTrimExtendTool:
             )
             return
 
-        # Interior intersection. Selection has done its job. Switch to
-        # one viewport click that chooses which endpoint of the source
-        # member moves to the intersection.
         self.remove_selection_observer()
         FreeCADGui.Selection.clearSelection()
 
         self.add_trim_click_callback()
-
         self.show_status(
             "Trim: target selected. Click the portion of the highlighted "
             "member you want to REMOVE. ForgeCAD will trim that end back "
             "to the target and keep the opposite side. Press Esc to cancel."
         )
+
 
     def commit(
         self,
@@ -645,10 +675,7 @@ class InteractiveTrimExtendTool:
         event,
     ):
         """
-        Record trim-side intent, then defer document mutation.
-
-        The current Coin mouse callback is allowed to return before any
-        member is replaced or removed.
+        Record endpoint intent, then defer document mutation.
         """
 
         if (
@@ -684,20 +711,26 @@ class InteractiveTrimExtendTool:
 
         self.commit_pending = True
 
-        # Remove the mouse callback using the correct event type before
-        # the deferred document mutation occurs.
         self.remove_trim_click_callback()
 
-        self.show_status(
-            "Trim: portion selected. ForgeCAD is trimming that end back "
-            "to the target and keeping the opposite side."
-        )
+        if is_forgecad_bent_member(
+            self.source_object
+        ):
+            self.show_status(
+                "Bent Trim / Extend: moving the selected end to the target."
+            )
+        else:
+            self.show_status(
+                "Trim: portion selected. ForgeCAD is trimming that end back "
+                "to the target and keeping the opposite side."
+            )
 
         defer_call(
             lambda: self.commit(
                 endpoint=endpoint
             )
         )
+
 
     def on_keyboard_event(
         self,
@@ -736,8 +769,8 @@ class TrimExtendMemberCommand:
         return {
             "MenuText": "Trim / Extend Member",
             "ToolTip": (
-                "Trim or extend one selected ForgeCAD straight member "
-                "to the centerline of a target member"
+                "Trim or extend one selected ForgeCAD member "
+                "to the centerline of a straight target member"
             ),
         }
 
@@ -767,8 +800,8 @@ class TrimExtendMemberCommand:
                 FreeCADGui.getMainWindow(),
                 "Select One Member",
                 (
-                    "Select exactly one ForgeCAD straight member "
-                    "to modify, then run Trim / Extend Member."
+                    "Select exactly one ForgeCAD member to modify, "
+                    "then run Trim / Extend Member."
                 ),
             )
             return

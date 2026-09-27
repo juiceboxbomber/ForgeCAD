@@ -3,8 +3,15 @@
 import math
 
 from forgecad.fabrication import (
+    BentMember,
     Member,
     Node,
+)
+from forgecad.geometry import (
+    Point3D,
+)
+from forgecad.services.bent_tube_path import (
+    build_bent_tube_centerline,
 )
 
 
@@ -331,6 +338,188 @@ def line_intersection_3d(
         second_parameter,
     )
 
+
+def _node_offset(
+    node,
+    direction,
+    distance,
+):
+    """Return a Node offset along one normalized direction."""
+
+    return Node(
+        float(node.x)
+        + float(direction.x)
+        * float(distance),
+        float(node.y)
+        + float(direction.y)
+        * float(distance),
+        float(node.z)
+        + float(direction.z)
+        * float(distance),
+    )
+
+
+def bent_endpoint_intersection_3d(
+    bent_member,
+    target_member,
+    endpoint,
+    tolerance=DEFAULT_INTERSECTION_TOLERANCE,
+):
+    """
+    Intersect one bent-member endpoint tangent with a straight target.
+
+    The temporary source axis points OUTWARD from the chosen physical end.
+    Its parameter therefore has direct meaning in millimeters:
+
+        positive -> extend outward
+        negative -> trim inward
+
+    A trim may shorten only the straight run adjacent to the selected end.
+    It may not reach or pass the nearest bend tangent point.
+    """
+
+    if not isinstance(
+        bent_member,
+        BentMember,
+    ):
+        raise TypeError(
+            "Bent Trim/Extend requires a BentMember source."
+        )
+
+    if not isinstance(
+        target_member,
+        Member,
+    ):
+        raise ValueError(
+            "Bent-member Trim/Extend currently requires a straight target."
+        )
+
+    requested = str(
+        endpoint or ""
+    ).strip().lower()
+
+    if requested not in (
+        "start",
+        "end",
+    ):
+        raise ValueError(
+            "Bent-member Trim/Extend requires choosing start or end."
+        )
+
+    centerline = build_bent_tube_centerline(
+        bent_member.tube,
+        start_point=Point3D(
+            float(
+                bent_member.start.x
+            ),
+            float(
+                bent_member.start.y
+            ),
+            float(
+                bent_member.start.z
+            ),
+        ),
+        initial_direction=(
+            bent_member.initial_direction
+        ),
+        initial_bend_normal=(
+            bent_member.initial_bend_normal
+        ),
+    )
+
+    if requested == "start":
+        physical_endpoint = (
+            bent_member.start
+        )
+        outward_direction = (
+            bent_member
+            .initial_direction
+            .normalized()
+            .scaled(
+                -1.0
+            )
+        )
+        adjacent_run_length = float(
+            bent_member
+            .tube
+            .straight_runs[
+                0
+            ]
+            .length_mm
+        )
+    else:
+        physical_endpoint = (
+            bent_member.end
+        )
+        outward_direction = (
+            centerline
+            .end_direction
+            .normalized()
+        )
+        adjacent_run_length = float(
+            bent_member
+            .tube
+            .straight_runs[
+                -1
+            ]
+            .length_mm
+        )
+
+    tangent_axis = Member(
+        start=physical_endpoint,
+        end=_node_offset(
+            physical_endpoint,
+            outward_direction,
+            1.0,
+        ),
+        profile=bent_member.profile,
+        material=bent_member.material,
+    )
+
+    (
+        intersection,
+        signed_distance,
+        target_parameter,
+    ) = line_intersection_3d(
+        tangent_axis,
+        target_member,
+        tolerance=tolerance,
+    )
+
+    signed_distance = float(
+        signed_distance
+    )
+    tolerance = float(
+        tolerance
+    )
+
+    if abs(
+        signed_distance
+    ) <= tolerance:
+        kind = "none"
+
+    elif signed_distance > 0.0:
+        kind = "extend"
+
+    else:
+        trim_distance = -signed_distance
+
+        if trim_distance >= (
+            adjacent_run_length
+            - tolerance
+        ):
+            raise ValueError(
+                "Bent-member Trim would reach or pass the nearest bend."
+            )
+
+        kind = "trim"
+
+    return (
+        intersection,
+        signed_distance,
+        target_parameter,
+        kind,
+    )
 
 def classify_parameter(
     parameter,
