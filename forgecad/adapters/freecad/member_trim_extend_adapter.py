@@ -1,4 +1,5 @@
-"""FreeCAD adapter for trimming/extending one ForgeCAD straight member."""
+"""FreeCAD adapter for trimming/extending ForgeCAD structural members."""
+from forgecad.fabrication import BentMember
 
 from forgecad.adapters.freecad.commands.create_member_between_nodes import (
     create_member_between_nodes,
@@ -19,6 +20,7 @@ from forgecad.adapters.freecad.fabrication_refresh import (
     refresh_fabrication_for_document,
 )
 from forgecad.services.member_trim_extend import (
+    bent_endpoint_intersection_3d,
     line_intersection_3d,
     modification_kind,
     replace_member_endpoint,
@@ -119,6 +121,167 @@ def old_endpoint_node(
         return None
 
 
+def _is_joint_derived_bent_object(
+    obj,
+):
+    """Return True when linked design nodes define the bent tube path."""
+
+    proxy = getattr(
+        obj,
+        "Proxy",
+        None,
+    )
+
+    if proxy is None:
+        return False
+
+    for method_name in (
+        "_is_multi_joint_derived_bend",
+        "_is_joint_derived_bend",
+    ):
+        method = getattr(
+            proxy,
+            method_name,
+            None,
+        )
+
+        if not callable(
+            method
+        ):
+            continue
+
+        try:
+            if method(
+                obj
+            ):
+                return True
+        except Exception:
+            continue
+
+    return False
+
+
+def _trim_extend_bent_member_object(
+    document,
+    member_object,
+    target_object,
+    source_member,
+    target_member,
+    endpoint,
+):
+    """
+    Move one true endpoint of a converted bend to a straight target.
+
+    The bent FreeCAD object is retained. Its linked endpoint node is replaced
+    and the existing joint-derived path machinery rebuilds the tube in place.
+    """
+
+    requested = str(
+        endpoint or ""
+    ).strip().lower()
+
+    if requested not in (
+        "start",
+        "end",
+    ):
+        raise ValueError(
+            "For a bent member, click the end you want to trim or extend."
+        )
+
+    if not _is_joint_derived_bent_object(
+        member_object
+    ):
+        raise ValueError(
+            "Bent Trim/Extend currently supports converted "
+            "joint-derived bent tubes."
+        )
+
+    if isinstance(
+        target_member,
+        BentMember,
+    ):
+        raise ValueError(
+            "Bent-member Trim/Extend currently requires a straight target."
+        )
+
+    (
+        intersection,
+        source_parameter,
+        target_parameter,
+        kind,
+    ) = bent_endpoint_intersection_3d(
+        source_member,
+        target_member,
+        requested,
+    )
+
+    if kind == "none":
+        raise ValueError(
+            "The target already intersects the bent member at that endpoint."
+        )
+
+    displaced_node = old_endpoint_node(
+        member_object,
+        requested,
+    )
+
+    replacement_node = _get_or_create_node(
+        document,
+        intersection,
+    )
+
+    property_name = (
+        "StartNode"
+        if requested == "start"
+        else "EndNode"
+    )
+
+    setattr(
+        member_object,
+        property_name,
+        replacement_node,
+    )
+
+    proxy = getattr(
+        member_object,
+        "Proxy",
+        None,
+    )
+
+    if (
+        proxy is not None
+        and hasattr(
+            proxy,
+            "mark_geometry_dirty",
+        )
+    ):
+        proxy.mark_geometry_dirty()
+
+    document.recompute()
+
+    remove_node_if_unused(
+        document,
+        displaced_node,
+    )
+
+    refresh_joint_topology(
+        document
+    )
+
+    refresh_fabrication_for_document(
+        document
+    )
+
+    return (
+        None,
+        member_object,
+        intersection,
+        requested,
+        kind,
+        source_parameter,
+        target_parameter,
+    )
+
 def trim_extend_member_object(
     document,
     member_object,
@@ -126,19 +289,12 @@ def trim_extend_member_object(
     endpoint=None,
 ):
     """
-    Trim or extend one ForgeCAD straight member to another centerline.
+    Trim or extend one ForgeCAD structural member to a target centerline.
 
-    Only member_object is replaced. target_object is used solely as the
-    target centerline and is never modified.
+    Straight sources retain the original replacement workflow.
 
-    For an interior intersection, endpoint must be "start" or "end".
-    For an extension, the required endpoint is determined automatically.
-
-    The replacement is created with fabrication refresh deferred. The
-    original is then removed. Its displaced endpoint node is removed only
-    if no remaining straight member, bent tube, or other linked object
-    still references it. Topology/fabrication are refreshed once against
-    the valid final geometry.
+    A converted bent source is updated in place. The caller must provide
+    which physical end was clicked, and Phase 1 requires a straight target.
     """
 
     if document is None:
@@ -162,6 +318,27 @@ def trim_extend_member_object(
             target_object
         )
     )
+
+    if isinstance(
+        source_member,
+        BentMember,
+    ):
+        return _trim_extend_bent_member_object(
+            document,
+            member_object,
+            target_object,
+            source_member,
+            target_member,
+            endpoint,
+        )
+
+    if isinstance(
+        target_member,
+        BentMember,
+    ):
+        raise ValueError(
+            "Trim/Extend currently requires a straight target member."
+        )
 
     (
         intersection,
