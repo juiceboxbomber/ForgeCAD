@@ -127,6 +127,102 @@ def other_members_using_layout(
     )
 
 
+def bent_source_layout_ids(member_object):
+    identifiers = []
+
+    for reference in getattr(member_object, "SourceLayoutLines", ()):
+        if isinstance(reference, str):
+            layout_id = reference.strip()
+        else:
+            layout_id = str(getattr(reference, "LayoutID", "")).strip()
+
+        if layout_id and layout_id not in identifiers:
+            identifiers.append(layout_id)
+
+    for property_name in (
+        "StartFabricationLayoutID",
+        "EndFabricationLayoutID",
+    ):
+        layout_id = str(getattr(member_object, property_name, "")).strip()
+        if layout_id and layout_id not in identifiers:
+            identifiers.append(layout_id)
+
+    return tuple(identifiers)
+
+
+def object_uses_layout_id(obj, requested_layout_id):
+    requested_layout_id = str(requested_layout_id).strip()
+    if not requested_layout_id:
+        return False
+
+    if source_layout_id(obj) == requested_layout_id:
+        return True
+
+    return requested_layout_id in bent_source_layout_ids(obj)
+
+
+def other_structural_objects_using_layout(
+    document,
+    requested_layout_id,
+    excluded_member=None,
+):
+    if document is None:
+        return ()
+
+    frame_group = document.getObject("ForgeCADFrame")
+    if frame_group is None:
+        return ()
+
+    return tuple(
+        obj
+        for obj in getattr(frame_group, "Group", ())
+        if obj is not excluded_member
+        and object_uses_layout_id(obj, requested_layout_id)
+    )
+
+
+def remove_bent_member_and_unused_layouts(
+    document,
+    member_object,
+):
+    if document is None or member_object is None:
+        return False
+
+    member_name = str(getattr(member_object, "Name", "")).strip()
+    if not member_name:
+        raise ValueError("ForgeCAD bent member has no document object name.")
+
+    layout_ids = bent_source_layout_ids(member_object)
+    removable_layouts = []
+
+    for layout_id in layout_ids:
+        layout_object = layout_object_for_id(document, layout_id)
+        if layout_object is None:
+            continue
+
+        keep_layout = bool(
+            other_structural_objects_using_layout(
+                document,
+                layout_id,
+                excluded_member=member_object,
+            )
+        )
+        if not keep_layout:
+            removable_layouts.append(layout_object)
+
+    frame_group = document.getObject("ForgeCADFrame")
+    layout_group = document.getObject("ForgeCADLayout")
+
+    remove_object_from_group(frame_group, member_object)
+    document.removeObject(member_name)
+
+    for layout_object in removable_layouts:
+        remove_object_from_group(layout_group, layout_object)
+        document.removeObject(layout_object.Name)
+
+    document.recompute()
+    return True
+
 def remove_object_from_group(
     group,
     obj,

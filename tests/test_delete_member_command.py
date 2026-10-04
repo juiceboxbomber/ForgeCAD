@@ -181,7 +181,7 @@ def test_delete_member_rejects_non_member():
             SimpleNamespace(),
         )
     except ValueError as error:
-        assert "not a ForgeCAD straight member" in str(error)
+        assert "not a ForgeCAD member" in str(error)
     else:
         raise AssertionError(
             "Expected invalid member to fail."
