@@ -389,21 +389,26 @@ def test_command_recognizes_bent_sources():
     assert "is_forgecad_bent_member" in source
 
 
-def test_bent_source_waits_for_endpoint_click():
+def test_bent_source_commits_after_destination_selection():
     source = _class_method_source(
         COMMAND,
         "InteractiveTrimExtendTool",
         "target_selected",
     )
-    assert "is_forgecad_bent_member" in source
-    assert "add_trim_click_callback" in source
-    assert "Click the END" in source
+
+    assert "defer_call" in source
+    assert "self.commit" in source
+    assert "add_trim_click_callback" not in source
 
 
-def test_command_rejects_bent_target_in_phase_one():
+
+def test_bent_source_commits_after_destination_selection():
     source = _class_method_source(
         COMMAND,
         "InteractiveTrimExtendTool",
         "target_selected",
     )
-    assert "straight member as the target" in source
+
+    assert "defer_call" in source
+    assert "self.commit" in source
+    assert "add_trim_click_callback" not in source

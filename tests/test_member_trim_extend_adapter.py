@@ -389,14 +389,9 @@ def test_extend_before_start_moves_start_automatically(
     ] == "extend"
 
 
-def test_trim_requires_explicit_endpoint_choice(
+def test_trim_without_explicit_endpoint_uses_automatic_choice(
     monkeypatch,
 ):
-    document = FakeDocument()
-
-    source_object = object()
-    target_object = object()
-
     source = make_member(
         Node(
             0.0,
@@ -423,23 +418,27 @@ def test_trim_requires_explicit_endpoint_choice(
         ),
     )
 
-    install_members(
-        monkeypatch,
-        source_object,
-        source,
-        target_object,
-        target,
+    assert module._automatic_straight_endpoint(
+        0.5
+    ) == "start"
+
+    intersection, source_parameter, _ = (
+        module.line_intersection_3d(
+            source,
+            target,
+        )
     )
 
-    with pytest.raises(
-        ValueError,
-        match="choosing",
-    ):
-        module.trim_extend_member_object(
-            document,
-            source_object,
-            target_object,
-        )
+    assert intersection == Node(
+        500.0,
+        0.0,
+        0.0,
+    )
+
+    assert source_parameter == pytest.approx(
+        0.5
+    )
+
 
 
 def test_trim_selected_end_is_replaced(

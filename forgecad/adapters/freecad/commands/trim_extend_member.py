@@ -14,6 +14,7 @@ from forgecad.adapters.freecad.member_trim_extend_adapter import (
 from forgecad.services.member_trim_extend import (
     line_intersection_3d,
     modification_kind,
+    straight_to_bent_endpoint_intersection_3d,
 )
 
 
@@ -219,6 +220,9 @@ class InteractiveTrimExtendTool:
         self.trim_click_callback = None
 
         self.target_object = None
+        self.target_member = None
+        self.target_endpoint = None
+        self.awaiting_bent_target_endpoint = False
         self.intersection = None
         self.source_parameter = None
 
@@ -438,9 +442,10 @@ class InteractiveTrimExtendTool:
         object_name,
     ):
         """
-        Validate target selection.
+        Commit Trim / Extend immediately after the destination member is picked.
 
-        No document mutation occurs in this selection callback.
+        Workflow for every member combination:
+        select source -> run Trim / Extend -> click destination.
         """
 
         if (
@@ -461,8 +466,8 @@ class InteractiveTrimExtendTool:
             )
         ):
             self.show_status(
-                "ForgeCAD Trim / Extend: select a ForgeCAD straight "
-                "member as the target. Press Esc to cancel."
+                "ForgeCAD Trim / Extend: select the ForgeCAD member "
+                "you want the source to reach. Press Esc to cancel."
             )
             return
 
@@ -473,118 +478,30 @@ class InteractiveTrimExtendTool:
             )
             return
 
-        if is_forgecad_bent_member(
-            target
-        ):
-            QtGui.QMessageBox.warning(
-                FreeCADGui.getMainWindow(),
-                "Trim / Extend Member",
-                (
-                    "Bent-member Trim / Extend currently uses a "
-                    "straight member as the target."
-                ),
-            )
-            return
-
-        if is_forgecad_bent_member(
-            self.source_object
-        ):
-            self.target_object = target
-
-            self.remove_selection_observer()
-            FreeCADGui.Selection.clearSelection()
-
-            self.add_trim_click_callback()
-            self.show_status(
-                "Bent Trim / Extend: target selected. Click the END of "
-                "the bent tube you want to move. Press Esc to cancel."
-            )
-            return
-
-        try:
-            target_member = (
-                structural_member_from_freecad_object(
-                    target
-                )
-            )
-
-            (
-                intersection,
-                source_parameter,
-                _target_parameter,
-            ) = line_intersection_3d(
-                self.source_member,
-                target_member,
-            )
-
-        except ValueError as error:
-            QtGui.QMessageBox.warning(
-                FreeCADGui.getMainWindow(),
-                "Trim / Extend Member",
-                str(
-                    error
-                ),
-            )
-            return
-
-        kind = modification_kind(
-            source_parameter
-        )
-
-        if kind == "none":
-            QtGui.QMessageBox.information(
-                FreeCADGui.getMainWindow(),
-                "Trim / Extend Member",
-                (
-                    "The target already intersects the "
-                    "selected member at its endpoint."
-                ),
-            )
-
-            self.stop()
-            return
-
         self.target_object = target
-        self.intersection = intersection
-        self.source_parameter = (
-            source_parameter
-        )
-
-        if kind == "extend":
-            self.commit_pending = True
-
-            self.remove_selection_observer()
-            self.show_status(
-                "Extend: target selected. ForgeCAD is extending the "
-                "highlighted member to the target and creating the "
-                "joint automatically."
-            )
-
-            defer_call(
-                lambda: self.commit(
-                    endpoint=None
-                )
-            )
-            return
-
+        self.commit_pending = True
         self.remove_selection_observer()
-        FreeCADGui.Selection.clearSelection()
 
-        self.add_trim_click_callback()
         self.show_status(
-            "Trim: target selected. Click the portion of the highlighted "
-            "member you want to REMOVE. ForgeCAD will trim that end back "
-            "to the target and keep the opposite side. Press Esc to cancel."
+            "Trim / Extend: destination selected. ForgeCAD is choosing "
+            "the nearest valid source end automatically."
         )
+
+        defer_call(
+            lambda: self.commit(
+                endpoint=None
+            )
+        )
+
+
+
 
 
     def commit(
         self,
         endpoint,
     ):
-        """
-        Perform the safe replacement outside any selection/Coin callback.
-        """
+        """Perform the safe replacement outside any selection/Coin callback."""
 
         if self.stopped:
             return
@@ -592,23 +509,22 @@ class InteractiveTrimExtendTool:
         transaction_started = False
 
         try:
-            if hasattr(
-                self.document,
-                "openTransaction",
-            ):
+            if hasattr(self.document, "openTransaction"):
                 self.document.openTransaction(
                     "Trim / Extend ForgeCAD Member"
                 )
-
                 transaction_started = True
 
-            result = (
-                trim_extend_member_object(
-                    self.document,
-                    self.source_object,
-                    self.target_object,
-                    endpoint=endpoint,
-                )
+            result = trim_extend_member_object(
+                self.document,
+                self.source_object,
+                self.target_object,
+                endpoint=endpoint,
+                target_endpoint=getattr(
+                    self,
+                    "target_endpoint",
+                    None,
+                ),
             )
 
             if (
@@ -639,23 +555,15 @@ class InteractiveTrimExtendTool:
                     pass
 
             self.commit_pending = False
-
             QtGui.QMessageBox.warning(
                 FreeCADGui.getMainWindow(),
                 "Trim / Extend Member Failed",
-                str(
-                    error
-                ),
+                str(error),
             )
-
             self.stop()
             return
 
-        replacement_object = result[
-            1
-        ]
-
-        # Finish the tool completely before changing GUI selection.
+        replacement_object = result[1]
         self.stop()
 
         try:
@@ -670,12 +578,14 @@ class InteractiveTrimExtendTool:
         except Exception:
             pass
 
+
     def on_trim_side_click(
         self,
         event,
     ):
         """
-        Record endpoint intent, then defer document mutation.
+        Resolve bent-target endpoint selection and source endpoint intent,
+        then defer document mutation.
         """
 
         if (
@@ -701,6 +611,98 @@ class InteractiveTrimExtendTool:
         if position is None:
             return
 
+        if getattr(
+            self,
+            "awaiting_bent_target_endpoint",
+            False,
+        ):
+            target_endpoint = (
+                endpoint_nearest_screen_position(
+                    self.view,
+                    self.target_member,
+                    position,
+                )
+            )
+
+            self.target_endpoint = (
+                target_endpoint
+            )
+            self.awaiting_bent_target_endpoint = False
+
+            if is_forgecad_bent_member(
+                self.source_object
+            ):
+                self.show_status(
+                    "Bent-to-bent Trim / Extend: target end selected. "
+                    "Now click the END of the bent SOURCE you want to move."
+                )
+                return
+
+            try:
+                (
+                    intersection,
+                    source_parameter,
+                    _target_parameter,
+                ) = straight_to_bent_endpoint_intersection_3d(
+                    self.source_member,
+                    self.target_member,
+                    target_endpoint,
+                )
+
+            except ValueError as error:
+                QtGui.QMessageBox.warning(
+                    FreeCADGui.getMainWindow(),
+                    "Trim / Extend Member",
+                    str(
+                        error
+                    ),
+                )
+                self.stop()
+                return
+
+            kind = modification_kind(
+                source_parameter
+            )
+
+            if kind == "none":
+                QtGui.QMessageBox.information(
+                    FreeCADGui.getMainWindow(),
+                    "Trim / Extend Member",
+                    (
+                        "The selected bent-target tangent already intersects "
+                        "the source at its endpoint."
+                    ),
+                )
+                self.stop()
+                return
+
+            self.intersection = (
+                intersection
+            )
+            self.source_parameter = (
+                source_parameter
+            )
+
+            if kind == "extend":
+                self.commit_pending = True
+                self.remove_trim_click_callback()
+                self.show_status(
+                    "Extend: bent target endpoint selected. ForgeCAD is "
+                    "extending the straight member to that local tangent."
+                )
+                defer_call(
+                    lambda: self.commit(
+                        endpoint=None
+                    )
+                )
+                return
+
+            self.show_status(
+                "Trim: bent target endpoint selected. Now click the portion "
+                "of the straight source you want to REMOVE."
+            )
+            return
+
         endpoint = (
             endpoint_nearest_screen_position(
                 self.view,
@@ -710,7 +712,6 @@ class InteractiveTrimExtendTool:
         )
 
         self.commit_pending = True
-
         self.remove_trim_click_callback()
 
         if is_forgecad_bent_member(
@@ -730,6 +731,8 @@ class InteractiveTrimExtendTool:
                 endpoint=endpoint
             )
         )
+
+
 
 
     def on_keyboard_event(

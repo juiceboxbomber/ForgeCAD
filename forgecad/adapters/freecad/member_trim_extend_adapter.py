@@ -21,9 +21,11 @@ from forgecad.adapters.freecad.fabrication_refresh import (
 )
 from forgecad.services.member_trim_extend import (
     bent_endpoint_intersection_3d,
+    bent_to_bent_endpoint_intersection_3d,
     line_intersection_3d,
     modification_kind,
     replace_member_endpoint,
+    straight_to_bent_endpoint_intersection_3d,
 )
 
 
@@ -161,32 +163,221 @@ def _is_joint_derived_bent_object(
     return False
 
 
+def _automatic_straight_endpoint(
+    source_parameter,
+):
+    """Choose the straight-source endpoint requiring the least movement."""
+
+    parameter = float(
+        source_parameter
+    )
+
+    if parameter <= 0.0:
+        return "start"
+
+    if parameter >= 1.0:
+        return "end"
+
+    if parameter <= 0.5:
+        return "start"
+
+    return "end"
+
+
+def _straight_to_bent_automatic_intersection(
+    source_member,
+    target_member,
+):
+    """
+    Choose the bent-target endpoint tangent requiring the least source movement.
+    """
+
+    candidates = []
+
+    for target_endpoint in (
+        "start",
+        "end",
+    ):
+        try:
+            (
+                intersection,
+                source_parameter,
+                target_parameter,
+            ) = straight_to_bent_endpoint_intersection_3d(
+                source_member,
+                target_member,
+                target_endpoint,
+            )
+        except ValueError:
+            continue
+
+        source_endpoint = (
+            _automatic_straight_endpoint(
+                source_parameter
+            )
+        )
+
+        endpoint_parameter = (
+            0.0
+            if source_endpoint == "start"
+            else 1.0
+        )
+
+        movement = abs(
+            float(
+                source_parameter
+            )
+            - endpoint_parameter
+        )
+
+        candidates.append(
+            (
+                movement,
+                intersection,
+                source_parameter,
+                target_parameter,
+                source_endpoint,
+                target_endpoint,
+            )
+        )
+
+    if not candidates:
+        raise ValueError(
+            "No physical bent-target endpoint tangent intersects "
+            "the straight source centerline."
+        )
+
+    candidates.sort(
+        key=lambda item: item[
+            0
+        ]
+    )
+
+    return candidates[
+        0
+    ][
+        1:
+    ]
+
+
+def _bent_source_automatic_intersection(
+    source_member,
+    target_member,
+):
+    """
+    Choose the valid bent-source endpoint requiring the least movement.
+
+    For bent targets, both physical endpoint tangents are considered.
+    """
+
+    candidates = []
+
+    source_endpoints = (
+        "start",
+        "end",
+    )
+
+    if isinstance(
+        target_member,
+        BentMember,
+    ):
+        target_endpoints = (
+            "start",
+            "end",
+        )
+    else:
+        target_endpoints = (
+            None,
+        )
+
+    for source_endpoint in source_endpoints:
+        for target_endpoint in target_endpoints:
+            try:
+                if isinstance(
+                    target_member,
+                    BentMember,
+                ):
+                    (
+                        intersection,
+                        source_parameter,
+                        target_parameter,
+                        kind,
+                    ) = bent_to_bent_endpoint_intersection_3d(
+                        source_member,
+                        target_member,
+                        source_endpoint,
+                        target_endpoint,
+                    )
+                else:
+                    (
+                        intersection,
+                        source_parameter,
+                        target_parameter,
+                        kind,
+                    ) = bent_endpoint_intersection_3d(
+                        source_member,
+                        target_member,
+                        source_endpoint,
+                    )
+            except ValueError:
+                continue
+
+            if kind == "none":
+                continue
+
+            candidates.append(
+                (
+                    abs(
+                        float(
+                            source_parameter
+                        )
+                    ),
+                    intersection,
+                    source_parameter,
+                    target_parameter,
+                    kind,
+                    source_endpoint,
+                    target_endpoint,
+                )
+            )
+
+    if not candidates:
+        raise ValueError(
+            "No valid physical endpoint of the bent source can be "
+            "trimmed or extended to that target."
+        )
+
+    candidates.sort(
+        key=lambda item: item[
+            0
+        ]
+    )
+
+    return candidates[
+        0
+    ][
+        1:
+    ]
+
 def _trim_extend_bent_member_object(
     document,
     member_object,
     target_object,
     source_member,
     target_member,
-    endpoint,
+    endpoint=None,
+    target_endpoint=None,
 ):
     """
-    Move one true endpoint of a converted bend to a straight target.
+    Move the nearest valid physical endpoint of a converted bent source.
 
-    The bent FreeCAD object is retained. Its linked endpoint node is replaced
-    and the existing joint-derived path machinery rebuilds the tube in place.
+    Explicit endpoint arguments remain supported, but the normal interactive
+    workflow leaves them unset and resolves geometry automatically.
     """
 
     requested = str(
         endpoint or ""
     ).strip().lower()
-
-    if requested not in (
-        "start",
-        "end",
-    ):
-        raise ValueError(
-            "For a bent member, click the end you want to trim or extend."
-        )
 
     if not _is_joint_derived_bent_object(
         member_object
@@ -196,24 +387,61 @@ def _trim_extend_bent_member_object(
             "joint-derived bent tubes."
         )
 
-    if isinstance(
-        target_member,
-        BentMember,
+    if requested in (
+        "start",
+        "end",
     ):
-        raise ValueError(
-            "Bent-member Trim/Extend currently requires a straight target."
-        )
+        if isinstance(
+            target_member,
+            BentMember,
+        ):
+            target_requested = str(
+                target_endpoint or ""
+            ).strip().lower()
 
-    (
-        intersection,
-        source_parameter,
-        target_parameter,
-        kind,
-    ) = bent_endpoint_intersection_3d(
-        source_member,
-        target_member,
-        requested,
-    )
+            if target_requested not in (
+                "start",
+                "end",
+            ):
+                raise ValueError(
+                    "A bent target requires a physical target endpoint."
+                )
+
+            (
+                intersection,
+                source_parameter,
+                target_parameter,
+                kind,
+            ) = bent_to_bent_endpoint_intersection_3d(
+                source_member,
+                target_member,
+                requested,
+                target_requested,
+            )
+        else:
+            (
+                intersection,
+                source_parameter,
+                target_parameter,
+                kind,
+            ) = bent_endpoint_intersection_3d(
+                source_member,
+                target_member,
+                requested,
+            )
+
+    else:
+        (
+            intersection,
+            source_parameter,
+            target_parameter,
+            kind,
+            requested,
+            target_endpoint,
+        ) = _bent_source_automatic_intersection(
+            source_member,
+            target_member,
+        )
 
     if kind == "none":
         raise ValueError(
@@ -282,19 +510,21 @@ def _trim_extend_bent_member_object(
         target_parameter,
     )
 
+
+
 def trim_extend_member_object(
     document,
     member_object,
     target_object,
     endpoint=None,
+    target_endpoint=None,
 ):
     """
-    Trim or extend one ForgeCAD structural member to a target centerline.
+    Trim or extend one ForgeCAD structural member to a destination member.
 
-    Straight sources retain the original replacement workflow.
-
-    A converted bent source is updated in place. The caller must provide
-    which physical end was clicked, and Phase 1 requires a straight target.
+    Normal interactive use leaves endpoint arguments unset. ForgeCAD chooses
+    the nearest valid source endpoint automatically. Bent targets are resolved
+    from true physical endpoint tangents, never their start-to-end chord.
     """
 
     if document is None:
@@ -329,32 +559,80 @@ def trim_extend_member_object(
             target_object,
             source_member,
             target_member,
-            endpoint,
+            endpoint=endpoint,
+            target_endpoint=target_endpoint,
         )
 
     if isinstance(
         target_member,
         BentMember,
     ):
-        raise ValueError(
-            "Trim/Extend currently requires a straight target member."
-        )
+        if target_endpoint in (
+            "start",
+            "end",
+        ):
+            (
+                intersection,
+                source_parameter,
+                target_parameter,
+            ) = straight_to_bent_endpoint_intersection_3d(
+                source_member,
+                target_member,
+                target_endpoint,
+            )
 
-    (
-        intersection,
-        source_parameter,
-        target_parameter,
-    ) = line_intersection_3d(
-        source_member,
-        target_member,
-    )
+            resolved_endpoint = (
+                endpoint
+                if endpoint in (
+                    "start",
+                    "end",
+                )
+                else _automatic_straight_endpoint(
+                    source_parameter
+                )
+            )
+        else:
+            (
+                intersection,
+                source_parameter,
+                target_parameter,
+                resolved_endpoint,
+                target_endpoint,
+            ) = _straight_to_bent_automatic_intersection(
+                source_member,
+                target_member,
+            )
 
-    resolved_endpoint = (
-        endpoint_for_operation(
+    else:
+        (
+            intersection,
             source_parameter,
-            endpoint=endpoint,
+            target_parameter,
+        ) = line_intersection_3d(
+            source_member,
+            target_member,
         )
+
+        resolved_endpoint = (
+            endpoint
+            if endpoint in (
+                "start",
+                "end",
+            )
+            else _automatic_straight_endpoint(
+                source_parameter
+            )
+        )
+
+    kind = modification_kind(
+        source_parameter
     )
+
+    if kind == "none":
+        raise ValueError(
+            "The target already intersects the selected member "
+            "at its endpoint."
+        )
 
     displaced_node = (
         old_endpoint_node(
@@ -430,9 +708,7 @@ def trim_extend_member_object(
         replacement_member_object,
         intersection,
         resolved_endpoint,
-        modification_kind(
-            source_parameter
-        ),
+        kind,
         source_parameter,
         target_parameter,
     )

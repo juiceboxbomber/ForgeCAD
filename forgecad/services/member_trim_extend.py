@@ -521,6 +521,288 @@ def bent_endpoint_intersection_3d(
         kind,
     )
 
+def straight_to_bent_endpoint_intersection_3d(
+    source_member,
+    bent_target,
+    target_endpoint,
+    tolerance=DEFAULT_INTERSECTION_TOLERANCE,
+):
+    """Intersect a straight source with one true bent-target endpoint tangent."""
+
+    if not isinstance(source_member, Member):
+        raise TypeError(
+            "Straight-to-bent Trim/Extend requires a straight source."
+        )
+
+    if not isinstance(bent_target, BentMember):
+        raise TypeError(
+            "Straight-to-bent Trim/Extend requires a bent target."
+        )
+
+    requested = str(target_endpoint or "").strip().lower()
+
+    if requested not in ("start", "end"):
+        raise ValueError(
+            "Choose the start or end of the bent target."
+        )
+
+    centerline = build_bent_tube_centerline(
+        bent_target.tube,
+        start_point=Point3D(
+            float(bent_target.start.x),
+            float(bent_target.start.y),
+            float(bent_target.start.z),
+        ),
+        initial_direction=bent_target.initial_direction,
+        initial_bend_normal=bent_target.initial_bend_normal,
+    )
+
+    if requested == "start":
+        physical_endpoint = bent_target.start
+        tangent_direction = bent_target.initial_direction.normalized()
+    else:
+        physical_endpoint = bent_target.end
+        tangent_direction = centerline.end_direction.normalized()
+
+    tangent_member = Member(
+        start=physical_endpoint,
+        end=_node_offset(
+            physical_endpoint,
+            tangent_direction,
+            1.0,
+        ),
+        profile=bent_target.profile,
+        material=bent_target.material,
+    )
+
+    return line_intersection_3d(
+        source_member,
+        tangent_member,
+        tolerance=tolerance,
+    )
+
+def bent_to_bent_endpoint_intersection_3d(
+    source_member,
+    target_member,
+    source_endpoint,
+    target_endpoint,
+    tolerance=DEFAULT_INTERSECTION_TOLERANCE,
+):
+    """
+    Intersect one physical endpoint tangent of a bent source with one physical
+    endpoint tangent of a bent target.
+
+    The source tangent points outward from the selected source endpoint so the
+    returned source parameter is positive for extension and negative for trim.
+    The bent start-to-end chord is never used.
+    """
+
+    if not isinstance(
+        source_member,
+        BentMember,
+    ):
+        raise TypeError(
+            "Bent-to-bent Trim/Extend requires a bent source."
+        )
+
+    if not isinstance(
+        target_member,
+        BentMember,
+    ):
+        raise TypeError(
+            "Bent-to-bent Trim/Extend requires a bent target."
+        )
+
+    source_requested = str(
+        source_endpoint or ""
+    ).strip().lower()
+
+    target_requested = str(
+        target_endpoint or ""
+    ).strip().lower()
+
+    if source_requested not in (
+        "start",
+        "end",
+    ):
+        raise ValueError(
+            "Choose the start or end of the bent source."
+        )
+
+    if target_requested not in (
+        "start",
+        "end",
+    ):
+        raise ValueError(
+            "Choose the start or end of the bent target."
+        )
+
+    source_centerline = build_bent_tube_centerline(
+        source_member.tube,
+        start_point=Point3D(
+            float(
+                source_member.start.x
+            ),
+            float(
+                source_member.start.y
+            ),
+            float(
+                source_member.start.z
+            ),
+        ),
+        initial_direction=(
+            source_member.initial_direction
+        ),
+        initial_bend_normal=(
+            source_member.initial_bend_normal
+        ),
+    )
+
+    target_centerline = build_bent_tube_centerline(
+        target_member.tube,
+        start_point=Point3D(
+            float(
+                target_member.start.x
+            ),
+            float(
+                target_member.start.y
+            ),
+            float(
+                target_member.start.z
+            ),
+        ),
+        initial_direction=(
+            target_member.initial_direction
+        ),
+        initial_bend_normal=(
+            target_member.initial_bend_normal
+        ),
+    )
+
+    if source_requested == "start":
+        source_point = (
+            source_member.start
+        )
+        source_outward = (
+            source_member
+            .initial_direction
+            .normalized()
+            .scaled(
+                -1.0
+            )
+        )
+        adjacent_run_length = float(
+            source_member
+            .tube
+            .straight_runs[
+                0
+            ]
+            .length_mm
+        )
+    else:
+        source_point = (
+            source_member.end
+        )
+        source_outward = (
+            source_centerline
+            .end_direction
+            .normalized()
+        )
+        adjacent_run_length = float(
+            source_member
+            .tube
+            .straight_runs[
+                -1
+            ]
+            .length_mm
+        )
+
+    if target_requested == "start":
+        target_point = (
+            target_member.start
+        )
+        target_direction = (
+            target_member
+            .initial_direction
+            .normalized()
+        )
+    else:
+        target_point = (
+            target_member.end
+        )
+        target_direction = (
+            target_centerline
+            .end_direction
+            .normalized()
+        )
+
+    source_axis = Member(
+        start=source_point,
+        end=_node_offset(
+            source_point,
+            source_outward,
+            1.0,
+        ),
+        profile=source_member.profile,
+        material=source_member.material,
+    )
+
+    target_axis = Member(
+        start=target_point,
+        end=_node_offset(
+            target_point,
+            target_direction,
+            1.0,
+        ),
+        profile=target_member.profile,
+        material=target_member.material,
+    )
+
+    (
+        intersection,
+        source_parameter,
+        target_parameter,
+    ) = line_intersection_3d(
+        source_axis,
+        target_axis,
+        tolerance=tolerance,
+    )
+
+    source_parameter = float(
+        source_parameter
+    )
+    tolerance = float(
+        tolerance
+    )
+
+    if abs(
+        source_parameter
+    ) <= tolerance:
+        kind = "none"
+
+    elif source_parameter > 0.0:
+        kind = "extend"
+
+    else:
+        trim_distance = -source_parameter
+
+        if trim_distance >= (
+            adjacent_run_length
+            - tolerance
+        ):
+            raise ValueError(
+                "Bent-member Trim would reach or pass the nearest bend."
+            )
+
+        kind = "trim"
+
+    return (
+        intersection,
+        source_parameter,
+        target_parameter,
+        kind,
+    )
+
 def classify_parameter(
     parameter,
     tolerance=DEFAULT_INTERSECTION_TOLERANCE,
