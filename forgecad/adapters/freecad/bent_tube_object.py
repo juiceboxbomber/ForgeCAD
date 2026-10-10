@@ -858,6 +858,102 @@ class BentTubeProxy:
             )
         )
 
+    def _refresh_zero_bend_derived_path(
+        self,
+        obj,
+    ) -> bool:
+        """
+        Recalculate a zero-bend tube from authoritative endpoint nodes.
+
+        Split Member can produce a BentTube half with no bends. When both
+        StartNode and EndNode are linked, those persistent nodes define the
+        straight centerline. Derive the stored start frame and run length from
+        them so update_shape() never pushes the shared split node elsewhere.
+        """
+
+        start_node = getattr(
+            obj,
+            "StartNode",
+            None,
+        )
+        end_node = getattr(
+            obj,
+            "EndNode",
+            None,
+        )
+
+        bend_count = int(
+            _quantity_value(
+                getattr(
+                    obj,
+                    "BendCount",
+                    0,
+                )
+            )
+        )
+
+        if (
+            start_node is None
+            or end_node is None
+            or bend_count != 0
+        ):
+            return False
+
+        start_position = getattr(
+            start_node,
+            "Position",
+            None,
+        )
+        end_position = getattr(
+            end_node,
+            "Position",
+            None,
+        )
+
+        if (
+            start_position is None
+            or end_position is None
+        ):
+            return False
+
+        dx = float(
+            end_position.x
+            - start_position.x
+        )
+        dy = float(
+            end_position.y
+            - start_position.y
+        )
+        dz = float(
+            end_position.z
+            - start_position.z
+        )
+
+        length = (
+            dx * dx
+            + dy * dy
+            + dz * dz
+        ) ** 0.5
+
+        if length <= 1.0e-9:
+            return False
+
+        obj.StartPoint = FreeCAD.Vector(
+            float(start_position.x),
+            float(start_position.y),
+            float(start_position.z),
+        )
+        obj.InitialDirection = FreeCAD.Vector(
+            dx / length,
+            dy / length,
+            dz / length,
+        )
+        obj.Run1Length = float(
+            length
+        )
+
+        return True
+
     def _refresh_multi_joint_derived_path(
         self,
         obj,
@@ -1445,6 +1541,12 @@ class BentTubeProxy:
                 obj
             )
 
+            zero_bend_derived = (
+                self._refresh_zero_bend_derived_path(
+                    obj
+                )
+            )
+
             multi_joint_derived = (
                 self._refresh_multi_joint_derived_path(
                     obj
@@ -1452,7 +1554,8 @@ class BentTubeProxy:
             )
 
             joint_derived = (
-                multi_joint_derived
+                zero_bend_derived
+                or multi_joint_derived
                 or self._refresh_joint_derived_path(
                     obj
                 )

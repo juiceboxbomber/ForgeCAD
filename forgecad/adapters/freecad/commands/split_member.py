@@ -1,4 +1,4 @@
-"""Interactive FreeCAD command for splitting one straight ForgeCAD member."""
+"""Interactive FreeCAD command for splitting ForgeCAD members."""
 
 import math
 
@@ -9,11 +9,17 @@ from PySide import QtGui
 
 from forgecad.geometry import (
     Point3D,
+    Vector3D,
+)
+from forgecad.services.bent_tube_path import (
+    StraightPathSegment,
+    build_bent_tube_centerline,
 )
 from forgecad.adapters.freecad.member_split_adapter import (
     split_member_object,
 )
 from forgecad.adapters.freecad.joint_inspector_adapter import (
+    is_forgecad_bent_member,
     structural_member_from_freecad_object,
 )
 
@@ -32,7 +38,7 @@ PREVIEW_OD_MARGIN = 8.0
 _active_tool = None
 
 
-def is_forgecad_member(
+def is_forgecad_straight_member(
     obj,
 ):
     """Return True for a generated ForgeCAD straight-member object."""
@@ -53,8 +59,19 @@ def is_forgecad_member(
     )
 
 
+def is_forgecad_member(
+    obj,
+):
+    """Return True for a straight or converted bent ForgeCAD member."""
+
+    return (
+        is_forgecad_straight_member(obj)
+        or is_forgecad_bent_member(obj)
+    )
+
+
 def selected_member():
-    """Return exactly one selected ForgeCAD straight member."""
+    """Return exactly one selected ForgeCAD structural member."""
 
     selection = list(
         FreeCADGui.Selection.getSelection()
@@ -100,11 +117,11 @@ def member_centerline(
 ):
     """Return the selected member's start/end centerline points."""
 
-    if not is_forgecad_member(
+    if not is_forgecad_straight_member(
         member_object
     ):
         raise ValueError(
-            "Split Member requires one straight ForgeCAD member."
+            "A straight ForgeCAD member is required for this centerline helper."
         )
 
     return (
@@ -115,6 +132,65 @@ def member_centerline(
             member_object.EndPoint
         ),
     )
+
+
+def member_centerline_segments(
+    member_object,
+):
+    """Return physical straight centerline runs for a straight or bent member."""
+
+    if is_forgecad_straight_member(member_object):
+        return (
+            member_centerline(member_object),
+        )
+
+    if not is_forgecad_bent_member(member_object):
+        raise ValueError(
+            "Split Member requires one ForgeCAD member."
+        )
+
+    proxy = getattr(member_object, "Proxy", None)
+
+    if (
+        proxy is None
+        or not hasattr(proxy, "_tube_from_properties")
+    ):
+        raise ValueError(
+            "Bent member is missing its parametric tube definition."
+        )
+
+    tube = proxy._tube_from_properties(member_object)
+
+    centerline = build_bent_tube_centerline(
+        tube,
+        start_point=point_from_vector(member_object.StartPoint),
+        initial_direction=Vector3D(
+            float(member_object.InitialDirection.x),
+            float(member_object.InitialDirection.y),
+            float(member_object.InitialDirection.z),
+        ),
+        initial_bend_normal=Vector3D(
+            float(member_object.InitialBendNormal.x),
+            float(member_object.InitialBendNormal.y),
+            float(member_object.InitialBendNormal.z),
+        ),
+    )
+
+    segments = tuple(
+        (
+            segment.start,
+            segment.end,
+        )
+        for segment in centerline.segments
+        if isinstance(segment, StraightPathSegment)
+    )
+
+    if not segments:
+        raise ValueError(
+            "Bent member contains no splittable straight run."
+        )
+
+    return segments
 
 
 def screen_point_on_segment(
@@ -296,6 +372,69 @@ def screen_point_on_segment(
     )
 
 
+def screen_point_on_segments(
+    view,
+    position,
+    segments,
+):
+    """Return the nearest screen-space point across physical straight runs."""
+
+    candidates = []
+
+    for start, end in segments:
+        point, distance, parameter = screen_point_on_segment(
+            view,
+            position,
+            start,
+            end,
+        )
+
+        if (
+            point is None
+            or distance is None
+            or parameter is None
+        ):
+            continue
+
+        candidates.append(
+            (
+                distance,
+                point,
+                parameter,
+                start,
+                end,
+            )
+        )
+
+    if not candidates:
+        return (
+            None,
+            None,
+            None,
+            None,
+            None,
+        )
+
+    (
+        distance,
+        point,
+        parameter,
+        start,
+        end,
+    ) = min(
+        candidates,
+        key=lambda candidate: candidate[0],
+    )
+
+    return (
+        point,
+        distance,
+        parameter,
+        start,
+        end,
+    )
+
+
 def preview_half_length_for_member(
     member_object,
 ):
@@ -442,7 +581,7 @@ def preview_line_endpoints(
 
 
 class InteractiveSplitMemberTool:
-    """Choose one split position along a preselected straight member."""
+    """Choose one split position along a preselected ForgeCAD member."""
 
     def __init__(
         self,
@@ -454,12 +593,16 @@ class InteractiveSplitMemberTool:
             member_object
         )
 
+        self.centerline_segments = (
+            member_centerline_segments(
+                member_object
+            )
+        )
+
         (
             self.start_point,
             self.end_point,
-        ) = member_centerline(
-            member_object
-        )
+        ) = self.centerline_segments[0]
 
         self.preview_half_length = (
             preview_half_length_for_member(
@@ -695,11 +838,12 @@ class InteractiveSplitMemberTool:
             point,
             distance,
             parameter,
-        ) = screen_point_on_segment(
+            segment_start,
+            segment_end,
+        ) = screen_point_on_segments(
             self.view,
             position,
-            self.start_point,
-            self.end_point,
+            self.centerline_segments,
         )
 
         if (
@@ -726,6 +870,9 @@ class InteractiveSplitMemberTool:
             )
         ):
             return None
+
+        self.start_point = segment_start
+        self.end_point = segment_end
 
         return point
 
@@ -895,7 +1042,7 @@ class InteractiveSplitMemberTool:
 
 
 class SplitMemberCommand:
-    """Interactively split one selected straight ForgeCAD member."""
+    """Interactively split one selected ForgeCAD member."""
 
     def GetResources(
         self,
@@ -903,7 +1050,7 @@ class SplitMemberCommand:
         return {
             "MenuText": "Split Member",
             "ToolTip": (
-                "Split one selected ForgeCAD straight member "
+                "Split one selected ForgeCAD member "
                 "at a point on its centerline"
             ),
         }
@@ -939,7 +1086,7 @@ class SplitMemberCommand:
                 FreeCADGui.getMainWindow(),
                 "Select One Member",
                 (
-                    "Select exactly one ForgeCAD straight "
+                    "Select exactly one ForgeCAD "
                     "member, then run Split Member."
                 ),
             )
@@ -959,7 +1106,7 @@ class SplitMemberCommand:
                 "Invalid Selection",
                 (
                     "Split Member requires one "
-                    "ForgeCAD straight member."
+                    "ForgeCAD member."
                 ),
             )
             return
